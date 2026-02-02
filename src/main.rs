@@ -38,6 +38,7 @@ fn main() {
         Commands::Internal { operation, args } => commands::internal::execute(operation, args),
         Commands::Hooks { action } => commands::hooks_cmd::execute(action),
         Commands::Pause { name, reason } => commands::pause::execute(name, reason),
+        Commands::Pipeline { action } => commands::pipeline_cmd::execute(action),
     };
 
     if let Err(e) = result {

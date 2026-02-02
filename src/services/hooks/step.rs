@@ -5,18 +5,20 @@
 use std::process::{Command, Stdio};
 
 use crate::error::{Result, WtError};
-use crate::models::{WtConfig, Step};
+use crate::models::{AgentStep, Step, WtConfig};
+use crate::services::claude::{shell_escape, ClaudeCommandBuilder};
 use crate::services::hooks::context::ExecutionContext;
 
 /// Result of step execution
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields reserved for future step output capture
 pub struct StepResult {
     /// Whether the step succeeded
-    pub success: bool,
+    success: bool,
     /// Output from the step (if captured)
-    pub output: Option<String>,
+    output: Option<String>,
     /// Error message (if failed)
-    pub error: Option<String>,
+    error: Option<String>,
 }
 
 impl StepResult {
@@ -27,49 +29,6 @@ impl StepResult {
             error: None,
         }
     }
-
-    pub fn ok_with_output(output: String) -> Self {
-        Self {
-            success: true,
-            output: Some(output),
-            error: None,
-        }
-    }
-
-    pub fn err(message: String) -> Self {
-        Self {
-            success: false,
-            output: None,
-            error: Some(message),
-        }
-    }
-}
-
-/// Parameters for agent execution
-#[derive(Debug)]
-struct AgentParams<'a> {
-    interactive: bool,
-    model: &'a str,
-    prompt: &'a str,
-    system_prompt: Option<&'a str>,
-    system_prompt_file: Option<&'a str>,
-    append_system_prompt: Option<&'a str>,
-    append_system_prompt_file: Option<&'a str>,
-    tools: &'a [String],
-    allowed_tools: &'a [String],
-    disallowed_tools: &'a [String],
-    skip_permissions: bool,
-    permission_mode: Option<&'a str>,
-    max_turns: Option<u32>,
-    max_budget_usd: Option<f64>,
-    continue_session: bool,
-    resume: Option<&'a str>,
-    output_format: &'a str,
-    input_format: Option<&'a str>,
-    add_dir: &'a [String],
-    mcp_config: Option<&'a str>,
-    verbose: bool,
-    window: Option<&'a str>,
 }
 
 /// Step executor
@@ -87,53 +46,7 @@ impl<'a> StepExecutor<'a> {
     pub fn execute(&self, step: &Step) -> Result<StepResult> {
         match step {
             Step::Script { run, on_error } => self.execute_script(run, on_error.as_deref()),
-            Step::Agent {
-                interactive,
-                model,
-                prompt,
-                system_prompt,
-                system_prompt_file,
-                append_system_prompt,
-                append_system_prompt_file,
-                tools,
-                allowed_tools,
-                disallowed_tools,
-                skip_permissions,
-                permission_mode,
-                max_turns,
-                max_budget_usd,
-                continue_session,
-                resume,
-                output_format,
-                input_format,
-                add_dir,
-                mcp_config,
-                verbose,
-                window,
-            } => self.execute_agent(AgentParams {
-                interactive: *interactive,
-                model,
-                prompt,
-                system_prompt: system_prompt.as_deref(),
-                system_prompt_file: system_prompt_file.as_deref(),
-                append_system_prompt: append_system_prompt.as_deref(),
-                append_system_prompt_file: append_system_prompt_file.as_deref(),
-                tools,
-                allowed_tools,
-                disallowed_tools,
-                skip_permissions: *skip_permissions,
-                permission_mode: permission_mode.as_deref(),
-                max_turns: *max_turns,
-                max_budget_usd: *max_budget_usd,
-                continue_session: *continue_session,
-                resume: resume.as_deref(),
-                output_format,
-                input_format: input_format.as_deref(),
-                add_dir,
-                mcp_config: mcp_config.as_deref(),
-                verbose: *verbose,
-                window: window.as_deref(),
-            }),
+            Step::Agent { agent } => self.execute_agent(agent),
             Step::Internal { run, on_conflict } => {
                 self.execute_internal(run, on_conflict.as_deref())
             }
@@ -185,120 +98,21 @@ impl<'a> StepExecutor<'a> {
     }
 
     /// Execute a Claude agent
-    fn execute_agent(&self, params: AgentParams) -> Result<StepResult> {
-        let expanded_prompt = self.context.expand(params.prompt);
+    fn execute_agent(&self, agent: &AgentStep) -> Result<StepResult> {
+        let expanded_prompt = self.context.expand(&agent.prompt);
         let working_dir = self.context.working_dir();
 
-        // Build claude command arguments
-        let mut args = Vec::new();
+        // Build command using ClaudeCommandBuilder
+        let builder = ClaudeCommandBuilder::from_agent_step(agent, self.context);
 
-        // Print mode (non-interactive) or REPL (interactive)
-        if !params.interactive {
-            args.push("-p".to_string());
-        }
-
-        // Model selection
-        let model_arg = match params.model {
-            "haiku" => "claude-haiku-4-20250514".to_string(),
-            "sonnet" => "claude-sonnet-4-20250514".to_string(),
-            "opus" => "claude-opus-4-20250514".to_string(),
-            other => other.to_string(),
-        };
-        args.push("--model".to_string());
-        args.push(model_arg);
-
-        // === System Prompt ===
-        if let Some(sp) = params.system_prompt {
-            args.push("--system-prompt".to_string());
-            args.push(self.context.expand(sp));
-        }
-        if let Some(spf) = params.system_prompt_file {
-            args.push("--system-prompt-file".to_string());
-            args.push(self.context.expand(spf));
-        }
-        if let Some(asp) = params.append_system_prompt {
-            args.push("--append-system-prompt".to_string());
-            args.push(self.context.expand(asp));
-        }
-        if let Some(aspf) = params.append_system_prompt_file {
-            args.push("--append-system-prompt-file".to_string());
-            args.push(self.context.expand(aspf));
+        // For REPL mode (non-print), run in a multiplexer window
+        if !agent.print {
+            let args = builder.build();
+            return self.execute_agent_in_window(&args, &expanded_prompt, agent.window.as_deref());
         }
 
-        // === Tools ===
-        if !params.tools.is_empty() {
-            args.push("--tools".to_string());
-            args.push(params.tools.join(","));
-        }
-        for tool in params.allowed_tools {
-            args.push("--allowedTools".to_string());
-            args.push(tool.clone());
-        }
-        for tool in params.disallowed_tools {
-            args.push("--disallowedTools".to_string());
-            args.push(tool.clone());
-        }
-
-        // === Permissions ===
-        if params.skip_permissions {
-            args.push("--dangerously-skip-permissions".to_string());
-        }
-        if let Some(mode) = params.permission_mode {
-            args.push("--permission-mode".to_string());
-            args.push(mode.to_string());
-        }
-
-        // === Limits ===
-        if let Some(turns) = params.max_turns {
-            args.push("--max-turns".to_string());
-            args.push(turns.to_string());
-        }
-        if let Some(budget) = params.max_budget_usd {
-            args.push("--max-budget-usd".to_string());
-            args.push(budget.to_string());
-        }
-
-        // === Session ===
-        if params.continue_session {
-            args.push("--continue".to_string());
-        }
-        if let Some(session_id) = params.resume {
-            args.push("--resume".to_string());
-            args.push(session_id.to_string());
-        }
-
-        // === Input/Output ===
-        if !params.interactive && params.output_format != "text" {
-            args.push("--output-format".to_string());
-            args.push(params.output_format.to_string());
-        }
-        if let Some(input_fmt) = params.input_format {
-            args.push("--input-format".to_string());
-            args.push(input_fmt.to_string());
-        }
-
-        // === Other ===
-        for dir in params.add_dir {
-            args.push("--add-dir".to_string());
-            args.push(self.context.expand(dir));
-        }
-        if let Some(mcp) = params.mcp_config {
-            args.push("--mcp-config".to_string());
-            args.push(self.context.expand(mcp));
-        }
-        if params.verbose {
-            args.push("--verbose".to_string());
-        }
-
-        // Prompt (for non-interactive mode)
-        if !params.interactive {
-            args.push(expanded_prompt.clone());
-        }
-
-        // For interactive mode in a window
-        if params.interactive {
-            return self.execute_agent_in_window(&args, &expanded_prompt, params.window);
-        }
+        // For print mode, add prompt and execute
+        let args = builder.prompt(&expanded_prompt).build();
 
         // Execute non-interactive agent
         let mut cmd = Command::new(&self.config.claude_command);
@@ -444,11 +258,6 @@ impl<'a> StepExecutor<'a> {
     }
 }
 
-/// Escape a string for shell
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,15 +281,6 @@ mod tests {
     fn test_step_result_ok() {
         let r = StepResult::ok();
         assert!(r.success);
-        assert!(r.output.is_none());
-        assert!(r.error.is_none());
-    }
-
-    #[test]
-    fn test_step_result_err() {
-        let r = StepResult::err("failed".to_string());
-        assert!(!r.success);
-        assert_eq!(r.error, Some("failed".to_string()));
     }
 
     #[test]

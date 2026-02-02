@@ -10,6 +10,7 @@ pub mod logs;
 pub mod new;
 pub mod next;
 pub mod pause;
+pub mod pipeline_cmd;
 pub mod reset;
 pub mod resume;
 pub mod review;

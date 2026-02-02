@@ -209,11 +209,13 @@ impl Default for TaskState {
 
 impl TaskState {
     /// Create a new Pending state
+    #[allow(dead_code)] // Constructor API for tests and future use
     pub fn pending() -> Self {
         Self::default()
     }
 
     /// Create an Active state with the given phase
+    #[allow(dead_code)] // Constructor API for tests and future use
     pub fn active(phase: TaskPhase) -> Self {
         Self {
             status: TaskStatus::Active,
@@ -226,6 +228,7 @@ impl TaskState {
     }
 
     /// Create an Idle state with the given phase and reason
+    #[allow(dead_code)] // Constructor API for tests and future use
     pub fn idle(phase: TaskPhase, reason: IdleReason) -> Self {
         Self {
             status: TaskStatus::Idle,
@@ -238,6 +241,7 @@ impl TaskState {
     }
 
     /// Create a Completed state
+    #[allow(dead_code)] // Constructor API for tests and future use
     pub fn completed() -> Self {
         Self {
             status: TaskStatus::Completed,
@@ -250,6 +254,7 @@ impl TaskState {
     }
 
     /// Transition to Active state
+    #[allow(dead_code)] // State machine API for future use
     pub fn to_active(&mut self, phase: TaskPhase) {
         self.status = TaskStatus::Active;
         self.phase = phase;
@@ -258,6 +263,7 @@ impl TaskState {
     }
 
     /// Transition to Idle state
+    #[allow(dead_code)] // State machine API for future use
     pub fn to_idle(&mut self, reason: IdleReason) {
         self.status = TaskStatus::Idle;
         self.idle_reason = Some(reason);
@@ -265,6 +271,7 @@ impl TaskState {
     }
 
     /// Transition to Completed state
+    #[allow(dead_code)] // State machine API for future use
     pub fn to_completed(&mut self) {
         self.status = TaskStatus::Completed;
         self.phase = TaskPhase::None;
@@ -274,6 +281,7 @@ impl TaskState {
     }
 
     /// Reset to Pending state
+    #[allow(dead_code)] // State machine API for future use
     pub fn to_pending(&mut self) {
         self.status = TaskStatus::Pending;
         self.phase = TaskPhase::None;
@@ -283,16 +291,19 @@ impl TaskState {
     }
 
     /// Check if the task is in an error state
+    #[allow(dead_code)] // Query API for future use
     pub fn is_error(&self) -> bool {
         self.status == TaskStatus::Idle && self.idle_reason == Some(IdleReason::Error)
     }
 
     /// Check if the task has a conflict
+    #[allow(dead_code)] // Query API for future use
     pub fn has_conflict(&self) -> bool {
         self.status == TaskStatus::Idle && self.idle_reason == Some(IdleReason::Conflict)
     }
 
     /// Get duration since entering Active state
+    #[allow(dead_code)] // Query API for future use
     pub fn active_duration(&self) -> Option<chrono::Duration> {
         self.active_since.map(|since| Utc::now() - since)
     }
@@ -372,11 +383,13 @@ impl StatusStore {
     }
 
     /// Set state for a task
+    #[allow(dead_code)] // API for tests and future use
     pub fn set(&mut self, name: &str, state: TaskState) {
         self.tasks.insert(name.to_string(), state);
     }
 
     /// Remove a task (used by delete command)
+    #[allow(dead_code)] // API for tests and future use
     pub fn remove(&mut self, name: &str) -> Option<TaskState> {
         self.tasks.remove(name)
     }

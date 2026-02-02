@@ -7,6 +7,7 @@ use std::path::Path;
 
 use crate::constants::DEFAULT_SESSION_NAME;
 use crate::error::{Result, WtError};
+use crate::models::AgentStep;
 use crate::services::multiplexer::{create_multiplexer, Multiplexer, MultiplexerType};
 
 /// Path to the new JSONC config file
@@ -32,88 +33,8 @@ pub enum Step {
 
     /// Run a Claude agent
     Agent {
-        // === Basic ===
-        /// Interactive mode (REPL) vs print mode (-p)
-        #[serde(default)]
-        interactive: bool,
-        /// Model: haiku, sonnet, opus, or full model name
-        #[serde(default = "default_model")]
-        model: String,
-        /// Prompt text or @file reference
-        prompt: String,
-
-        // === System Prompt ===
-        /// Replace entire system prompt (--system-prompt)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        system_prompt: Option<String>,
-        /// Load system prompt from file (--system-prompt-file)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        system_prompt_file: Option<String>,
-        /// Append to system prompt (--append-system-prompt)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        append_system_prompt: Option<String>,
-        /// Append system prompt from file (--append-system-prompt-file)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        append_system_prompt_file: Option<String>,
-
-        // === Tools ===
-        /// Restrict available tools (--tools)
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        tools: Vec<String>,
-        /// Auto-approve tools (--allowedTools)
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        allowed_tools: Vec<String>,
-        /// Disable tools (--disallowedTools)
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        disallowed_tools: Vec<String>,
-
-        // === Permissions ===
-        /// Skip all permission prompts (--dangerously-skip-permissions)
-        #[serde(default)]
-        skip_permissions: bool,
-        /// Permission mode: plan, etc. (--permission-mode)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        permission_mode: Option<String>,
-
-        // === Limits ===
-        /// Max agentic turns (--max-turns)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_turns: Option<u32>,
-        /// Max budget in USD (--max-budget-usd)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_budget_usd: Option<f64>,
-
-        // === Session ===
-        /// Continue most recent conversation (--continue)
-        #[serde(default, rename = "continue")]
-        continue_session: bool,
-        /// Resume specific session by ID or name (--resume)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        resume: Option<String>,
-
-        // === Input/Output ===
-        /// Output format: text, json, stream-json (--output-format)
-        #[serde(default = "default_output_format")]
-        output_format: String,
-        /// Input format: text, stream-json (--input-format)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        input_format: Option<String>,
-
-        // === Other ===
-        /// Additional working directories (--add-dir)
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        add_dir: Vec<String>,
-        /// MCP config file or JSON (--mcp-config)
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        mcp_config: Option<String>,
-        /// Enable verbose logging (--verbose)
-        #[serde(default)]
-        verbose: bool,
-
-        // === Window (for interactive mode) ===
-        /// Window mode: main, new
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        window: Option<String>,
+        #[serde(flatten)]
+        agent: AgentStep,
     },
 
     /// Call wt internal operation
@@ -133,25 +54,19 @@ pub enum Step {
     },
 }
 
-fn default_model() -> String {
-    "sonnet".to_string()
-}
-
-fn default_output_format() -> String {
-    "text".to_string()
-}
-
 // ============================================================================
 // Hook Configuration
 // ============================================================================
 
-/// Hook definition - either a list of steps or a pipeline
+/// Hook definition - either a list of steps, a pipeline, or a reference to predefined pipeline
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum HookDef {
+    /// Reference to a predefined pipeline by name
+    PipelineRef { use_pipeline: String },
     /// Sequential steps
     Steps(Vec<Step>),
-    /// Pipeline mode (agents chained via stream-json)
+    /// Inline pipeline mode (agents chained via stream-json)
     Pipeline { pipeline: Vec<Step> },
 }
 
@@ -161,14 +76,6 @@ impl Default for HookDef {
     }
 }
 
-impl HookDef {
-    pub fn is_empty(&self) -> bool {
-        match self {
-            HookDef::Steps(steps) => steps.is_empty(),
-            HookDef::Pipeline { pipeline } => pipeline.is_empty(),
-        }
-    }
-}
 
 /// Hooks configuration for all commands
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -224,6 +131,9 @@ pub struct LogsConfig {
     pub exclude_fields: Vec<String>,
 }
 
+/// Predefined pipelines configuration
+pub type PipelinesConfig = std::collections::HashMap<String, Vec<Step>>;
+
 /// Main configuration structure for v2
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WtConfig {
@@ -254,6 +164,10 @@ pub struct WtConfig {
     /// Logs configuration (v1 compat)
     #[serde(default)]
     pub logs: LogsConfig,
+
+    /// Predefined pipelines (can be referenced by name in hooks)
+    #[serde(default, skip_serializing_if = "PipelinesConfig::is_empty")]
+    pub pipelines: PipelinesConfig,
 
     /// Hooks configuration
     #[serde(default, skip_serializing_if = "HooksConfig::is_empty")]
@@ -290,6 +204,7 @@ impl Default for WtConfig {
             start_args: default_start_args(),
             copy_files: Vec::new(),
             logs: LogsConfig::default(),
+            pipelines: PipelinesConfig::new(),
             hooks: HooksConfig::default(),
         }
     }
@@ -354,9 +269,99 @@ impl WtConfig {
         self.hooks.get(name)
     }
 
+    /// Get a pipeline by name (user-defined or built-in)
+    pub fn get_pipeline(&self, name: &str) -> Option<Vec<Step>> {
+        // First check user-defined pipelines
+        if let Some(steps) = self.pipelines.get(name) {
+            return Some(steps.clone());
+        }
+
+        // Then check built-in pipelines
+        builtin_pipeline(name)
+    }
+
+    /// Resolve a HookDef, expanding pipeline references
+    pub fn resolve_hook(&self, hook: &HookDef) -> Option<HookDef> {
+        match hook {
+            HookDef::PipelineRef { use_pipeline } => {
+                self.get_pipeline(use_pipeline)
+                    .map(|steps| HookDef::Pipeline { pipeline: steps })
+            }
+            other => Some(other.clone()),
+        }
+    }
+
     /// Check if user has defined a custom complete hook (v1 compat)
     pub fn has_custom_complete_hook(&self) -> bool {
         self.hooks.complete.is_some()
+    }
+}
+
+/// Built-in predefined pipelines
+fn builtin_pipeline(name: &str) -> Option<Vec<Step>> {
+    match name {
+        "code-review" => Some(vec![
+            Step::Agent {
+                agent: AgentStep::new("Quick lint check for task ${task}. Report any obvious issues.")
+                    .with_model("haiku")
+                    .with_print()
+                    .with_max_turns(5)
+                    .with_tools(vec!["Read".into(), "Grep".into(), "Glob".into()])
+                    .with_no_session_persistence()
+                    .with_include_partial_messages(),
+            },
+            Step::Agent {
+                agent: AgentStep::new(
+                    "Deep code review for task ${task}. Check for bugs, security issues, and suggest improvements.",
+                )
+                .with_model("sonnet")
+                .with_print()
+                .with_max_turns(10)
+                .with_tools(vec!["Read".into(), "Grep".into(), "Glob".into()])
+                .with_no_session_persistence()
+                .with_include_partial_messages(),
+            },
+        ]),
+        "merge" => Some(vec![Step::Agent {
+            agent: AgentStep::new(
+                "Merge task ${task}. Rebase ${branch} onto main, resolve conflicts if any, then squash merge.",
+            )
+            .with_model("sonnet")
+            .with_print()
+            .with_max_turns(20)
+            .with_tools(vec!["Bash".into(), "Read".into(), "Edit".into()])
+            .with_allowed_tools(vec!["Bash(git *)".into()])
+            .with_append_system_prompt(
+                "You are a git expert. Steps: 1) git fetch origin, 2) git rebase origin/main, 3) resolve conflicts if any, 4) git checkout main, 5) git merge --squash ${branch}, 6) git commit. Report any issues.",
+            )
+            .with_no_session_persistence()
+            .with_include_partial_messages(),
+        }]),
+        "refactor" => Some(vec![
+            Step::Agent {
+                agent: AgentStep::new(
+                    "Analyze code structure for refactoring task ${task}. Identify patterns and issues.",
+                )
+                .with_model("haiku")
+                .with_print()
+                .with_max_turns(5)
+                .with_tools(vec!["Read".into(), "Grep".into(), "Glob".into()])
+                .with_no_session_persistence()
+                .with_include_partial_messages(),
+            },
+            Step::Agent {
+                agent: AgentStep::new(
+                    "Apply refactoring based on the analysis. Make changes incrementally and verify each step.",
+                )
+                .with_model("sonnet")
+                .with_print()
+                .with_max_turns(20)
+                .with_tools(vec!["Read".into(), "Edit".into(), "Bash".into()])
+                .with_no_session_persistence()
+                .with_include_partial_messages(),
+            },
+        ]),
+        _ => None,
     }
 }
 
@@ -473,15 +478,10 @@ mod tests {
         let json = r#"{"type": "agent", "prompt": "Do something"}"#;
         let step: Step = serde_json::from_str(json).unwrap();
         match step {
-            Step::Agent {
-                interactive,
-                model,
-                prompt,
-                ..
-            } => {
-                assert!(!interactive);
-                assert_eq!(model, "sonnet"); // default
-                assert_eq!(prompt, "Do something");
+            Step::Agent { agent } => {
+                assert!(!agent.print); // default is REPL mode
+                assert_eq!(agent.model, "sonnet"); // default
+                assert_eq!(agent.prompt, "Do something");
             }
             _ => panic!("Expected Agent step"),
         }
@@ -491,7 +491,7 @@ mod tests {
     fn test_step_agent_full() {
         let json = r#"{
             "type": "agent",
-            "interactive": true,
+            "print": true,
             "model": "opus",
             "prompt": "Review code",
             "tools": ["Read", "Edit"],
@@ -502,25 +502,15 @@ mod tests {
         }"#;
         let step: Step = serde_json::from_str(json).unwrap();
         match step {
-            Step::Agent {
-                interactive,
-                model,
-                prompt,
-                tools,
-                allowed_tools,
-                skip_permissions,
-                output_format,
-                window,
-                ..
-            } => {
-                assert!(interactive);
-                assert_eq!(model, "opus");
-                assert_eq!(prompt, "Review code");
-                assert_eq!(tools, vec!["Read", "Edit"]);
-                assert_eq!(allowed_tools, vec!["Bash(npm *)"]);
-                assert!(skip_permissions);
-                assert_eq!(output_format, "stream-json");
-                assert_eq!(window, Some("new".to_string()));
+            Step::Agent { agent } => {
+                assert!(agent.print);
+                assert_eq!(agent.model, "opus");
+                assert_eq!(agent.prompt, "Review code");
+                assert_eq!(agent.tools, vec!["Read", "Edit"]);
+                assert_eq!(agent.allowed_tools, vec!["Bash(npm *)"]);
+                assert!(agent.skip_permissions);
+                assert_eq!(agent.output_format, "stream-json");
+                assert_eq!(agent.window, Some("new".to_string()));
             }
             _ => panic!("Expected Agent step"),
         }
@@ -626,5 +616,162 @@ mod tests {
         let result = WtConfig::from_str(jsonc);
         // If this fails, we might need a different JSONC parser
         assert!(result.is_err() || result.is_ok());
+    }
+
+    #[test]
+    fn test_step_agent_all_new_params() {
+        let json = r#"{
+            "type": "agent",
+            "prompt": "test",
+            "include_partial_messages": true,
+            "json_schema": "{\"type\":\"object\"}",
+            "session_id": "abc-123",
+            "fork_session": true,
+            "no_session_persistence": true,
+            "fallback_model": "haiku",
+            "allow_skip_permissions": true,
+            "permission_prompt_tool": "mcp_auth",
+            "agents": {"reviewer": {"description": "Review", "prompt": "You are a reviewer"}},
+            "agent": "reviewer",
+            "strict_mcp_config": true,
+            "debug": "api,hooks",
+            "settings": "./settings.json",
+            "setting_sources": "user,project",
+            "plugin_dir": ["./plugins"],
+            "betas": ["interleaved-thinking"],
+            "chrome": true,
+            "ide": true,
+            "disable_slash_commands": true
+        }"#;
+        let step: Step = serde_json::from_str(json).unwrap();
+        match step {
+            Step::Agent { agent } => {
+                assert!(agent.include_partial_messages);
+                assert_eq!(agent.json_schema, Some("{\"type\":\"object\"}".to_string()));
+                assert_eq!(agent.session_id, Some("abc-123".to_string()));
+                assert!(agent.fork_session);
+                assert!(agent.no_session_persistence);
+                assert_eq!(agent.fallback_model, Some("haiku".to_string()));
+                assert!(agent.allow_skip_permissions);
+                assert_eq!(agent.permission_prompt_tool, Some("mcp_auth".to_string()));
+                assert!(agent.agents.is_some());
+                assert_eq!(agent.agent, Some("reviewer".to_string()));
+                assert!(agent.strict_mcp_config);
+                assert_eq!(agent.debug, Some("api,hooks".to_string()));
+                assert_eq!(agent.settings, Some("./settings.json".to_string()));
+                assert_eq!(agent.setting_sources, Some("user,project".to_string()));
+                assert_eq!(agent.plugin_dir, vec!["./plugins"]);
+                assert_eq!(agent.betas, vec!["interleaved-thinking"]);
+                assert_eq!(agent.chrome, Some(true));
+                assert!(agent.ide);
+                assert!(agent.disable_slash_commands);
+            }
+            _ => panic!("Expected Agent step"),
+        }
+    }
+
+    #[test]
+    fn test_step_agent_chrome_false() {
+        let json = r#"{"type": "agent", "prompt": "test", "chrome": false}"#;
+        let step: Step = serde_json::from_str(json).unwrap();
+        match step {
+            Step::Agent { agent } => {
+                assert_eq!(agent.chrome, Some(false));
+            }
+            _ => panic!("Expected Agent step"),
+        }
+    }
+
+    #[test]
+    fn test_builtin_pipeline_code_review() {
+        let config = WtConfig::default();
+        let pipeline = config.get_pipeline("code-review");
+        assert!(pipeline.is_some());
+        let steps = pipeline.unwrap();
+        assert_eq!(steps.len(), 2);
+    }
+
+    #[test]
+    fn test_builtin_pipeline_merge() {
+        let config = WtConfig::default();
+        let pipeline = config.get_pipeline("merge");
+        assert!(pipeline.is_some());
+        let steps = pipeline.unwrap();
+        assert_eq!(steps.len(), 1);
+    }
+
+    #[test]
+    fn test_builtin_pipeline_refactor() {
+        let config = WtConfig::default();
+        let pipeline = config.get_pipeline("refactor");
+        assert!(pipeline.is_some());
+        let steps = pipeline.unwrap();
+        assert_eq!(steps.len(), 2);
+    }
+
+    #[test]
+    fn test_builtin_pipeline_unknown() {
+        let config = WtConfig::default();
+        let pipeline = config.get_pipeline("unknown");
+        assert!(pipeline.is_none());
+    }
+
+    #[test]
+    fn test_hook_def_pipeline_ref() {
+        let json = r#"{"use_pipeline": "code-review"}"#;
+        let hook: HookDef = serde_json::from_str(json).unwrap();
+        match hook {
+            HookDef::PipelineRef { use_pipeline } => {
+                assert_eq!(use_pipeline, "code-review");
+            }
+            _ => panic!("Expected PipelineRef"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_pipeline_ref() {
+        let config = WtConfig::default();
+        let hook = HookDef::PipelineRef {
+            use_pipeline: "code-review".to_string(),
+        };
+        let resolved = config.resolve_hook(&hook);
+        assert!(resolved.is_some());
+        match resolved.unwrap() {
+            HookDef::Pipeline { pipeline } => {
+                assert_eq!(pipeline.len(), 2);
+            }
+            _ => panic!("Expected Pipeline"),
+        }
+    }
+
+    #[test]
+    fn test_user_defined_pipeline() {
+        let json = r#"{
+            "pipelines": {
+                "my-review": [
+                    {"type": "agent", "prompt": "custom review"}
+                ]
+            }
+        }"#;
+        let config = WtConfig::from_str(json).unwrap();
+        let pipeline = config.get_pipeline("my-review");
+        assert!(pipeline.is_some());
+        assert_eq!(pipeline.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_user_pipeline_overrides_builtin() {
+        let json = r#"{
+            "pipelines": {
+                "code-review": [
+                    {"type": "agent", "prompt": "my custom review"}
+                ]
+            }
+        }"#;
+        let config = WtConfig::from_str(json).unwrap();
+        let pipeline = config.get_pipeline("code-review");
+        assert!(pipeline.is_some());
+        // User-defined should override builtin (only 1 step vs 2)
+        assert_eq!(pipeline.unwrap().len(), 1);
     }
 }

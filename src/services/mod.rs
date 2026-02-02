@@ -1,3 +1,4 @@
+pub mod claude;
 pub mod command;
 pub mod config_ops;
 pub mod dependency;

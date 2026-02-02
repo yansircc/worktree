@@ -185,6 +185,134 @@ Phase:
 
 Pipeline 模式支持多 agent stream-json 串联。
 
+#### 可用变量
+
+在 script/agent step 中可使用 `${变量名}` 语法，自动展开：
+
+| 变量 | 说明 | 环境变量 |
+|------|------|----------|
+| `${task}` | 任务名 | `WT_TASK` |
+| `${branch}` | 分支名 | `WT_BRANCH` |
+| `${worktree}` | worktree 绝对路径 | `WT_WORKTREE` |
+| `${repo_root}` | 主仓库绝对路径 | `WT_REPO_ROOT` |
+| `${session}` | multiplexer session 名 | `WT_SESSION` |
+| `${window}` | multiplexer window 名 | `WT_WINDOW` |
+| `${phase}` | 当前阶段 | `WT_PHASE` |
+
+示例：
+```jsonc
+{ "type": "script", "run": "cp ${repo_root}/.env .env" }
+```
+
+#### Agent Step 完整参数
+
+与 Claude CLI 官方参数一一对应：
+
+| 类别 | 参数 | CLI Flag | 说明 |
+|------|------|----------|------|
+| **基础** | `print` | `-p` | 非交互模式（默认 false = REPL 模式） |
+| | `model` | `--model` | haiku/sonnet/opus 或完整模型名 |
+| | `prompt` | positional | 提示文本 |
+| **System Prompt** | `system_prompt` | `--system-prompt` | 替换整个系统提示 |
+| | `system_prompt_file` | `--system-prompt-file` | 从文件加载系统提示 |
+| | `append_system_prompt` | `--append-system-prompt` | 追加到系统提示 |
+| | `append_system_prompt_file` | `--append-system-prompt-file` | 从文件追加系统提示 |
+| **Tools** | `tools` | `--tools` | 限制可用工具 |
+| | `allowed_tools` | `--allowedTools` | 自动批准的工具 |
+| | `disallowed_tools` | `--disallowedTools` | 禁用的工具 |
+| **Permissions** | `skip_permissions` | `--dangerously-skip-permissions` | 跳过权限提示 |
+| | `allow_skip_permissions` | `--allow-dangerously-skip-permissions` | 允许但不激活 |
+| | `permission_mode` | `--permission-mode` | 权限模式 (plan 等) |
+| | `permission_prompt_tool` | `--permission-prompt-tool` | 权限提示 MCP 工具 |
+| **Limits** | `max_turns` | `--max-turns` | 最大轮数 |
+| | `max_budget_usd` | `--max-budget-usd` | 最大预算 (USD) |
+| **Session** | `continue_session` | `--continue` | 继续最近会话 |
+| | `resume` | `--resume` | 恢复指定会话 |
+| | `session_id` | `--session-id` | 指定会话 ID |
+| | `fork_session` | `--fork-session` | 分叉会话 |
+| | `no_session_persistence` | `--no-session-persistence` | 不保存会话 |
+| **I/O** | `output_format` | `--output-format` | text/json/stream-json |
+| | `input_format` | `--input-format` | text/stream-json |
+| | `include_partial_messages` | `--include-partial-messages` | 包含部分消息 |
+| | `json_schema` | `--json-schema` | 结构化输出 schema |
+| **Model** | `fallback_model` | `--fallback-model` | 备用模型 |
+| **Subagents** | `agents` | `--agents` | 自定义子代理 (JSON) |
+| | `agent` | `--agent` | 使用指定代理 |
+| **Other** | `add_dir` | `--add-dir` | 额外工作目录 |
+| | `mcp_config` | `--mcp-config` | MCP 配置 |
+| | `strict_mcp_config` | `--strict-mcp-config` | 仅用指定 MCP |
+| | `verbose` | `--verbose` | 详细日志 |
+| | `debug` | `--debug` | 调试模式 |
+| | `settings` | `--settings` | 设置文件 |
+| | `setting_sources` | `--setting-sources` | 设置来源 |
+| | `plugin_dir` | `--plugin-dir` | 插件目录 |
+| | `betas` | `--betas` | Beta 功能 |
+| **Browser/IDE** | `chrome` | `--chrome/--no-chrome` | Chrome 集成 |
+| | `ide` | `--ide` | IDE 连接 |
+| | `disable_slash_commands` | `--disable-slash-commands` | 禁用斜杠命令 |
+
+示例：
+```jsonc
+{
+  "type": "agent",
+  "print": true,
+  "prompt": "Review ${task}",
+  "output_format": "stream-json",
+  "include_partial_messages": true,
+  "max_turns": 10,
+  "json_schema": "{\"type\":\"object\",\"properties\":{\"approved\":{\"type\":\"boolean\"}}}"
+}
+```
+
+#### Pipeline 模式
+
+Pipeline 模式通过 `stream-json` 串联多个 agent：
+
+```jsonc
+{
+  "review": {
+    "pipeline": [
+      { "type": "agent", "model": "haiku", "print": true, "prompt": "快速 lint" },
+      { "type": "agent", "model": "sonnet", "print": true, "prompt": "深度审查" }
+    ]
+  }
+}
+```
+
+Pipeline 特性：
+- 自动设置 `--input-format stream-json` 和 `--output-format stream-json`
+- 默认启用 `--include-partial-messages`
+- 支持后台执行：`wt pipeline list/logs/kill`
+
+#### 预定义 Pipelines
+
+可使用内置或自定义预定义 pipeline：
+
+```jsonc
+{
+  // 引用预定义 pipeline
+  "hooks": {
+    "review": { "use_pipeline": "code-review" },
+    "complete": { "use_pipeline": "merge" }
+  },
+
+  // 自定义 pipeline（覆盖内置）
+  "pipelines": {
+    "my-review": [
+      { "type": "agent", "model": "opus", "print": true, "prompt": "..." }
+    ]
+  }
+}
+```
+
+**内置 Pipelines：**
+
+| 名称 | 说明 | Agents |
+|------|------|--------|
+| `code-review` | 代码审查 | haiku(快速检查) → sonnet(深度审查) |
+| `merge` | 合并分支 | sonnet(rebase + squash merge) |
+| `refactor` | 重构代码 | haiku(分析) → sonnet(实施) |
+
 ### 任务索引
 
 所有命令支持用 1-based 索引代替任务名：

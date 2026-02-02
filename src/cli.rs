@@ -163,6 +163,12 @@ pub enum Commands {
         #[arg(long, default_value = "manual")]
         reason: String,
     },
+
+    /// Manage background pipelines
+    Pipeline {
+        #[command(subcommand)]
+        action: PipelineAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -190,4 +196,41 @@ pub enum CompletionsAction {
     },
     /// Install completions to shell config (auto-detects shell)
     Install,
+}
+
+#[derive(Subcommand)]
+pub enum PipelineAction {
+    /// List all background pipelines
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show output from a pipeline
+    Logs {
+        /// Pipeline ID
+        id: String,
+
+        /// Follow output (like tail -f)
+        #[arg(long, short)]
+        follow: bool,
+
+        /// Number of lines to show
+        #[arg(short = 'n', default_value = "50")]
+        lines: usize,
+    },
+
+    /// Kill a running pipeline
+    Kill {
+        /// Pipeline ID
+        id: String,
+    },
+
+    /// Clean up old pipeline records
+    Cleanup {
+        /// Max age in hours (default: 24)
+        #[arg(long, default_value = "24")]
+        max_age: u64,
+    },
 }
