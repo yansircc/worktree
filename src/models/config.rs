@@ -32,19 +32,86 @@ pub enum Step {
 
     /// Run a Claude agent
     Agent {
+        // === Basic ===
+        /// Interactive mode (REPL) vs print mode (-p)
         #[serde(default)]
         interactive: bool,
+        /// Model: haiku, sonnet, opus, or full model name
         #[serde(default = "default_model")]
         model: String,
+        /// Prompt text or @file reference
         prompt: String,
+
+        // === System Prompt ===
+        /// Replace entire system prompt (--system-prompt)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system_prompt: Option<String>,
+        /// Load system prompt from file (--system-prompt-file)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system_prompt_file: Option<String>,
+        /// Append to system prompt (--append-system-prompt)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        append_system_prompt: Option<String>,
+        /// Append system prompt from file (--append-system-prompt-file)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        append_system_prompt_file: Option<String>,
+
+        // === Tools ===
+        /// Restrict available tools (--tools)
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tools: Vec<String>,
+        /// Auto-approve tools (--allowedTools)
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         allowed_tools: Vec<String>,
+        /// Disable tools (--disallowedTools)
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        disallowed_tools: Vec<String>,
+
+        // === Permissions ===
+        /// Skip all permission prompts (--dangerously-skip-permissions)
         #[serde(default)]
         skip_permissions: bool,
+        /// Permission mode: plan, etc. (--permission-mode)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        permission_mode: Option<String>,
+
+        // === Limits ===
+        /// Max agentic turns (--max-turns)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_turns: Option<u32>,
+        /// Max budget in USD (--max-budget-usd)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_budget_usd: Option<f64>,
+
+        // === Session ===
+        /// Continue most recent conversation (--continue)
+        #[serde(default, rename = "continue")]
+        continue_session: bool,
+        /// Resume specific session by ID or name (--resume)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resume: Option<String>,
+
+        // === Input/Output ===
+        /// Output format: text, json, stream-json (--output-format)
         #[serde(default = "default_output_format")]
         output_format: String,
+        /// Input format: text, stream-json (--input-format)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input_format: Option<String>,
+
+        // === Other ===
+        /// Additional working directories (--add-dir)
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        add_dir: Vec<String>,
+        /// MCP config file or JSON (--mcp-config)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mcp_config: Option<String>,
+        /// Enable verbose logging (--verbose)
+        #[serde(default)]
+        verbose: bool,
+
+        // === Window (for interactive mode) ===
+        /// Window mode: main, new
         #[serde(default, skip_serializing_if = "Option::is_none")]
         window: Option<String>,
     },
@@ -444,6 +511,7 @@ mod tests {
                 skip_permissions,
                 output_format,
                 window,
+                ..
             } => {
                 assert!(interactive);
                 assert_eq!(model, "opus");
