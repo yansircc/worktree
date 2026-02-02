@@ -278,15 +278,18 @@ impl App {
         Ok(())
     }
 
-    /// Mark selected task as merged (closes tmux window, keeps worktree for review)
+    /// Mark selected task as merged (closes multiplexer window, keeps worktree for review)
     pub fn mark_merged(&mut self) -> Result<()> {
         if let Some(task) = self.selected_task() {
             if task.status == TaskStatus::Done {
                 let name = task.name.clone();
 
-                // Close tmux window if still alive
-                if let (Some(session), Some(window)) = (&task.tmux_session, &task.tmux_window) {
-                    tmux::kill_window_if_exists(session, window).ok();
+                // Close multiplexer window if still alive
+                if let (Some(mux_type), Some(session), Some(window)) =
+                    (task.multiplexer, &task.session_name, &task.window_name)
+                {
+                    let mux = create_multiplexer(mux_type);
+                    mux.kill_window_if_exists(session, window).ok();
                 }
 
                 let mut store = TaskStore::load()?;

@@ -2,7 +2,8 @@ use std::path::Path;
 
 use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, tmux};
+use crate::services::git;
+use crate::services::multiplexer::create_multiplexer;
 
 const MERGE_PROMPT_FILE: &str = ".wt/prompts/merge.md";
 
@@ -51,9 +52,10 @@ pub fn execute(task_ref: String, agent_mode: bool) -> Result<()> {
     // Get main repo root
     let repo_root = git::get_repo_root()?;
 
-    // Close original tmux window if exists
-    if let Err(e) = tmux::kill_window_if_exists(&instance.tmux_session, &instance.tmux_window) {
-        eprintln!("Warning: Failed to close tmux window: {}", e);
+    // Close original multiplexer window if exists
+    let mux = create_multiplexer(instance.multiplexer_type());
+    if let Err(e) = mux.kill_window_if_exists(&instance.session_name, &instance.window_name) {
+        eprintln!("Warning: Failed to close {} window: {}", instance.multiplexer, e);
     }
 
     // Check if prompt file exists
@@ -86,16 +88,19 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Run Claude in interactive TUI mode within a tmux window
+/// Run Claude in interactive TUI mode within a multiplexer window
 fn run_claude_interactive(
     config: &WtConfig,
     repo_root: &str,
     task_name: &str,
     instruction: &str,
 ) -> Result<()> {
-    // Ensure tmux session exists
-    if !tmux::session_exists(&config.tmux_session) {
-        tmux::create_session(&config.tmux_session)?;
+    let mux = config.create_multiplexer();
+    let session = &config.session_name;
+
+    // Ensure session exists
+    if !mux.session_exists(session) {
+        mux.create_session(session)?;
     }
 
     let window_name = format!("merge-{}", task_name);
@@ -106,11 +111,11 @@ fn run_claude_interactive(
         config.claude_command, MERGE_PROMPT_FILE, shell_escape(instruction)
     );
 
-    tmux::create_window(&config.tmux_session, &window_name, repo_root, &claude_cmd)?;
+    mux.create_window(session, &window_name, repo_root, &claude_cmd)?;
 
-    println!("Started merge in tmux window: {}:{}", config.tmux_session, window_name);
+    println!("Started merge in {} window: {}:{}", config.multiplexer_type(), session, window_name);
     println!("Claude will execute: rebase -> squash merge -> commit -> wt archive");
-    println!("\nSwitch to tmux to observe the process.");
+    println!("\nSwitch to {} to observe the process.", config.multiplexer_type());
 
     Ok(())
 }

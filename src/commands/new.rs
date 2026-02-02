@@ -10,7 +10,10 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
 
-    // Generate or validate name first (fast validation before expensive checks)
+    // Check multiplexer is installed first (fail fast)
+    check_multiplexer_installed(config.multiplexer_type())?;
+
+    // Generate or validate name
     let name = match name {
         Some(n) => {
             TaskStore::validate_task_name(&n)?;
@@ -64,9 +67,6 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
 
     // Create symlink for status.json so wt commands work from worktree
     initializer.link_status_file()?;
-
-    // Check multiplexer is installed before attempting to use it
-    check_multiplexer_installed(config.multiplexer_type())?;
 
     // Create multiplexer session if needed
     let mux = config.create_multiplexer();

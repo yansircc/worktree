@@ -18,8 +18,6 @@ mod validate;
 mod list;
 #[path = "cli/next.rs"]
 mod next;
-#[path = "cli/start.rs"]
-mod start;
 #[path = "cli/done.rs"]
 mod done;
 #[path = "cli/merge.rs"]
@@ -32,8 +30,6 @@ mod no_config;
 mod reset;
 #[path = "cli/status.rs"]
 mod status;
-#[path = "cli/new.rs"]
-mod new;
 #[path = "cli/archive.rs"]
 mod archive;
 #[path = "cli/scratch.rs"]

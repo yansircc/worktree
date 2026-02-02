@@ -86,7 +86,10 @@ fn execute_single(name: String) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
 
-    // Check task exists (fast validation first)
+    // Check multiplexer is installed first (fail fast)
+    check_multiplexer_installed(config.multiplexer_type())?;
+
+    // Check task exists
     store.ensure_exists(&name)?;
 
     // Check status from StatusStore
@@ -121,9 +124,6 @@ fn execute_single(name: String) -> Result<()> {
     for file in &copied {
         println!("  Copied: {}", file);
     }
-
-    // Check multiplexer is installed before attempting to use it
-    check_multiplexer_installed(config.multiplexer_type())?;
 
     // Create multiplexer session if needed
     let mux = config.create_multiplexer();
