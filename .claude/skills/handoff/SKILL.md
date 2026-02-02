@@ -1,3 +1,8 @@
+---
+name: handoff
+description: 执行 Session Handoff，为下一个 session 做好交接准备
+---
+
 执行 Session Handoff，为下一个 session 做好交接准备：
 
 1. **整理 specs**
