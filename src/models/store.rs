@@ -20,7 +20,10 @@ impl TaskStore {
 
         let dir = Path::new(TASKS_DIR);
         if !dir.exists() {
-            return Ok(Self { tasks: HashMap::new(), status });
+            return Ok(Self {
+                tasks: HashMap::new(),
+                status,
+            });
         }
 
         let mut tasks = HashMap::new();
@@ -72,16 +75,15 @@ impl TaskStore {
         }
 
         let rest = &content[3..];
-        let end = rest.find("---").ok_or_else(|| {
-            WtError::InvalidTaskFile("Missing frontmatter end (---)".to_string())
-        })?;
+        let end = rest
+            .find("---")
+            .ok_or_else(|| WtError::InvalidTaskFile("Missing frontmatter end (---)".to_string()))?;
 
         let yaml = &rest[..end];
         let body = rest[end + 3..].trim();
 
-        let frontmatter: TaskFrontmatter = serde_yaml::from_str(yaml).map_err(|e| {
-            WtError::InvalidTaskFile(format!("Invalid frontmatter YAML: {}", e))
-        })?;
+        let frontmatter: TaskFrontmatter = serde_yaml::from_str(yaml)
+            .map_err(|e| WtError::InvalidTaskFile(format!("Invalid frontmatter YAML: {}", e)))?;
 
         Ok(Task {
             frontmatter,
@@ -568,9 +570,15 @@ mod tests {
     #[test]
     fn test_detect_cycle_no_cycle() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec![]));
-        store.tasks.insert("b".to_string(), create_test_task("b", vec!["a"]));
-        store.tasks.insert("c".to_string(), create_test_task("c", vec!["b"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec![]));
+        store
+            .tasks
+            .insert("b".to_string(), create_test_task("b", vec!["a"]));
+        store
+            .tasks
+            .insert("c".to_string(), create_test_task("c", vec!["b"]));
 
         assert!(store.detect_cycle("a").is_none());
         assert!(store.detect_cycle("b").is_none());
@@ -580,8 +588,12 @@ mod tests {
     #[test]
     fn test_detect_cycle_simple_cycle() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec!["b"]));
-        store.tasks.insert("b".to_string(), create_test_task("b", vec!["a"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec!["b"]));
+        store
+            .tasks
+            .insert("b".to_string(), create_test_task("b", vec!["a"]));
 
         let cycle = store.detect_cycle("a");
         assert!(cycle.is_some());
@@ -593,7 +605,9 @@ mod tests {
     #[test]
     fn test_detect_cycle_self_reference() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec!["a"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec!["a"]));
 
         let cycle = store.detect_cycle("a");
         assert!(cycle.is_some());
@@ -602,10 +616,18 @@ mod tests {
     #[test]
     fn test_detect_cycle_long_chain() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec!["b"]));
-        store.tasks.insert("b".to_string(), create_test_task("b", vec!["c"]));
-        store.tasks.insert("c".to_string(), create_test_task("c", vec!["d"]));
-        store.tasks.insert("d".to_string(), create_test_task("d", vec!["a"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec!["b"]));
+        store
+            .tasks
+            .insert("b".to_string(), create_test_task("b", vec!["c"]));
+        store
+            .tasks
+            .insert("c".to_string(), create_test_task("c", vec!["d"]));
+        store
+            .tasks
+            .insert("d".to_string(), create_test_task("d", vec!["a"]));
 
         let cycle = store.detect_cycle("a");
         assert!(cycle.is_some());
@@ -615,10 +637,18 @@ mod tests {
     fn test_detect_cycle_diamond_no_cycle() {
         // a -> b, a -> c, b -> d, c -> d (diamond, no cycle)
         let mut store = TaskStore::default();
-        store.tasks.insert("d".to_string(), create_test_task("d", vec![]));
-        store.tasks.insert("b".to_string(), create_test_task("b", vec!["d"]));
-        store.tasks.insert("c".to_string(), create_test_task("c", vec!["d"]));
-        store.tasks.insert("a".to_string(), create_test_task("a", vec!["b", "c"]));
+        store
+            .tasks
+            .insert("d".to_string(), create_test_task("d", vec![]));
+        store
+            .tasks
+            .insert("b".to_string(), create_test_task("b", vec!["d"]));
+        store
+            .tasks
+            .insert("c".to_string(), create_test_task("c", vec!["d"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec!["b", "c"]));
 
         assert!(store.detect_cycle("a").is_none());
     }
@@ -626,7 +656,9 @@ mod tests {
     #[test]
     fn test_detect_cycle_missing_dependency() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec!["nonexistent"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec!["nonexistent"]));
 
         // Should not panic, should return None (no cycle, just missing dep)
         assert!(store.detect_cycle("a").is_none());
@@ -637,23 +669,35 @@ mod tests {
     #[test]
     fn test_validate_all_valid() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec![]));
-        store.tasks.insert("b".to_string(), create_test_task("b", vec!["a"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec![]));
+        store
+            .tasks
+            .insert("b".to_string(), create_test_task("b", vec!["a"]));
 
         let errors = store.validate();
         // Will have name mismatch errors because file_path is "a.md" but we need full path
         // Let's filter to just dependency errors
-        let dep_errors: Vec<_> = errors.iter().filter(|(_, e)| e.contains("depends")).collect();
+        let dep_errors: Vec<_> = errors
+            .iter()
+            .filter(|(_, e)| e.contains("depends"))
+            .collect();
         assert!(dep_errors.is_empty());
     }
 
     #[test]
     fn test_validate_missing_dependency() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec!["missing"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec!["missing"]));
 
         let errors = store.validate();
-        let dep_errors: Vec<_> = errors.iter().filter(|(_, e)| e.contains("depends")).collect();
+        let dep_errors: Vec<_> = errors
+            .iter()
+            .filter(|(_, e)| e.contains("depends"))
+            .collect();
         assert_eq!(dep_errors.len(), 1);
         assert!(dep_errors[0].1.contains("missing"));
     }
@@ -661,11 +705,18 @@ mod tests {
     #[test]
     fn test_validate_circular_dependency() {
         let mut store = TaskStore::default();
-        store.tasks.insert("a".to_string(), create_test_task("a", vec!["b"]));
-        store.tasks.insert("b".to_string(), create_test_task("b", vec!["a"]));
+        store
+            .tasks
+            .insert("a".to_string(), create_test_task("a", vec!["b"]));
+        store
+            .tasks
+            .insert("b".to_string(), create_test_task("b", vec!["a"]));
 
         let errors = store.validate();
-        let cycle_errors: Vec<_> = errors.iter().filter(|(_, e)| e.contains("circular")).collect();
+        let cycle_errors: Vec<_> = errors
+            .iter()
+            .filter(|(_, e)| e.contains("circular"))
+            .collect();
         assert!(!cycle_errors.is_empty());
     }
 
@@ -674,9 +725,15 @@ mod tests {
     #[test]
     fn test_list_sorted() {
         let mut store = TaskStore::default();
-        store.tasks.insert("zebra".to_string(), create_test_task("zebra", vec![]));
-        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
-        store.tasks.insert("middle".to_string(), create_test_task("middle", vec![]));
+        store
+            .tasks
+            .insert("zebra".to_string(), create_test_task("zebra", vec![]));
+        store
+            .tasks
+            .insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store
+            .tasks
+            .insert("middle".to_string(), create_test_task("middle", vec![]));
 
         let list = store.list();
         assert_eq!(list[0].name(), "alpha");
@@ -754,7 +811,9 @@ mod tests {
     #[test]
     fn test_ensure_exists_found() {
         let mut store = TaskStore::default();
-        store.tasks.insert("test".to_string(), create_test_task("test", vec![]));
+        store
+            .tasks
+            .insert("test".to_string(), create_test_task("test", vec![]));
 
         let result = store.ensure_exists("test");
         assert!(result.is_ok());
@@ -800,8 +859,12 @@ mod tests {
     #[test]
     fn test_resolve_task_ref_by_name() {
         let mut store = TaskStore::default();
-        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
-        store.tasks.insert("beta".to_string(), create_test_task("beta", vec![]));
+        store
+            .tasks
+            .insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store
+            .tasks
+            .insert("beta".to_string(), create_test_task("beta", vec![]));
 
         let result = store.resolve_task_ref("alpha");
         assert!(result.is_ok());
@@ -811,9 +874,15 @@ mod tests {
     #[test]
     fn test_resolve_task_ref_by_index() {
         let mut store = TaskStore::default();
-        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
-        store.tasks.insert("beta".to_string(), create_test_task("beta", vec![]));
-        store.tasks.insert("gamma".to_string(), create_test_task("gamma", vec![]));
+        store
+            .tasks
+            .insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store
+            .tasks
+            .insert("beta".to_string(), create_test_task("beta", vec![]));
+        store
+            .tasks
+            .insert("gamma".to_string(), create_test_task("gamma", vec![]));
 
         // Tasks are sorted alphabetically: alpha=1, beta=2, gamma=3
         assert_eq!(store.resolve_task_ref("1").unwrap(), "alpha");
@@ -825,9 +894,15 @@ mod tests {
     fn test_resolve_task_ref_name_priority_over_index() {
         let mut store = TaskStore::default();
         // Create a task named "2" - name should take priority over index
-        store.tasks.insert("1".to_string(), create_test_task("1", vec![]));
-        store.tasks.insert("2".to_string(), create_test_task("2", vec![]));
-        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store
+            .tasks
+            .insert("1".to_string(), create_test_task("1", vec![]));
+        store
+            .tasks
+            .insert("2".to_string(), create_test_task("2", vec![]));
+        store
+            .tasks
+            .insert("alpha".to_string(), create_test_task("alpha", vec![]));
 
         // "2" matches task name, not index 2 (which would be "2" anyway in this case)
         // But let's verify "1" works - sorted: 1, 2, alpha
@@ -841,7 +916,9 @@ mod tests {
     #[test]
     fn test_resolve_task_ref_index_zero_error() {
         let mut store = TaskStore::default();
-        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store
+            .tasks
+            .insert("alpha".to_string(), create_test_task("alpha", vec![]));
 
         let result = store.resolve_task_ref("0");
         assert!(result.is_err());
@@ -853,8 +930,12 @@ mod tests {
     #[test]
     fn test_resolve_task_ref_index_out_of_range() {
         let mut store = TaskStore::default();
-        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
-        store.tasks.insert("beta".to_string(), create_test_task("beta", vec![]));
+        store
+            .tasks
+            .insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store
+            .tasks
+            .insert("beta".to_string(), create_test_task("beta", vec![]));
 
         let result = store.resolve_task_ref("99");
         assert!(result.is_err());
@@ -866,7 +947,9 @@ mod tests {
     #[test]
     fn test_resolve_task_ref_not_found() {
         let mut store = TaskStore::default();
-        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store
+            .tasks
+            .insert("alpha".to_string(), create_test_task("alpha", vec![]));
 
         let result = store.resolve_task_ref("nonexistent");
         assert!(result.is_err());

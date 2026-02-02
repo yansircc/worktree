@@ -22,10 +22,7 @@ fn test_next_single_ready() {
 
 #[test]
 fn test_next_multiple_ready() {
-    let dir = setup_repo_with_tasks(&[
-        ("auth", &[], "pending"),
-        ("database", &[], "pending"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("auth", &[], "pending"), ("database", &[], "pending")]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["next"]);
 
@@ -36,10 +33,7 @@ fn test_next_multiple_ready() {
 
 #[test]
 fn test_next_blocked_by_pending() {
-    let dir = setup_repo_with_tasks(&[
-        ("auth", &[], "pending"),
-        ("api", &["auth"], "pending"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("auth", &[], "pending"), ("api", &["auth"], "pending")]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["next"]);
 
@@ -51,10 +45,7 @@ fn test_next_blocked_by_pending() {
 
 #[test]
 fn test_next_unblocked_by_completed() {
-    let dir = setup_repo_with_tasks(&[
-        ("auth", &[], "completed"),
-        ("api", &["auth"], "pending"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("auth", &[], "completed"), ("api", &["auth"], "pending")]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["next"]);
 
@@ -132,10 +123,7 @@ fn test_next_json_ready() {
 
 #[test]
 fn test_next_json_blocked() {
-    let dir = setup_repo_with_tasks(&[
-        ("auth", &[], "pending"),
-        ("api", &["auth"], "pending"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("auth", &[], "pending"), ("api", &["auth"], "pending")]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["next", "--json"]);
 
@@ -143,7 +131,10 @@ fn test_next_json_blocked() {
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(json["blocked"][0]["name"], "api");
-    assert!(json["blocked"][0]["waiting_for"].as_array().unwrap().contains(&serde_json::json!("auth")));
+    assert!(json["blocked"][0]["waiting_for"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("auth")));
 }
 
 #[test]

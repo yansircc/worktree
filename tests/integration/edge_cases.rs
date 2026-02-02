@@ -71,11 +71,7 @@ fn test_corrupted_status_json_reports_error() {
     let dir = setup_test_repo();
 
     // Create corrupted status.json
-    fs::write(
-        dir.path().join(".wt/status.json"),
-        "{ invalid json content",
-    )
-    .unwrap();
+    fs::write(dir.path().join(".wt/status.json"), "{ invalid json content").unwrap();
 
     // Commands should report clear error for corrupted JSON
     let (ok, _, stderr) = run_wt(dir.path(), &["list"]);
@@ -121,7 +117,10 @@ fn test_status_json_missing_tasks_field() {
     if ok {
         // If succeeds, should treat as no tasks
         assert!(
-            stdout.contains("No tasks") || stdout.contains("[]") || stdout.is_empty() || !stdout.contains("name"),
+            stdout.contains("No tasks")
+                || stdout.contains("[]")
+                || stdout.is_empty()
+                || !stdout.contains("name"),
             "Should handle missing tasks field: {}",
             stdout
         );
@@ -270,7 +269,10 @@ fn test_corrupted_config_yaml() {
     // Document actual behavior
     if !ok {
         assert!(
-            stderr.contains("config") || stderr.contains("YAML") || stderr.contains("parse") || stderr.contains("Invalid"),
+            stderr.contains("config")
+                || stderr.contains("YAML")
+                || stderr.contains("parse")
+                || stderr.contains("Invalid"),
             "Should report config parse error: {}",
             stderr
         );

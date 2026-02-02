@@ -24,7 +24,7 @@ pub fn running_icon(mux_alive: Option<bool>, active: Option<bool>) -> (&'static 
     match mux_alive {
         Some(false) => ("⚠", YELLOW), // multiplexer window closed
         _ => match active {
-            Some(true) => ("●", GREEN),  // actively working
+            Some(true) => ("●", GREEN),   // actively working
             Some(false) => ("●", YELLOW), // idle
             None => ("●", GREEN),         // unknown, default to green
         },

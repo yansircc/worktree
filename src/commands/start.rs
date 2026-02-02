@@ -5,14 +5,18 @@ use uuid::Uuid;
 use crate::constants::branch_name;
 use crate::error::{Result, WtError};
 use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
-use crate::services::{dependency, git, multiplexer::check_multiplexer_installed, workspace::WorkspaceInitializer};
+use crate::services::{
+    dependency, git, multiplexer::check_multiplexer_installed, workspace::WorkspaceInitializer,
+};
 
 pub fn execute(task_ref: Option<String>, all: bool) -> Result<()> {
     if all {
         execute_all()
     } else {
         let task_ref = task_ref.ok_or_else(|| {
-            WtError::InvalidInput("Task name or index required (or use --all to start all ready tasks)".into())
+            WtError::InvalidInput(
+                "Task name or index required (or use --all to start all ready tasks)".into(),
+            )
         })?;
 
         // Resolve task reference (name or index) to actual name

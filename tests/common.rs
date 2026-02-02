@@ -96,10 +96,7 @@ pub fn create_task_file(dir: &Path, name: &str, depends: &[&str]) {
         )
     };
 
-    let content = format!(
-        "---\nname: {}\n{}---\n\nTask {}",
-        name, depends_yaml, name
-    );
+    let content = format!("---\nname: {}\n{}---\n\nTask {}", name, depends_yaml, name);
     fs::write(tasks_dir.join(format!("{}.md", name)), content).unwrap();
 }
 
@@ -141,7 +138,11 @@ pub fn set_task_status_with_instance(
         tasks_obj.insert(name.to_string(), task_data);
     }
 
-    fs::write(&status_file, serde_json::to_string_pretty(&status_data).unwrap()).unwrap();
+    fs::write(
+        &status_file,
+        serde_json::to_string_pretty(&status_data).unwrap(),
+    )
+    .unwrap();
 }
 
 /// Set scratch status for a task (scratch=true in status.json)
@@ -172,7 +173,11 @@ pub fn set_scratch_status(dir: &Path, name: &str, status: &str) {
         tasks_obj.insert(name.to_string(), task_data);
     }
 
-    fs::write(&status_file, serde_json::to_string_pretty(&status_data).unwrap()).unwrap();
+    fs::write(
+        &status_file,
+        serde_json::to_string_pretty(&status_data).unwrap(),
+    )
+    .unwrap();
 }
 
 /// Set scratch status with instance info
@@ -206,7 +211,11 @@ pub fn set_scratch_status_with_instance(
         tasks_obj.insert(name.to_string(), task_data);
     }
 
-    fs::write(&status_file, serde_json::to_string_pretty(&status_data).unwrap()).unwrap();
+    fs::write(
+        &status_file,
+        serde_json::to_string_pretty(&status_data).unwrap(),
+    )
+    .unwrap();
 }
 
 /// Parse status.json and return the Value
@@ -223,10 +232,7 @@ pub fn parse_status_json(dir: &Path) -> serde_json::Value {
 /// Get a specific task from status.json
 pub fn get_task_from_status(dir: &Path, name: &str) -> Option<serde_json::Value> {
     let status = parse_status_json(dir);
-    status
-        .get("tasks")
-        .and_then(|t| t.get(name))
-        .cloned()
+    status.get("tasks").and_then(|t| t.get(name)).cloned()
 }
 
 /// Check if task exists in status.json

@@ -98,7 +98,11 @@ fn print_json(ready: &[&Task], blocked: &[(&Task, Vec<String>)], index_map: &Has
     println!("{}", serde_json::to_string(&output).unwrap_or_default());
 }
 
-fn print_human(ready: &[&Task], blocked: &[(&Task, Vec<String>)], index_map: &HashMap<&str, usize>) {
+fn print_human(
+    ready: &[&Task],
+    blocked: &[(&Task, Vec<String>)],
+    index_map: &HashMap<&str, usize>,
+) {
     if ready.is_empty() && blocked.is_empty() {
         println!("No pending tasks.");
         return;
@@ -108,7 +112,12 @@ fn print_human(ready: &[&Task], blocked: &[(&Task, Vec<String>)], index_map: &Ha
         println!("Ready to start:");
         for task in ready {
             let idx = index_map[task.name()];
-            println!("  {} {} {}", colored_index(idx), TaskStatus::Pending.colored_icon(), task.name());
+            println!(
+                "  {} {} {}",
+                colored_index(idx),
+                TaskStatus::Pending.colored_icon(),
+                task.name()
+            );
         }
     }
 
@@ -119,7 +128,13 @@ fn print_human(ready: &[&Task], blocked: &[(&Task, Vec<String>)], index_map: &Ha
         println!("Blocked:");
         for (task, deps) in blocked {
             let idx = index_map[task.name()];
-            println!("  {} {} {} (waiting for: {})", colored_index(idx), TaskStatus::Pending.colored_icon(), task.name(), deps.join(", "));
+            println!(
+                "  {} {} {} (waiting for: {})",
+                colored_index(idx),
+                TaskStatus::Pending.colored_icon(),
+                task.name(),
+                deps.join(", ")
+            );
         }
     }
 }

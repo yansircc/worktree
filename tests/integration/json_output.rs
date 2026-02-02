@@ -83,14 +83,12 @@ fn test_list_json_schema_empty() {
 #[test]
 fn test_list_json_schema_with_tasks() {
     let mut store = TaskStore::default();
-    store.tasks.insert(
-        "auth".to_string(),
-        make_task("auth", vec![]),
-    );
-    store.tasks.insert(
-        "api".to_string(),
-        make_task("api", vec!["auth"]),
-    );
+    store
+        .tasks
+        .insert("auth".to_string(), make_task("auth", vec![]));
+    store
+        .tasks
+        .insert("api".to_string(), make_task("api", vec!["auth"]));
     store.set_status("auth", TaskStatus::Running);
 
     let tasks = store.list();
@@ -124,12 +122,10 @@ fn test_list_json_schema_with_tasks() {
 fn test_next_json_schema() {
     // Verify the expected structure of next --json output
     let ready = vec!["auth", "database"];
-    let blocked = vec![
-        serde_json::json!({
-            "name": "api",
-            "waiting_for": ["auth"]
-        }),
-    ];
+    let blocked = vec![serde_json::json!({
+        "name": "api",
+        "waiting_for": ["auth"]
+    })];
 
     let output = serde_json::json!({
         "ready": ready,
@@ -155,10 +151,9 @@ fn test_next_json_schema() {
 #[test]
 fn test_json_handles_unicode_names() {
     let mut store = TaskStore::default();
-    store.tasks.insert(
-        "任务".to_string(),
-        make_task("任务", vec![]),
-    );
+    store
+        .tasks
+        .insert("任务".to_string(), make_task("任务", vec![]));
 
     let tasks = store.list();
     let output = serde_json::json!({

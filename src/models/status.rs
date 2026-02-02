@@ -48,9 +48,8 @@ impl StatusStore {
             message: e.to_string(),
         })?;
 
-        serde_json::from_str(&content).map_err(|e| {
-            WtError::InvalidTaskFile(format!("Invalid status.json: {}", e))
-        })
+        serde_json::from_str(&content)
+            .map_err(|e| WtError::InvalidTaskFile(format!("Invalid status.json: {}", e)))
     }
 
     /// Save status to .wt/status.json (atomic write via temp file + rename)
@@ -68,9 +67,8 @@ impl StatusStore {
             }
         }
 
-        let content = serde_json::to_string_pretty(&self).map_err(|e| {
-            WtError::InvalidTaskFile(format!("Failed to serialize status: {}", e))
-        })?;
+        let content = serde_json::to_string_pretty(&self)
+            .map_err(|e| WtError::InvalidTaskFile(format!("Failed to serialize status: {}", e)))?;
 
         // Atomic write: write to temp file, then rename
         let temp_path = format!("{}.tmp", STATUS_FILE);
@@ -99,10 +97,7 @@ impl StatusStore {
 
     /// Set status for a task
     pub fn set_status(&mut self, name: &str, status: TaskStatus) {
-        self.tasks
-            .entry(name.to_string())
-            .or_default()
-            .status = status;
+        self.tasks.entry(name.to_string()).or_default().status = status;
     }
 
     /// Get instance for a task
@@ -112,12 +107,8 @@ impl StatusStore {
 
     /// Set instance for a task
     pub fn set_instance(&mut self, name: &str, instance: Option<Instance>) {
-        self.tasks
-            .entry(name.to_string())
-            .or_default()
-            .instance = instance;
+        self.tasks.entry(name.to_string()).or_default().instance = instance;
     }
-
 }
 
 #[cfg(test)]

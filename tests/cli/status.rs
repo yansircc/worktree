@@ -44,10 +44,7 @@ fn test_status_with_review_task() {
 
 #[test]
 fn test_status_ignores_pending_tasks() {
-    let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "pending"),
-        ("task2", &[], "running"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "pending"), ("task2", &[], "running")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["status", "--json"]);
 
@@ -62,10 +59,7 @@ fn test_status_ignores_pending_tasks() {
 
 #[test]
 fn test_status_ignores_completed_tasks() {
-    let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "completed"),
-        ("task2", &[], "running"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "completed"), ("task2", &[], "running")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["status", "--json"]);
 
@@ -96,10 +90,7 @@ fn test_status_json_output() {
 #[test]
 fn test_status_json_structure() {
     // Note: "running" tasks without a real tmux window get auto-marked as "review"
-    let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "review"),
-        ("task2", &[], "review"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "review"), ("task2", &[], "review")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["status", "--json"]);
 
@@ -119,10 +110,7 @@ fn test_status_json_structure() {
 #[test]
 fn test_status_summary_line() {
     // Note: "running" tasks without a real tmux window get auto-marked as "review"
-    let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "review"),
-        ("task2", &[], "review"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "review"), ("task2", &[], "review")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["status", "--json"]);
 
@@ -192,5 +180,8 @@ fn test_status_json_auto_marks_review_when_tmux_closed() {
 
     // Task should be auto-marked as review, tmux_alive is not included for review tasks
     assert_eq!(task.get("status").unwrap().as_str().unwrap(), "review");
-    assert!(task.get("tmux_alive").is_none(), "tmux_alive should not be included for review tasks");
+    assert!(
+        task.get("tmux_alive").is_none(),
+        "tmux_alive should not be included for review tasks"
+    );
 }

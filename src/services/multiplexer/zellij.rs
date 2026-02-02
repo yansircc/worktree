@@ -74,13 +74,17 @@ impl ZellijBackend {
 
         // Write to temp file with unique name
         let layout_path = Self::layout_path();
-        fs::write(&layout_path, &layout).map_err(|e| {
-            WtError::Zellij(format!("Failed to write layout file: {}", e))
-        })?;
+        fs::write(&layout_path, &layout)
+            .map_err(|e| WtError::Zellij(format!("Failed to write layout file: {}", e)))?;
 
         // Create session with layout
         let spawn_result = Command::new("zellij")
-            .args(["--session", session, "--new-session-with-layout", &layout_path])
+            .args([
+                "--session",
+                session,
+                "--new-session-with-layout",
+                &layout_path,
+            ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

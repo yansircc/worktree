@@ -15,6 +15,14 @@ pub struct GitMetrics {
     pub has_conflict: bool,
 }
 
+/// Result of a rebase operation
+#[derive(Debug, Clone, Serialize)]
+pub enum RebaseResult {
+    Success,
+    AlreadyUpToDate,
+    Conflicts,
+}
+
 /// Get git statistics for a worktree
 pub fn get_worktree_metrics(worktree_path: &str) -> Option<GitMetrics> {
     let path = Path::new(worktree_path);
@@ -59,18 +67,23 @@ pub fn delete_branch_in(branch: &str, cwd: &str) -> Result<()> {
 
 /// Get the main repository root path (works from worktree).
 pub fn get_repo_root() -> Result<String> {
-    let git_dir = CommandRunner::git()
-        .output(&["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+    let git_dir = CommandRunner::git().output(&[
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+    ])?;
     let git_dir = git_dir.trim();
     // Strip /.git suffix
-    Ok(git_dir
-        .strip_suffix("/.git")
-        .unwrap_or(git_dir)
-        .to_string())
+    Ok(git_dir.strip_suffix("/.git").unwrap_or(git_dir).to_string())
 }
 
 pub fn branch_exists(branch: &str) -> bool {
-    CommandRunner::git().success(&["show-ref", "--verify", "--quiet", &format!("refs/heads/{}", branch)])
+    CommandRunner::git().success(&[
+        "show-ref",
+        "--verify",
+        "--quiet",
+        &format!("refs/heads/{}", branch),
+    ])
 }
 
 /// Find branches matching a pattern (e.g., "wt/task-*")
@@ -204,6 +217,137 @@ pub fn get_last_activity(worktree_path: &str) -> Option<SystemTime> {
     }
 
     path.metadata().ok()?.modified().ok()
+}
+
+// ============================================================================
+// Atomic Git Operations (for hooks)
+// ============================================================================
+
+/// Fetch from a remote repository.
+pub fn fetch(repo_root: &str, remote: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(repo_root)
+        .run(&["fetch", remote])
+}
+
+/// Rebase the current branch onto target.
+pub fn rebase(worktree_path: &str, target: &str) -> Result<RebaseResult> {
+    // First check if we're already up to date
+    let merge_base = CommandRunner::new("git")
+        .current_dir(worktree_path)
+        .output(&["merge-base", "HEAD", target]);
+
+    let target_commit = CommandRunner::new("git")
+        .current_dir(worktree_path)
+        .output(&["rev-parse", target]);
+
+    if let (Ok(base), Ok(target_rev)) = (merge_base, target_commit) {
+        if base.trim() == target_rev.trim() {
+            // HEAD is already based on target
+            let head = CommandRunner::new("git")
+                .current_dir(worktree_path)
+                .output(&["rev-parse", "HEAD"]);
+            if let Ok(head_rev) = head {
+                if head_rev.trim() == target_rev.trim() {
+                    return Ok(RebaseResult::AlreadyUpToDate);
+                }
+            }
+        }
+    }
+
+    let result = CommandRunner::new("git")
+        .current_dir(worktree_path)
+        .success(&["rebase", target]);
+
+    if result {
+        Ok(RebaseResult::Success)
+    } else {
+        // Check if there are conflicts
+        if has_conflicts(worktree_path) {
+            // Abort the rebase to leave clean state
+            let _ = CommandRunner::new("git")
+                .current_dir(worktree_path)
+                .run(&["rebase", "--abort"]);
+            Ok(RebaseResult::Conflicts)
+        } else {
+            Err(WtError::Git("rebase failed".to_string()))
+        }
+    }
+}
+
+/// Squash merge a branch into the current branch.
+pub fn squash_merge(repo_root: &str, branch: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(repo_root)
+        .run(&["merge", "--squash", branch])
+}
+
+/// Create a commit with the given message.
+pub fn commit(path: &str, message: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(path)
+        .run(&["commit", "-m", message])
+}
+
+/// Push a branch to a remote.
+pub fn push(repo_root: &str, branch: &str, remote: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(repo_root)
+        .run(&["push", remote, branch])
+}
+
+/// Check if the working directory has uncommitted changes.
+pub fn has_changes(path: &str) -> Result<bool> {
+    let output = CommandRunner::new("git")
+        .current_dir(path)
+        .output(&["status", "--porcelain"])?;
+
+    Ok(!output.trim().is_empty())
+}
+
+/// Stash changes in the working directory.
+pub fn stash(path: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(path)
+        .run(&["stash", "push", "-u"])
+}
+
+/// Pop the most recent stash.
+pub fn stash_pop(path: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(path)
+        .run(&["stash", "pop"])
+}
+
+/// Create a new branch at the current HEAD.
+pub fn create_branch(repo_root: &str, branch_name: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(repo_root)
+        .run(&["branch", branch_name])
+}
+
+/// Delete a branch.
+pub fn delete_branch(repo_root: &str, branch_name: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(repo_root)
+        .run(&["branch", "-D", branch_name])
+}
+
+/// Checkout a branch.
+pub fn checkout(path: &str, branch: &str) -> Result<()> {
+    CommandRunner::new("git")
+        .current_dir(path)
+        .run(&["checkout", branch])
+}
+
+/// Get the current branch name.
+pub fn current_branch(path: &str) -> Result<String> {
+    let output = CommandRunner::new("git").current_dir(path).output(&[
+        "rev-parse",
+        "--abbrev-ref",
+        "HEAD",
+    ])?;
+    Ok(output.trim().to_string())
 }
 
 #[cfg(test)]

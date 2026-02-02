@@ -16,7 +16,11 @@ fn test_review_pending_task() {
     let (ok, _, stderr) = run_wt(dir.path(), &["review", "task"]);
 
     assert!(!ok);
-    assert!(stderr.contains("no running") || stderr.contains("instance") || stderr.contains("Invalid state"));
+    assert!(
+        stderr.contains("no running")
+            || stderr.contains("instance")
+            || stderr.contains("Invalid state")
+    );
 }
 
 #[test]
@@ -26,5 +30,9 @@ fn test_review_already_review() {
     let (ok, _, stderr) = run_wt(dir.path(), &["review", "task"]);
 
     assert!(!ok);
-    assert!(stderr.contains("no running") || stderr.contains("instance") || stderr.contains("Invalid state"));
+    assert!(
+        stderr.contains("no running")
+            || stderr.contains("instance")
+            || stderr.contains("Invalid state")
+    );
 }

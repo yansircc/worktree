@@ -24,10 +24,7 @@ fn test_logs_no_tasks() {
 
 #[test]
 fn test_logs_skips_pending_tasks() {
-    let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "pending"),
-        ("task2", &[], "pending"),
-    ]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "pending"), ("task2", &[], "pending")]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
 
@@ -101,8 +98,8 @@ fn test_logs_processes_done_tasks() {
 #[test]
 fn test_logs_skips_tasks_without_instance() {
     let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "running"),  // No instance
-        ("task2", &[], "review"),   // No instance
+        ("task1", &[], "running"), // No instance
+        ("task2", &[], "review"),  // No instance
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
@@ -110,7 +107,8 @@ fn test_logs_skips_tasks_without_instance() {
     assert!(ok);
     // Tasks without instance should be skipped
     assert!(
-        stdout.contains("Skipped: 2") || (stdout.contains("Generated: 0") && stdout.contains("Skipped")),
+        stdout.contains("Skipped: 2")
+            || (stdout.contains("Generated: 0") && stdout.contains("Skipped")),
         "Tasks without instance should be skipped, got: {}",
         stdout
     );

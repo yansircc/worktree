@@ -56,14 +56,19 @@ pub fn install() -> Result<()> {
         "\n"
     };
 
-    writeln!(file, "{}\n# wt shell completions\n{}", prefix, eval_line).map_err(|e| WtError::Io {
-        operation: "write".to_string(),
-        path: rc_file.to_string_lossy().to_string(),
-        message: e.to_string(),
+    writeln!(file, "{}\n# wt shell completions\n{}", prefix, eval_line).map_err(|e| {
+        WtError::Io {
+            operation: "write".to_string(),
+            path: rc_file.to_string_lossy().to_string(),
+            message: e.to_string(),
+        }
     })?;
 
     println!("Installed completions to {}", rc_file.display());
-    println!("Run `exec {}` or restart your terminal to activate.", shell_name(&shell));
+    println!(
+        "Run `exec {}` or restart your terminal to activate.",
+        shell_name(&shell)
+    );
 
     Ok(())
 }
@@ -99,9 +104,8 @@ fn detect_shell() -> Result<Shell> {
 }
 
 fn get_rc_file(shell: &Shell) -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| {
-        WtError::InvalidInput("Cannot determine home directory".to_string())
-    })?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| WtError::InvalidInput("Cannot determine home directory".to_string()))?;
 
     let rc_file = match shell {
         Shell::Zsh => home.join(".zshrc"),
@@ -115,10 +119,12 @@ fn get_rc_file(shell: &Shell) -> Result<PathBuf> {
             }
         }
         Shell::Fish => home.join(".config/fish/config.fish"),
-        _ => return Err(WtError::InvalidInput(format!(
-            "Unsupported shell: {:?}",
-            shell
-        ))),
+        _ => {
+            return Err(WtError::InvalidInput(format!(
+                "Unsupported shell: {:?}",
+                shell
+            )))
+        }
     };
 
     Ok(rc_file)

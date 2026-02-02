@@ -5,7 +5,11 @@ use std::process::Command;
 fn test_start_without_config() {
     let dir = tempfile::tempdir().unwrap();
 
-    Command::new("git").current_dir(dir.path()).args(["init"]).output().ok();
+    Command::new("git")
+        .current_dir(dir.path())
+        .args(["init"])
+        .output()
+        .ok();
 
     create_task_file(dir.path(), "task1", &[]);
 
@@ -30,7 +34,11 @@ fn test_create_without_config() {
 
     let (ok, stdout, _) = run_wt(
         dir.path(),
-        &["create", "--json", r#"{"name": "task1", "depends": [], "description": "Test"}"#],
+        &[
+            "create",
+            "--json",
+            r#"{"name": "task1", "depends": [], "description": "Test"}"#,
+        ],
     );
 
     assert!(ok);

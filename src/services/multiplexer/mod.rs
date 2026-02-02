@@ -115,10 +115,22 @@ mod tests {
 
     #[test]
     fn test_multiplexer_type_from_str() {
-        assert_eq!(MultiplexerType::from_str("tmux"), Some(MultiplexerType::Tmux));
-        assert_eq!(MultiplexerType::from_str("TMUX"), Some(MultiplexerType::Tmux));
-        assert_eq!(MultiplexerType::from_str("zellij"), Some(MultiplexerType::Zellij));
-        assert_eq!(MultiplexerType::from_str("ZELLIJ"), Some(MultiplexerType::Zellij));
+        assert_eq!(
+            MultiplexerType::from_str("tmux"),
+            Some(MultiplexerType::Tmux)
+        );
+        assert_eq!(
+            MultiplexerType::from_str("TMUX"),
+            Some(MultiplexerType::Tmux)
+        );
+        assert_eq!(
+            MultiplexerType::from_str("zellij"),
+            Some(MultiplexerType::Zellij)
+        );
+        assert_eq!(
+            MultiplexerType::from_str("ZELLIJ"),
+            Some(MultiplexerType::Zellij)
+        );
         assert_eq!(MultiplexerType::from_str("unknown"), None);
     }
 

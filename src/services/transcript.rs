@@ -56,7 +56,7 @@ impl TranscriptMetrics {
 /// Claude Code escapes paths by replacing `/` and `.` with `-`.
 /// Example: `/Users/foo/project/.wt` -> `-Users-foo-project--wt`
 pub fn project_dir_name(path: &str) -> String {
-    path.replace('/', "-").replace('.', "-")
+    path.replace(['/', '.'], "-")
 }
 
 /// Get the Claude Code projects directory.
@@ -68,7 +68,11 @@ pub fn claude_projects_dir() -> Option<PathBuf> {
 pub fn transcript_path(worktree_path: &str, session_id: &str) -> Option<PathBuf> {
     let projects_dir = claude_projects_dir()?;
     let dir_name = project_dir_name(worktree_path);
-    Some(projects_dir.join(dir_name).join(format!("{}.jsonl", session_id)))
+    Some(
+        projects_dir
+            .join(dir_name)
+            .join(format!("{}.jsonl", session_id)),
+    )
 }
 
 /// 查找 Instance 对应的 transcript 文件
@@ -368,10 +372,7 @@ mod tests {
 
     #[test]
     fn test_project_dir_name() {
-        assert_eq!(
-            project_dir_name("/Users/foo/project"),
-            "-Users-foo-project"
-        );
+        assert_eq!(project_dir_name("/Users/foo/project"), "-Users-foo-project");
         // . is also replaced with -
         assert_eq!(
             project_dir_name("/Users/foo/project/.wt-worktrees/task"),

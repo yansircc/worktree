@@ -13,7 +13,14 @@ fn test_list_empty() {
 fn test_list_shows_tasks() {
     let dir = setup_test_repo();
 
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "auth", "depends": [], "description": "Auth"}"#]);
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "auth", "depends": [], "description": "Auth"}"#,
+        ],
+    );
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list"]);
 
@@ -43,8 +50,22 @@ fn test_list_shows_status_symbols() {
 fn test_list_shows_grouped_view() {
     let dir = setup_test_repo();
 
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "a", "depends": [], "description": "A"}"#]);
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "b", "depends": ["a"], "description": "B"}"#]);
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "a", "depends": [], "description": "A"}"#,
+        ],
+    );
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "b", "depends": ["a"], "description": "B"}"#,
+        ],
+    );
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list"]);
 
@@ -59,8 +80,22 @@ fn test_list_shows_grouped_view() {
 fn test_list_tree_option() {
     let dir = setup_test_repo();
 
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "a", "depends": [], "description": "A"}"#]);
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "b", "depends": ["a"], "description": "B"}"#]);
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "a", "depends": [], "description": "A"}"#,
+        ],
+    );
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "b", "depends": ["a"], "description": "B"}"#,
+        ],
+    );
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list", "--tree"]);
 
@@ -85,7 +120,14 @@ fn test_list_json_empty() {
 fn test_list_json_single_task() {
     let dir = setup_test_repo();
 
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "auth", "depends": [], "description": "Auth"}"#]);
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "auth", "depends": [], "description": "Auth"}"#,
+        ],
+    );
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list", "--json"]);
 
@@ -102,16 +144,38 @@ fn test_list_json_single_task() {
 fn test_list_json_with_depends() {
     let dir = setup_test_repo();
 
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "a", "depends": [], "description": "A"}"#]);
-    run_wt(dir.path(), &["create", "--json", r#"{"name": "b", "depends": ["a"], "description": "B"}"#]);
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "a", "depends": [], "description": "A"}"#,
+        ],
+    );
+    run_wt(
+        dir.path(),
+        &[
+            "create",
+            "--json",
+            r#"{"name": "b", "depends": ["a"], "description": "B"}"#,
+        ],
+    );
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list", "--json"]);
 
     assert!(ok);
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let task_b = json["tasks"].as_array().unwrap().iter().find(|t| t["name"] == "b").unwrap();
-    assert_eq!(task_b["depends"].as_array().unwrap(), &[serde_json::json!("a")]);
+    let task_b = json["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "b")
+        .unwrap();
+    assert_eq!(
+        task_b["depends"].as_array().unwrap(),
+        &[serde_json::json!("a")]
+    );
 }
 
 #[test]
@@ -128,7 +192,9 @@ fn test_list_json_all_statuses() {
     assert!(ok);
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let statuses: Vec<&str> = json["tasks"].as_array().unwrap()
+    let statuses: Vec<&str> = json["tasks"]
+        .as_array()
+        .unwrap()
         .iter()
         .map(|t| t["status"].as_str().unwrap())
         .collect();

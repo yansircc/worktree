@@ -26,7 +26,7 @@ impl Default for TmuxBackend {
 
 impl Multiplexer for TmuxBackend {
     fn is_available(&self) -> bool {
-        self.runner().success(&["--version"])
+        self.runner().success(&["-V"])
     }
 
     fn session_exists(&self, session: &str) -> bool {
@@ -41,7 +41,8 @@ impl Multiplexer for TmuxBackend {
         let target = format!("{}:", session);
 
         // Create window (starts interactive shell)
-        self.runner().run(&["new-window", "-t", &target, "-n", window, "-c", cwd])?;
+        self.runner()
+            .run(&["new-window", "-t", &target, "-n", window, "-c", cwd])?;
 
         // Send command via send-keys if provided
         if !command.is_empty() {
@@ -67,4 +68,3 @@ impl Multiplexer for TmuxBackend {
         self.runner().run(&["kill-window", "-t", &target])
     }
 }
-

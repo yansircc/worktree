@@ -26,7 +26,10 @@ pub fn check_dependencies_completed(store: &TaskStore, task_name: &str) -> Resul
 
 /// Find all tasks that depend on the given task and are not in Pending state.
 /// Returns a list of (task_name, status) pairs.
-pub fn find_non_pending_dependents(store: &TaskStore, task_name: &str) -> Vec<(String, TaskStatus)> {
+pub fn find_non_pending_dependents(
+    store: &TaskStore,
+    task_name: &str,
+) -> Vec<(String, TaskStatus)> {
     let mut result = Vec::new();
 
     for task in store.list() {

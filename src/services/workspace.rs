@@ -120,10 +120,7 @@ mod tests {
         let src_file = src_dir.path().join("test.txt");
         std::fs::write(&src_file, "content").unwrap();
 
-        let init = WorkspaceInitializer::new(
-            dest_dir.path().to_str().unwrap(),
-            src_dir.path(),
-        );
+        let init = WorkspaceInitializer::new(dest_dir.path().to_str().unwrap(), src_dir.path());
 
         let copied = init.copy_files(&["test.txt".to_string()]).unwrap();
 
@@ -135,10 +132,7 @@ mod tests {
     fn test_copy_files_nonexistent() {
         let (src_dir, dest_dir) = setup_test_dirs();
 
-        let init = WorkspaceInitializer::new(
-            dest_dir.path().to_str().unwrap(),
-            src_dir.path(),
-        );
+        let init = WorkspaceInitializer::new(dest_dir.path().to_str().unwrap(), src_dir.path());
 
         let copied = init.copy_files(&["nonexistent.txt".to_string()]).unwrap();
 
@@ -154,10 +148,7 @@ mod tests {
         std::fs::create_dir(&nested_dir).unwrap();
         std::fs::write(nested_dir.join("app.json"), "{}").unwrap();
 
-        let init = WorkspaceInitializer::new(
-            dest_dir.path().to_str().unwrap(),
-            src_dir.path(),
-        );
+        let init = WorkspaceInitializer::new(dest_dir.path().to_str().unwrap(), src_dir.path());
 
         let copied = init.copy_files(&["config/app.json".to_string()]).unwrap();
 
@@ -170,10 +161,7 @@ mod tests {
         let dest_dir = TempDir::new().unwrap();
         let src_dir = TempDir::new().unwrap();
 
-        let init = WorkspaceInitializer::new(
-            dest_dir.path().to_str().unwrap(),
-            src_dir.path(),
-        );
+        let init = WorkspaceInitializer::new(dest_dir.path().to_str().unwrap(), src_dir.path());
 
         let result = init.run_init_script("echo 'hello' > test.txt");
         assert!(result.is_ok());
@@ -185,10 +173,7 @@ mod tests {
         let dest_dir = TempDir::new().unwrap();
         let src_dir = TempDir::new().unwrap();
 
-        let init = WorkspaceInitializer::new(
-            dest_dir.path().to_str().unwrap(),
-            src_dir.path(),
-        );
+        let init = WorkspaceInitializer::new(dest_dir.path().to_str().unwrap(), src_dir.path());
 
         let result = init.run_init_script("exit 1");
         assert!(result.is_err());

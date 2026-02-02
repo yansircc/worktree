@@ -190,7 +190,9 @@ mod tests {
             "review"
         );
         assert_eq!(
-            serde_yaml::to_string(&TaskStatus::Completed).unwrap().trim(),
+            serde_yaml::to_string(&TaskStatus::Completed)
+                .unwrap()
+                .trim(),
             "completed"
         );
     }

@@ -103,7 +103,12 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     if !completed.is_empty() {
         println!("Completed ({}):", completed.len());
         for (idx, task) in &completed {
-            println!("  {} {} {}", colored_index(*idx), TaskStatus::Completed.colored_icon(), task.name());
+            println!(
+                "  {} {} {}",
+                colored_index(*idx),
+                TaskStatus::Completed.colored_icon(),
+                task.name()
+            );
         }
         println!();
     }
@@ -139,7 +144,12 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     if !blocked.is_empty() {
         println!("Blocked ({}):", blocked.len());
         for (idx, task, waiting_for) in &blocked {
-            print!("  {} {} {}", colored_index(*idx), TaskStatus::Pending.colored_icon(), task.name());
+            print!(
+                "  {} {} {}",
+                colored_index(*idx),
+                TaskStatus::Pending.colored_icon(),
+                task.name()
+            );
             if !task.depends().is_empty() {
                 print!(" ←");
                 for (i, dep) in task.depends().iter().enumerate() {
@@ -159,9 +169,19 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     }
 }
 
-fn print_task_with_deps_indexed(idx: usize, task: &Task, store: &TaskStore, index_map: &HashMap<&str, usize>) {
+fn print_task_with_deps_indexed(
+    idx: usize,
+    task: &Task,
+    store: &TaskStore,
+    index_map: &HashMap<&str, usize>,
+) {
     let status = store.get_status(task.name());
-    print!("  {} {} {}", colored_index(idx), status.colored_icon(), task.name());
+    print!(
+        "  {} {} {}",
+        colored_index(idx),
+        status.colored_icon(),
+        task.name()
+    );
     if !task.depends().is_empty() {
         print!(" ←");
         for (i, dep) in task.depends().iter().enumerate() {
@@ -277,7 +297,16 @@ fn print_tree_node<'a>(
         let count = task_children.len();
         for (i, child) in task_children.iter().enumerate() {
             let is_last_child = i == count - 1;
-            print_tree_node(child, children, store, &new_prefix, is_last_child, false, Some(task.name()), visited);
+            print_tree_node(
+                child,
+                children,
+                store,
+                &new_prefix,
+                is_last_child,
+                false,
+                Some(task.name()),
+                visited,
+            );
         }
     }
 }

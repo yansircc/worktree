@@ -154,7 +154,9 @@ fn test_tail_task_without_instance() {
 
     assert!(!ok);
     assert!(
-        stderr.contains("not found") || stderr.contains("instance") || stderr.contains("transcript"),
+        stderr.contains("not found")
+            || stderr.contains("instance")
+            || stderr.contains("transcript"),
         "Expected error about missing instance/transcript, got: {}",
         stderr
     );

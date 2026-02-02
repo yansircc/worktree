@@ -10,7 +10,12 @@ use super::types::{ActionResponse, CommandInfo, TaskInfo};
 // ============================================================================
 
 /// Build a successful action response with task state transition info
-fn success_response(action: &str, task_name: &str, before: TaskStatus, after: TaskStatus) -> ActionResponse {
+fn success_response(
+    action: &str,
+    task_name: &str,
+    before: TaskStatus,
+    after: TaskStatus,
+) -> ActionResponse {
     ActionResponse {
         action: action.to_string(),
         success: true,
@@ -29,7 +34,13 @@ fn success_response(action: &str, task_name: &str, before: TaskStatus, after: Ta
 }
 
 /// Build an error response for action failures
-fn error_response(action: &str, error: &str, task_name: &str, status: Option<TaskStatus>, mux_alive: Option<bool>) -> ActionResponse {
+fn error_response(
+    action: &str,
+    error: &str,
+    task_name: &str,
+    status: Option<TaskStatus>,
+    mux_alive: Option<bool>,
+) -> ActionResponse {
     ActionResponse {
         action: action.to_string(),
         success: false,
@@ -99,13 +110,19 @@ fn respond_and_exit(response: ActionResponse) -> ! {
 pub fn execute_action(action: &str, task_ref: Option<String>) {
     let task_ref = match task_ref {
         Some(r) => r,
-        None => respond_and_exit(error_response_no_task(action, "--task is required with --action")),
+        None => respond_and_exit(error_response_no_task(
+            action,
+            "--task is required with --action",
+        )),
     };
 
     // Resolve task reference (name or index) to actual name
     let store = match TaskStore::load() {
         Ok(s) => s,
-        Err(e) => respond_and_exit(error_response_no_task(action, &format!("Failed to load tasks: {}", e))),
+        Err(e) => respond_and_exit(error_response_no_task(
+            action,
+            &format!("Failed to load tasks: {}", e),
+        )),
     };
 
     let task_name = match store.resolve_task_ref(&task_ref) {
@@ -115,7 +132,10 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
 
     let mut app = match App::new() {
         Ok(app) => app,
-        Err(e) => respond_and_exit(error_response_no_task(action, &format!("Failed to initialize: {}", e))),
+        Err(e) => respond_and_exit(error_response_no_task(
+            action,
+            &format!("Failed to initialize: {}", e),
+        )),
     };
 
     let task_idx = match app.tasks.iter().position(|t| t.name == task_name) {
@@ -172,11 +192,17 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
     } else {
         unavailable.insert(
             "tail".to_string(),
-            format!("task is {} (need running or review)", task.status.display_name()),
+            format!(
+                "task is {} (need running or review)",
+                task.status.display_name()
+            ),
         );
         unavailable.insert(
             "enter".to_string(),
-            format!("task is {} (need running or review)", task.status.display_name()),
+            format!(
+                "task is {} (need running or review)",
+                task.status.display_name()
+            ),
         );
     }
 
@@ -233,11 +259,23 @@ fn handle_review_action(app: &mut App, task_name: &str) -> ActionResponse {
     let mux_alive = task.mux_alive;
 
     if !app.can_mark_review() {
-        return error_response("review", "Cannot mark for review: task is not running", task_name, Some(status_before), Some(mux_alive));
+        return error_response(
+            "review",
+            "Cannot mark for review: task is not running",
+            task_name,
+            Some(status_before),
+            Some(mux_alive),
+        );
     }
 
     if let Err(e) = app.mark_review() {
-        return error_response("review", &format!("Failed to mark for review: {}", e), task_name, Some(status_before), None);
+        return error_response(
+            "review",
+            &format!("Failed to mark for review: {}", e),
+            task_name,
+            Some(status_before),
+            None,
+        );
     }
 
     success_response("review", task_name, status_before, TaskStatus::Review)
@@ -250,7 +288,10 @@ fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
     if !app.can_resume() {
         return error_response(
             "resume",
-            &format!("Cannot resume: task is {} (need review)", status_before.display_name()),
+            &format!(
+                "Cannot resume: task is {} (need review)",
+                status_before.display_name()
+            ),
             task_name,
             Some(status_before),
             None,
@@ -259,7 +300,13 @@ fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
 
     // Resume by calling the resume command
     if let Err(e) = crate::commands::resume::execute(task_name.to_string()) {
-        return error_response("resume", &format!("Failed to resume: {}", e), task_name, Some(status_before), None);
+        return error_response(
+            "resume",
+            &format!("Failed to resume: {}", e),
+            task_name,
+            Some(status_before),
+            None,
+        );
     }
 
     success_response("resume", task_name, status_before, TaskStatus::Running)
@@ -272,7 +319,10 @@ fn handle_complete_action(app: &mut App, task_name: &str) -> ActionResponse {
     if !app.can_complete() {
         return error_response(
             "complete",
-            &format!("Cannot complete: task is {} (need review)", status_before.display_name()),
+            &format!(
+                "Cannot complete: task is {} (need review)",
+                status_before.display_name()
+            ),
             task_name,
             Some(status_before),
             None,
@@ -280,7 +330,13 @@ fn handle_complete_action(app: &mut App, task_name: &str) -> ActionResponse {
     }
 
     if let Err(e) = app.mark_completed() {
-        return error_response("complete", &format!("Failed to complete: {}", e), task_name, Some(status_before), None);
+        return error_response(
+            "complete",
+            &format!("Failed to complete: {}", e),
+            task_name,
+            Some(status_before),
+            None,
+        );
     }
 
     success_response("complete", task_name, status_before, TaskStatus::Completed)
@@ -290,8 +346,12 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
     let task = app.selected_task().unwrap();
 
     match app.enter_action() {
-        Some(TuiAction::SwitchWindow { session, window, .. })
-        | Some(TuiAction::AttachSession { session, window, .. }) => ActionResponse {
+        Some(TuiAction::SwitchWindow {
+            session, window, ..
+        })
+        | Some(TuiAction::AttachSession {
+            session, window, ..
+        }) => ActionResponse {
             action: "enter".to_string(),
             success: true,
             error: None,
@@ -364,6 +424,12 @@ fn handle_tail_action(task_name: &str) -> ActionResponse {
             // tail::execute already printed output, exit without additional JSON
             std::process::exit(0);
         }
-        Err(e) => error_response("tail", &format!("Failed to tail: {}", e), task_name, None, None),
+        Err(e) => error_response(
+            "tail",
+            &format!("Failed to tail: {}", e),
+            task_name,
+            None,
+            None,
+        ),
     }
 }

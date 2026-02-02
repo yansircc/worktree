@@ -85,7 +85,9 @@ pub fn display_status(json: bool) -> Result<()> {
 
         // Context percent and current tool from transcript
         let context_percent = transcript_metrics.as_ref().map(|m| m.context_percent());
-        let current_tool = transcript_metrics.as_ref().and_then(|m| m.current_tool.clone());
+        let current_tool = transcript_metrics
+            .as_ref()
+            .and_then(|m| m.current_tool.clone());
 
         // Get git metrics (additions, deletions, commits, conflict)
         let git_metrics = worktree_path.and_then(git::get_worktree_metrics);
@@ -151,7 +153,10 @@ pub fn display_status(json: bool) -> Result<()> {
     };
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
     } else {
         print_human_readable(&output);
     }

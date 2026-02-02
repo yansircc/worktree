@@ -7,7 +7,9 @@ use chrono::Utc;
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{dependency, git, multiplexer::create_multiplexer, workspace::WorkspaceInitializer};
+use crate::services::{
+    dependency, git, multiplexer::create_multiplexer, workspace::WorkspaceInitializer,
+};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
@@ -70,7 +72,10 @@ pub fn execute(task_ref: String) -> Result<()> {
         // Kill multiplexer window
         let mux = create_multiplexer(instance.multiplexer_type());
         if let Err(e) = mux.kill_window(&instance.session_name, &instance.window_name) {
-            eprintln!("  Warning: Failed to kill {} window: {}", instance.multiplexer, e);
+            eprintln!(
+                "  Warning: Failed to kill {} window: {}",
+                instance.multiplexer, e
+            );
         } else {
             println!(
                 "  Killed {} window: {}:{}",

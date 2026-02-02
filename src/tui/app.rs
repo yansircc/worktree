@@ -6,7 +6,11 @@ use crate::constants::IDLE_THRESHOLD_SECS;
 use crate::display::format_duration;
 use crate::error::Result;
 use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, multiplexer::{create_multiplexer, MultiplexerType}, transcript};
+use crate::services::{
+    git,
+    multiplexer::{create_multiplexer, MultiplexerType},
+    transcript,
+};
 
 /// Action to perform after TUI exits or during TUI
 #[derive(Debug, Clone)]
@@ -135,9 +139,7 @@ impl App {
                 .map(format_duration);
 
             // Git metrics (additions, deletions, commits, conflict)
-            let git_metrics = worktree_path
-                .as_deref()
-                .and_then(git::get_worktree_metrics);
+            let git_metrics = worktree_path.as_deref().and_then(git::get_worktree_metrics);
             let (additions, deletions) = git_metrics
                 .as_ref()
                 .map(|m| (m.additions, m.deletions))

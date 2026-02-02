@@ -33,22 +33,14 @@ fn test_error_message_invalid_char() {
 fn test_error_message_invalid_start() {
     let err = TaskStore::validate_task_name("-test").unwrap_err();
     let msg = err.to_string();
-    assert!(
-        msg.contains("start"),
-        "Error should mention start: {}",
-        msg
-    );
+    assert!(msg.contains("start"), "Error should mention start: {}", msg);
 }
 
 #[test]
 fn test_error_message_invalid_end() {
     let err = TaskStore::validate_task_name("test.lock").unwrap_err();
     let msg = err.to_string();
-    assert!(
-        msg.contains(".lock"),
-        "Error should mention .lock: {}",
-        msg
-    );
+    assert!(msg.contains(".lock"), "Error should mention .lock: {}", msg);
 }
 
 #[test]

@@ -232,7 +232,9 @@ pub fn execute() -> Result<()> {
     println!();
     println!("Next steps:");
     println!("  1. Edit {} to customize settings", CONFIG_FILE);
-    println!("  2. Create tasks: wt create --json '{{\"name\": \"...\", \"description\": \"...\"}}'");
+    println!(
+        "  2. Create tasks: wt create --json '{{\"name\": \"...\", \"description\": \"...\"}}'"
+    );
     println!("  3. Start working: wt start <task>");
 
     Ok(())

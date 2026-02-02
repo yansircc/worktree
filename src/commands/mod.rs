@@ -2,6 +2,7 @@ pub mod completions;
 pub mod create;
 pub mod delete;
 pub mod init;
+pub mod internal;
 pub mod list;
 pub mod logs;
 pub mod merge;

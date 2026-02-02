@@ -4,7 +4,9 @@ use std::path::Path;
 use crate::constants::{BRANCH_PREFIX, TASKS_DIR};
 use crate::error::{Result, WtError};
 use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, multiplexer::check_multiplexer_installed, workspace::WorkspaceInitializer};
+use crate::services::{
+    git, multiplexer::check_multiplexer_installed, workspace::WorkspaceInitializer,
+};
 
 pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     let config = WtConfig::load()?;

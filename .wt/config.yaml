@@ -25,7 +25,7 @@ start_args: '"先阅读 @.wt/CONTEXT.md 了解整体背景，然后完成 @.wt/t
 claude_command: ccc
 
 # Terminal multiplexer: tmux (默认) 或 zellij
-multiplexer: zellij
+multiplexer: tmux
 
 # Session 名称 (用于 tmux/zellij)
 # 默认: 项目目录名

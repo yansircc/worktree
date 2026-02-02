@@ -14,8 +14,7 @@ Task description with **markdown**
 - bullet 2
 "#;
 
-    let task =
-        wt::models::TaskStore::parse_markdown(content, "roundtrip.md".to_string()).unwrap();
+    let task = wt::models::TaskStore::parse_markdown(content, "roundtrip.md".to_string()).unwrap();
     assert_eq!(task.name(), "roundtrip");
     assert_eq!(task.depends(), &["dep1".to_string()]);
     assert!(task.content.contains("**markdown**"));
@@ -39,8 +38,7 @@ fn main() {
 And more text.
 "#;
 
-    let task =
-        wt::models::TaskStore::parse_markdown(content, "codeblock.md".to_string()).unwrap();
+    let task = wt::models::TaskStore::parse_markdown(content, "codeblock.md".to_string()).unwrap();
     assert!(task.content.contains("```rust"));
     assert!(task.content.contains("fn main()"));
 }
@@ -91,8 +89,7 @@ And {braces}
 And [brackets]
 "#;
 
-    let task =
-        wt::models::TaskStore::parse_markdown(content, "special.md".to_string()).unwrap();
+    let task = wt::models::TaskStore::parse_markdown(content, "special.md".to_string()).unwrap();
     assert!(task.content.contains("colons"));
     assert!(task.content.contains("\"quotes\""));
 }
@@ -113,10 +110,7 @@ fn test_task_with_many_dependencies() {
         .map(|d| format!("  - {}", d))
         .collect::<Vec<_>>()
         .join("\n");
-    let content = format!(
-        "---\nname: many\ndepends:\n{}\n---\n\nContent",
-        deps_yaml
-    );
+    let content = format!("---\nname: many\ndepends:\n{}\n---\n\nContent", deps_yaml);
 
     let task = wt::models::TaskStore::parse_markdown(&content, "many.md".to_string()).unwrap();
     assert_eq!(task.depends().len(), 50);
@@ -135,8 +129,7 @@ fn test_task_input_roundtrip() {
     };
 
     let markdown = input.to_markdown();
-    let task =
-        wt::models::TaskStore::parse_markdown(&markdown, "test.md".to_string()).unwrap();
+    let task = wt::models::TaskStore::parse_markdown(&markdown, "test.md".to_string()).unwrap();
 
     assert_eq!(task.name(), "roundtrip");
     assert_eq!(task.depends(), &["a".to_string(), "b".to_string()]);

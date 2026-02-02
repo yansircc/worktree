@@ -37,9 +37,9 @@ pub fn execute(task_ref: String, agent_mode: bool) -> Result<()> {
     }
 
     // Check instance exists
-    let instance = store.get_instance(&name).ok_or_else(|| {
-        WtError::TaskNotStarted(name.clone())
-    })?;
+    let instance = store
+        .get_instance(&name)
+        .ok_or_else(|| WtError::TaskNotStarted(name.clone()))?;
 
     // Check worktree exists
     let worktree_path = &instance.worktree_path;
@@ -55,7 +55,10 @@ pub fn execute(task_ref: String, agent_mode: bool) -> Result<()> {
     // Close original multiplexer window if exists
     let mux = create_multiplexer(instance.multiplexer_type());
     if let Err(e) = mux.kill_window_if_exists(&instance.session_name, &instance.window_name) {
-        eprintln!("Warning: Failed to close {} window: {}", instance.multiplexer, e);
+        eprintln!(
+            "Warning: Failed to close {} window: {}",
+            instance.multiplexer, e
+        );
     }
 
     // Check if prompt file exists
@@ -108,14 +111,24 @@ fn run_claude_interactive(
     // Build Claude command for interactive mode with proper escaping
     let claude_cmd = format!(
         "{} --system-prompt-file {} {}",
-        config.claude_command, MERGE_PROMPT_FILE, shell_escape(instruction)
+        config.claude_command,
+        MERGE_PROMPT_FILE,
+        shell_escape(instruction)
     );
 
     mux.create_window(session, &window_name, repo_root, &claude_cmd)?;
 
-    println!("Started merge in {} window: {}:{}", config.multiplexer_type(), session, window_name);
+    println!(
+        "Started merge in {} window: {}:{}",
+        config.multiplexer_type(),
+        session,
+        window_name
+    );
     println!("Claude will execute: rebase -> squash merge -> commit -> wt archive");
-    println!("\nSwitch to {} to observe the process.", config.multiplexer_type());
+    println!(
+        "\nSwitch to {} to observe the process.",
+        config.multiplexer_type()
+    );
 
     Ok(())
 }
@@ -154,10 +167,8 @@ fn run_claude_agent_mode(
     // Stream stdout in real-time
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("{}", line);
-            }
+        for line in reader.lines().flatten() {
+            println!("{}", line);
         }
     }
 

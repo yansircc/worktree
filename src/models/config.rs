@@ -163,7 +163,8 @@ impl WtConfig {
         if !path.exists() {
             return Err(WtError::ConfigNotFound);
         }
-        let content = std::fs::read_to_string(path).map_err(|e| WtError::ConfigRead(e.to_string()))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| WtError::ConfigRead(e.to_string()))?;
         Self::from_str(&content)
     }
 

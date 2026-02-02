@@ -28,7 +28,10 @@ pub fn execute(task_ref: String) -> Result<()> {
     if let Some(instance) = store.get_instance(&name) {
         let mux = create_multiplexer(instance.multiplexer_type());
         if mux.kill_window_if_exists(&instance.session_name, &instance.window_name)? {
-            println!("Closed {} window {}:{}", config.multiplexer, instance.session_name, instance.window_name);
+            println!(
+                "Closed {} window {}:{}",
+                config.multiplexer, instance.session_name, instance.window_name
+            );
         }
     }
 

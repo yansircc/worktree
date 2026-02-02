@@ -40,11 +40,17 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     let mut spans = vec![
         Span::styled(" wt status", Style::default().fg(Color::Cyan).bold()),
         Span::raw("                              "),
-        Span::styled(format!("{} running", running), Style::default().fg(Color::Green)),
+        Span::styled(
+            format!("{} running", running),
+            Style::default().fg(Color::Green),
+        ),
     ];
     if review > 0 {
         spans.push(Span::raw(" · "));
-        spans.push(Span::styled(format!("{} review", review), Style::default().fg(Color::Yellow)));
+        spans.push(Span::styled(
+            format!("{} review", review),
+            Style::default().fg(Color::Yellow),
+        ));
     }
     let text = Line::from(spans);
 
@@ -143,7 +149,10 @@ fn format_task_line(task: &TaskDisplay, selected: bool, _width: usize) -> Line<'
     } else {
         "   -".to_string()
     };
-    spans.push(Span::styled(commit_str, Style::default().fg(Color::Magenta)));
+    spans.push(Span::styled(
+        commit_str,
+        Style::default().fg(Color::Magenta),
+    ));
 
     // Changes (compact format)
     let changes = if task.additions > 0 || task.deletions > 0 {
@@ -156,11 +165,17 @@ fn format_task_line(task: &TaskDisplay, selected: bool, _width: usize) -> Line<'
     } else {
         Color::DarkGray
     };
-    spans.push(Span::styled(format!("{:<12}", changes), Style::default().fg(changes_color)));
+    spans.push(Span::styled(
+        format!("{:<12}", changes),
+        Style::default().fg(changes_color),
+    ));
 
     // Conflict or current tool
     if task.has_conflict {
-        spans.push(Span::styled(" ⚡CONFLICT", Style::default().fg(Color::Red).bold()));
+        spans.push(Span::styled(
+            " ⚡CONFLICT",
+            Style::default().fg(Color::Red).bold(),
+        ));
     } else if let Some(tool) = &task.current_tool {
         let tool_display = format_tool_name(tool);
         spans.push(Span::styled(

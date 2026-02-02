@@ -20,7 +20,9 @@ fn test_delete_normal_task_fails() {
 
     assert!(!ok);
     assert!(
-        stderr.contains("not a scratch") || stderr.contains("Use 'wt merge") || stderr.contains("Use 'wt reset"),
+        stderr.contains("not a scratch")
+            || stderr.contains("Use 'wt merge")
+            || stderr.contains("Use 'wt reset"),
         "Expected error about task not being scratch, got: {}",
         stderr
     );

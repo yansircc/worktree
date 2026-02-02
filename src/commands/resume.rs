@@ -33,9 +33,9 @@ pub fn execute(task_ref: String) -> Result<()> {
     }
 
     // Check instance exists
-    let instance = store.get_instance(&name).ok_or_else(|| {
-        WtError::TaskNotStarted(name.clone())
-    })?;
+    let instance = store
+        .get_instance(&name)
+        .ok_or_else(|| WtError::TaskNotStarted(name.clone()))?;
 
     // Check worktree exists
     let worktree_path = &instance.worktree_path;
@@ -60,9 +60,15 @@ pub fn execute(task_ref: String) -> Result<()> {
 
         // Create new window
         mux.create_window(session_name, window_name, worktree_path, &claude_cmd)?;
-        println!("Restarted {} window {}:{}", config.multiplexer, session_name, window_name);
+        println!(
+            "Restarted {} window {}:{}",
+            config.multiplexer, session_name, window_name
+        );
     } else {
-        println!("{} window {}:{} is still alive", config.multiplexer, session_name, window_name);
+        println!(
+            "{} window {}:{} is still alive",
+            config.multiplexer, session_name, window_name
+        );
     }
 
     // Update status to Running
