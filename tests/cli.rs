@@ -42,3 +42,5 @@ mod scratch;
 mod tail;
 #[path = "cli/logs.rs"]
 mod logs;
+#[path = "cli/completions.rs"]
+mod completions;

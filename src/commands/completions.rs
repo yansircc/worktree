@@ -29,6 +29,15 @@ pub fn install() -> Result<()> {
         return Ok(());
     }
 
+    // Ensure parent directory exists (especially for fish: ~/.config/fish/)
+    if let Some(parent) = rc_file.parent() {
+        fs::create_dir_all(parent).map_err(|e| WtError::Io {
+            operation: "create_dir_all".to_string(),
+            path: parent.to_string_lossy().to_string(),
+            message: e.to_string(),
+        })?;
+    }
+
     // Append eval line to rc file
     let mut file = OpenOptions::new()
         .create(true)

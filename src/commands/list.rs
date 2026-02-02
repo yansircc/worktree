@@ -3,16 +3,9 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::constants::TASKS_DIR;
+use crate::display::colored_index;
 use crate::error::Result;
 use crate::models::{Task, TaskStatus, TaskStore};
-
-// ANSI color codes
-const GRAY: &str = "\x1b[90m";
-const RESET: &str = "\x1b[0m";
-
-fn colored_index(idx: usize) -> String {
-    format!("{}{}{}", GRAY, idx, RESET)
-}
 
 #[derive(Serialize)]
 struct TaskJson {
@@ -177,7 +170,7 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     }
 }
 
-fn print_task_with_deps_indexed(idx: usize, task: &Task, store: &TaskStore, _index_map: &HashMap<&str, usize>) {
+fn print_task_with_deps_indexed(idx: usize, task: &Task, store: &TaskStore, index_map: &HashMap<&str, usize>) {
     let status = store.get_status(task.name());
     print!("  {} {} {}", colored_index(idx), status.colored_icon(), task.name());
     if !task.depends().is_empty() {
@@ -187,7 +180,12 @@ fn print_task_with_deps_indexed(idx: usize, task: &Task, store: &TaskStore, _ind
                 print!(",");
             }
             let dep_icon = store.get_status(dep).colored_icon();
-            print!(" {}{}", dep, dep_icon);
+            // Show dependency index if available
+            let dep_idx_str = index_map
+                .get(dep.as_str())
+                .map(|idx| format!("[{}]", idx))
+                .unwrap_or_default();
+            print!(" {}{}{}", dep, dep_idx_str, dep_icon);
         }
     }
     println!();

@@ -2,20 +2,12 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use crate::constants::IDLE_THRESHOLD_SECS;
-use crate::display::format_duration;
+use crate::display::{colored_index, format_duration, running_icon, RESET};
 use crate::error::Result;
 use crate::models::{TaskStatus, TaskStore};
 use crate::services::{git, tmux, transcript};
 
 use super::types::{StatusOutput, StatusSummary, TaskMetrics};
-
-// ANSI color codes
-const GRAY: &str = "\x1b[90m";
-const RESET: &str = "\x1b[0m";
-
-fn colored_index(idx: usize) -> String {
-    format!("{}{}{}", GRAY, idx, RESET)
-}
 
 /// Display status in JSON or human-readable format
 pub fn display_status(json: bool) -> Result<()> {
@@ -174,23 +166,30 @@ fn print_human_readable(output: &StatusOutput) {
     println!();
 
     for task in &output.tasks {
-        // tmux_alive takes precedence: if window is dead, show warning
-        let status_indicator = match task.tmux_alive {
-            Some(false) => " ⚠️  (tmux window closed)",
-            _ => match task.active {
-                Some(true) => " 🟢",
-                Some(false) => " 💤",
-                None => "",
-            },
+        // For Running status, use running_icon for consistent display with TUI
+        let (icon_str, status_suffix) = if task.status == TaskStatus::Running {
+            let (icon, color) = running_icon(task.tmux_alive, task.active);
+            let colored = format!("{}{}{}", color, icon, RESET);
+            let suffix = match task.tmux_alive {
+                Some(false) => " (tmux closed)",
+                _ => match task.active {
+                    Some(true) => "",
+                    Some(false) => " (idle)",
+                    None => "",
+                },
+            };
+            (colored, suffix)
+        } else {
+            (task.status.colored_icon(), "")
         };
 
         println!(
             "{} {} {} ({}){}",
             colored_index(task.index),
-            task.status.colored_icon(),
+            icon_str,
             task.name,
             task.status.display_name(),
-            status_indicator
+            status_suffix
         );
 
         if let Some(ref duration) = task.duration_human {

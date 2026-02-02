@@ -42,22 +42,29 @@ impl TaskStatus {
         }
     }
 
+    /// Get plain status icon (without color).
+    pub fn icon(&self) -> &'static str {
+        match self {
+            TaskStatus::Pending => "○",
+            TaskStatus::Running => "●",
+            TaskStatus::Done => "✓",
+            TaskStatus::Merged => "✓✓",
+            TaskStatus::Archived => "☑",
+        }
+    }
+
     /// Get colored status icon for terminal display.
     pub fn colored_icon(&self) -> String {
-        const RESET: &str = "\x1b[0m";
-        const WHITE: &str = "\x1b[37m";
-        const GREEN: &str = "\x1b[32m";
-        const MAGENTA: &str = "\x1b[35m";
-        const GRAY: &str = "\x1b[90m";
+        use crate::display::{GRAY, GREEN, MAGENTA, RESET, WHITE};
 
-        let (color, icon) = match self {
-            TaskStatus::Pending => (WHITE, "○"),
-            TaskStatus::Running => (GREEN, "●"),
-            TaskStatus::Done => (GREEN, "✓"),
-            TaskStatus::Merged => (MAGENTA, "✓✓"),
-            TaskStatus::Archived => (GRAY, "☑"),
+        let color = match self {
+            TaskStatus::Pending => WHITE,
+            TaskStatus::Running => GREEN,
+            TaskStatus::Done => GREEN,
+            TaskStatus::Merged => MAGENTA,
+            TaskStatus::Archived => GRAY,
         };
-        format!("{}{}{}", color, icon, RESET)
+        format!("{}{}{}", color, self.icon(), RESET)
     }
 }
 

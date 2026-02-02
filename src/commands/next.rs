@@ -2,16 +2,9 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::display::colored_index;
 use crate::error::Result;
 use crate::models::{Task, TaskStatus, TaskStore};
-
-// ANSI color codes
-const GRAY: &str = "\x1b[90m";
-const RESET: &str = "\x1b[0m";
-
-fn colored_index(idx: usize) -> String {
-    format!("{}{}{}", GRAY, idx, RESET)
-}
 
 #[derive(Serialize)]
 struct NextOutput {
