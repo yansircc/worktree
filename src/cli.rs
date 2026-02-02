@@ -82,9 +82,20 @@ pub enum Commands {
         agent: bool,
     },
 
-    /// Delete a scratch environment
+    /// Delete a task's resources (worktree, branch)
     Delete {
-        /// Scratch environment name to delete
+        /// Task name or index
+        name: String,
+
+        /// Force delete (skip confirmation for non-completed tasks)
+        #[arg(long, short)]
+        force: bool,
+    },
+
+    /// Archive a task (deprecated, use 'delete' instead)
+    #[command(hide = true)]
+    Archive {
+        /// Task name or index
         name: String,
     },
 
