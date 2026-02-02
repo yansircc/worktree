@@ -9,25 +9,13 @@ use crate::models::{AgentStep, Step, WtConfig};
 use crate::services::claude::{shell_escape, ClaudeCommandBuilder};
 use crate::services::hooks::context::ExecutionContext;
 
-/// Result of step execution
+/// Result of step execution (unit struct - errors returned via Result)
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields reserved for future step output capture
-pub struct StepResult {
-    /// Whether the step succeeded
-    success: bool,
-    /// Output from the step (if captured)
-    output: Option<String>,
-    /// Error message (if failed)
-    error: Option<String>,
-}
+pub struct StepResult;
 
 impl StepResult {
     pub fn ok() -> Self {
-        Self {
-            success: true,
-            output: None,
-            error: None,
-        }
+        Self
     }
 }
 
@@ -275,12 +263,6 @@ mod tests {
             .with_session("wt")
             .with_window("auth")
             .with_phase("developing")
-    }
-
-    #[test]
-    fn test_step_result_ok() {
-        let r = StepResult::ok();
-        assert!(r.success);
     }
 
     #[test]

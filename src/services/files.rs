@@ -1,50 +1,12 @@
 //! File operations for hooks system.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chrono::Local;
 
 use crate::constants::BACKUPS_DIR;
 use crate::error::{Result, WtError};
-use crate::models::WtConfig;
-
-/// Copy files from source directory to worktree.
-///
-/// Returns list of successfully copied files.
-#[allow(dead_code)]
-pub fn copy_files(config: &WtConfig, worktree_path: &str) -> Result<Vec<String>> {
-    let source_dir = std::env::current_dir().map_err(|e| WtError::Io {
-        operation: "get current directory".to_string(),
-        path: ".".to_string(),
-        message: e.to_string(),
-    })?;
-
-    let mut copied = Vec::new();
-
-    for file in &config.copy_files {
-        let src = source_dir.join(file);
-        let dest = PathBuf::from(worktree_path).join(file);
-
-        if src.exists() {
-            if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent).map_err(|e| WtError::Io {
-                    operation: "create directory".to_string(),
-                    path: parent.to_string_lossy().to_string(),
-                    message: e.to_string(),
-                })?;
-            }
-            fs::copy(&src, &dest).map_err(|e| WtError::Io {
-                operation: "copy file".to_string(),
-                path: file.clone(),
-                message: e.to_string(),
-            })?;
-            copied.push(file.clone());
-        }
-    }
-
-    Ok(copied)
-}
 
 /// Backup worktree to .wt/backups/.
 ///

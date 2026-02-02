@@ -266,34 +266,6 @@ impl AgentStep {
         self.include_partial_messages = true;
         self
     }
-
-    /// Builder-style setter for skip_permissions
-    #[allow(dead_code)] // Public builder API
-    pub fn with_skip_permissions(mut self) -> Self {
-        self.skip_permissions = true;
-        self
-    }
-
-    /// Builder-style setter for verbose
-    #[allow(dead_code)] // Public builder API
-    pub fn with_verbose(mut self) -> Self {
-        self.verbose = true;
-        self
-    }
-
-    /// Builder-style setter for output_format
-    #[allow(dead_code)] // Public builder API
-    pub fn with_output_format(mut self, format: impl Into<String>) -> Self {
-        self.output_format = format.into();
-        self
-    }
-
-    /// Builder-style setter for input_format
-    #[allow(dead_code)] // Public builder API
-    pub fn with_input_format(mut self, format: impl Into<String>) -> Self {
-        self.input_format = Some(format.into());
-        self
-    }
 }
 
 #[cfg(test)]

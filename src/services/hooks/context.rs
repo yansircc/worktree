@@ -55,14 +55,14 @@ impl ExecutionContext {
     }
 
     /// Set current phase.
-    #[allow(dead_code)] // Builder API for tests and future use
+    #[cfg(test)]
     pub fn with_phase(mut self, phase: &str) -> Self {
         self.phase = phase.to_string();
         self
     }
 
     /// Add a custom variable.
-    #[allow(dead_code)] // Builder API for tests and future use
+    #[cfg(test)]
     pub fn with_var(mut self, key: &str, value: &str) -> Self {
         self.extra.insert(key.to_string(), value.to_string());
         self

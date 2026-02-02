@@ -208,53 +208,8 @@ impl Default for TaskState {
 }
 
 impl TaskState {
-    /// Create a new Pending state
-    #[allow(dead_code)] // Constructor API for tests and future use
-    pub fn pending() -> Self {
-        Self::default()
-    }
-
-    /// Create an Active state with the given phase
-    #[allow(dead_code)] // Constructor API for tests and future use
-    pub fn active(phase: TaskPhase) -> Self {
-        Self {
-            status: TaskStatus::Active,
-            phase,
-            idle_reason: None,
-            active_since: Some(Utc::now()),
-            instance: None,
-            scratch: None,
-        }
-    }
-
-    /// Create an Idle state with the given phase and reason
-    #[allow(dead_code)] // Constructor API for tests and future use
-    pub fn idle(phase: TaskPhase, reason: IdleReason) -> Self {
-        Self {
-            status: TaskStatus::Idle,
-            phase,
-            idle_reason: Some(reason),
-            active_since: None,
-            instance: None,
-            scratch: None,
-        }
-    }
-
-    /// Create a Completed state
-    #[allow(dead_code)] // Constructor API for tests and future use
-    pub fn completed() -> Self {
-        Self {
-            status: TaskStatus::Completed,
-            phase: TaskPhase::None,
-            idle_reason: None,
-            active_since: None,
-            instance: None,
-            scratch: None,
-        }
-    }
-
-    /// Transition to Active state
-    #[allow(dead_code)] // State machine API for future use
+    /// Transition to Active state (test only - production code sets fields directly)
+    #[cfg(test)]
     pub fn to_active(&mut self, phase: TaskPhase) {
         self.status = TaskStatus::Active;
         self.phase = phase;
@@ -263,49 +218,10 @@ impl TaskState {
     }
 
     /// Transition to Idle state
-    #[allow(dead_code)] // State machine API for future use
     pub fn to_idle(&mut self, reason: IdleReason) {
         self.status = TaskStatus::Idle;
         self.idle_reason = Some(reason);
         self.active_since = None;
-    }
-
-    /// Transition to Completed state
-    #[allow(dead_code)] // State machine API for future use
-    pub fn to_completed(&mut self) {
-        self.status = TaskStatus::Completed;
-        self.phase = TaskPhase::None;
-        self.idle_reason = None;
-        self.active_since = None;
-        self.instance = None;
-    }
-
-    /// Reset to Pending state
-    #[allow(dead_code)] // State machine API for future use
-    pub fn to_pending(&mut self) {
-        self.status = TaskStatus::Pending;
-        self.phase = TaskPhase::None;
-        self.idle_reason = None;
-        self.active_since = None;
-        self.instance = None;
-    }
-
-    /// Check if the task is in an error state
-    #[allow(dead_code)] // Query API for future use
-    pub fn is_error(&self) -> bool {
-        self.status == TaskStatus::Idle && self.idle_reason == Some(IdleReason::Error)
-    }
-
-    /// Check if the task has a conflict
-    #[allow(dead_code)] // Query API for future use
-    pub fn has_conflict(&self) -> bool {
-        self.status == TaskStatus::Idle && self.idle_reason == Some(IdleReason::Conflict)
-    }
-
-    /// Get duration since entering Active state
-    #[allow(dead_code)] // Query API for future use
-    pub fn active_duration(&self) -> Option<chrono::Duration> {
-        self.active_since.map(|since| Utc::now() - since)
     }
 }
 
@@ -380,18 +296,6 @@ impl StatusStore {
     /// Get mutable reference to task state, creating default if not exists
     pub fn get_mut(&mut self, name: &str) -> &mut TaskState {
         self.tasks.entry(name.to_string()).or_default()
-    }
-
-    /// Set state for a task
-    #[allow(dead_code)] // API for tests and future use
-    pub fn set(&mut self, name: &str, state: TaskState) {
-        self.tasks.insert(name.to_string(), state);
-    }
-
-    /// Remove a task (used by delete command)
-    #[allow(dead_code)] // API for tests and future use
-    pub fn remove(&mut self, name: &str) -> Option<TaskState> {
-        self.tasks.remove(name)
     }
 
     /// Get status for a task
@@ -566,27 +470,8 @@ mod tests {
     }
 
     #[test]
-    fn test_state_constructors() {
-        let pending = TaskState::pending();
-        assert_eq!(pending.status, TaskStatus::Pending);
-
-        let active = TaskState::active(TaskPhase::Developing);
-        assert_eq!(active.status, TaskStatus::Active);
-        assert_eq!(active.phase, TaskPhase::Developing);
-        assert!(active.active_since.is_some());
-
-        let idle = TaskState::idle(TaskPhase::Reviewing, IdleReason::Done);
-        assert_eq!(idle.status, TaskStatus::Idle);
-        assert_eq!(idle.phase, TaskPhase::Reviewing);
-        assert_eq!(idle.idle_reason, Some(IdleReason::Done));
-
-        let completed = TaskState::completed();
-        assert_eq!(completed.status, TaskStatus::Completed);
-    }
-
-    #[test]
     fn test_state_transitions() {
-        let mut state = TaskState::pending();
+        let mut state = TaskState::default();
 
         // Pending → Active
         state.to_active(TaskPhase::Developing);
@@ -604,49 +489,11 @@ mod tests {
         state.to_active(TaskPhase::Reviewing);
         assert_eq!(state.status, TaskStatus::Active);
         assert_eq!(state.phase, TaskPhase::Reviewing);
-
-        // Active → Completed
-        state.to_completed();
-        assert_eq!(state.status, TaskStatus::Completed);
-        assert_eq!(state.phase, TaskPhase::None);
-    }
-
-    #[test]
-    fn test_state_reset() {
-        let mut state = TaskState::active(TaskPhase::Developing);
-        state.to_pending();
-
-        assert_eq!(state.status, TaskStatus::Pending);
-        assert_eq!(state.phase, TaskPhase::None);
-        assert!(state.idle_reason.is_none());
-        assert!(state.active_since.is_none());
-    }
-
-    #[test]
-    fn test_state_is_error() {
-        let mut state = TaskState::idle(TaskPhase::Developing, IdleReason::Error);
-        assert!(state.is_error());
-
-        state.idle_reason = Some(IdleReason::Done);
-        assert!(!state.is_error());
-
-        state.status = TaskStatus::Active;
-        state.idle_reason = Some(IdleReason::Error);
-        assert!(!state.is_error()); // Not Idle status
-    }
-
-    #[test]
-    fn test_state_has_conflict() {
-        let state = TaskState::idle(TaskPhase::Merging, IdleReason::Conflict);
-        assert!(state.has_conflict());
-
-        let state = TaskState::idle(TaskPhase::Merging, IdleReason::Error);
-        assert!(!state.has_conflict());
     }
 
     #[test]
     fn test_state_serialize_minimal() {
-        let state = TaskState::pending();
+        let state = TaskState::default();
         let json = serde_json::to_string(&state).unwrap();
 
         // Should only have status, phase=none should be skipped
@@ -658,7 +505,8 @@ mod tests {
 
     #[test]
     fn test_state_serialize_full() {
-        let mut state = TaskState::active(TaskPhase::Developing);
+        let mut state = TaskState::default();
+        state.to_active(TaskPhase::Developing);
         state.instance = Some(Instance {
             branch: "wt/test".to_string(),
             worktree_path: "/path".to_string(),
@@ -700,17 +548,6 @@ mod tests {
     }
 
     #[test]
-    fn test_store_set_and_get() {
-        let mut store = StatusStore::default();
-        let state = TaskState::active(TaskPhase::Developing);
-        store.set("test", state);
-
-        let got = store.get("test");
-        assert_eq!(got.status, TaskStatus::Active);
-        assert_eq!(got.phase, TaskPhase::Developing);
-    }
-
-    #[test]
     fn test_store_get_mut() {
         let mut store = StatusStore::default();
         {
@@ -723,23 +560,10 @@ mod tests {
     }
 
     #[test]
-    fn test_store_remove() {
-        let mut store = StatusStore::default();
-        store.set("test", TaskState::active(TaskPhase::Developing));
-
-        let removed = store.remove("test");
-        assert!(removed.is_some());
-        assert!(store.tasks.get("test").is_none());
-
-        // Get after remove should return default
-        assert_eq!(store.get("test").status, TaskStatus::Pending);
-    }
-
-    #[test]
     fn test_store_serialize() {
         let mut store = StatusStore::default();
-        store.set("task1", TaskState::active(TaskPhase::Developing));
-        store.set("task2", TaskState::idle(TaskPhase::Reviewing, IdleReason::Done));
+        store.get_mut("task1").to_active(TaskPhase::Developing);
+        store.get_mut("task2").to_idle(IdleReason::Done);
 
         let json = serde_json::to_string(&store).unwrap();
         assert!(json.contains("task1"));

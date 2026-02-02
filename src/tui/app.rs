@@ -65,18 +65,14 @@ pub struct TaskDisplay {
 pub struct App {
     pub tasks: Vec<TaskDisplay>,
     pub selected: usize,
-    #[allow(dead_code)]
-    config: Option<WtConfig>,
 }
 
 impl App {
     /// Create new app and load initial data
     pub fn new() -> Result<Self> {
-        let config = WtConfig::load().ok();
         let mut app = Self {
             tasks: Vec::new(),
             selected: 0,
-            config,
         };
         app.refresh()?;
         Ok(app)
@@ -330,11 +326,9 @@ impl App {
         let session = task.session_name.as_ref()?;
         let window = task.window_name.as_ref()?;
 
-        let claude_command = self
-            .config
-            .as_ref()
-            .map(|c| c.claude_command.clone())
-            .unwrap_or_else(|| "claude".to_string());
+        let claude_command = WtConfig::load()
+            .map(|c| c.claude_command)
+            .unwrap_or_else(|_| "claude".to_string());
 
         if task.mux_alive {
             if self.is_in_multiplexer(mux_type) {
