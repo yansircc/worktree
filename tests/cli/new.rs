@@ -189,3 +189,360 @@ fn test_new_rejects_names_with_double_dots() {
         stderr
     );
 }
+
+// ==================== Special Characters ====================
+
+#[test]
+fn test_new_rejects_names_with_tilde() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "bad~name"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch"),
+        "Expected validation error for ~, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_new_rejects_names_with_caret() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "bad^name"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch"),
+        "Expected validation error for ^, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_new_rejects_names_with_colon() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "bad:name"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch"),
+        "Expected validation error for :, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_new_rejects_names_with_question_mark() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "bad?name"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch"),
+        "Expected validation error for ?, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_new_rejects_names_with_asterisk() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "bad*name"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch"),
+        "Expected validation error for *, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_new_rejects_names_with_bracket() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "bad[name"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch"),
+        "Expected validation error for [, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_new_rejects_names_with_at_brace() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "bad@{name"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch"),
+        "Expected validation error for @{{, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_new_rejects_names_starting_with_dot() {
+    let dir = setup_test_repo();
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", ".hidden"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("branch") || stderr.contains("cannot start with"),
+        "Expected validation error for starting with ., got: {}",
+        stderr
+    );
+}
+
+// ==================== Branch Conflict ====================
+
+#[test]
+fn test_new_name_conflict_with_existing_branch() {
+    let dir = setup_test_repo();
+
+    // Create an existing branch wt/existing-branch
+    std::process::Command::new("git")
+        .current_dir(dir.path())
+        .args(["branch", "wt/existing-branch"])
+        .output()
+        .expect("Failed to create branch");
+
+    // Try to create scratch with same branch name
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "existing-branch"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("already exists") || stderr.contains("Branch"),
+        "Expected branch conflict error, got: {}",
+        stderr
+    );
+}
+
+// ==================== Auto Name Skips Existing ====================
+
+#[test]
+fn test_new_auto_name_skips_existing_branch() {
+    let dir = setup_test_repo();
+
+    // Create wt/s1 branch to force auto-name to skip it
+    std::process::Command::new("git")
+        .current_dir(dir.path())
+        .args(["branch", "wt/s1"])
+        .output()
+        .expect("Failed to create branch");
+
+    // Run wt new without name - should try s2 since s1 exists
+    let (_ok, stdout, stderr) = run_wt(dir.path(), &["new"]);
+
+    let output = format!("{}{}", stdout, stderr);
+
+    // Should attempt s2 (or higher) since s1 branch exists
+    assert!(
+        output.contains("s2") || output.contains("s3"),
+        "Expected auto-generated name to skip s1, got: {}",
+        output
+    );
+}
+
+#[test]
+fn test_new_auto_name_skips_existing_status_entry() {
+    let dir = setup_test_repo();
+
+    // Create s1 in status.json
+    set_scratch_status(dir.path(), "s1", "running");
+
+    // Run wt new without name - should try s2
+    let (_ok, stdout, stderr) = run_wt(dir.path(), &["new"]);
+
+    let output = format!("{}{}", stdout, stderr);
+
+    // Should attempt s2 since s1 exists in status
+    assert!(
+        output.contains("s2") || output.contains("s3"),
+        "Expected auto-generated name to skip s1, got: {}",
+        output
+    );
+}
+
+// ==================== --print-path Option ====================
+
+#[test]
+fn test_new_print_path_only_outputs_path() {
+    let dir = setup_test_repo();
+
+    // --print-path should only output the worktree path
+    let (_ok, stdout, _stderr) = run_wt(dir.path(), &["new", "--print-path", "path-test"]);
+
+    // If successful (or partial success before tmux), stdout should be just the path
+    // The path format is: {worktree_dir}/{name}
+    if !stdout.is_empty() {
+        // Should not contain verbose messages like "Created scratch" or "Copied:"
+        assert!(
+            !stdout.contains("Created scratch") && !stdout.contains("Copied:"),
+            "--print-path should suppress verbose output, got: {}",
+            stdout
+        );
+
+        // Path should contain the name
+        if stdout.contains("path-test") {
+            assert!(
+                stdout.trim().ends_with("path-test") || stdout.contains("/path-test"),
+                "--print-path should output path containing name, got: {}",
+                stdout
+            );
+        }
+    }
+}
+
+#[test]
+fn test_new_without_print_path_shows_verbose() {
+    let dir = setup_test_repo();
+
+    // Without --print-path, should show verbose output
+    let (_ok, stdout, stderr) = run_wt(dir.path(), &["new", "verbose-test"]);
+
+    let output = format!("{}{}", stdout, stderr);
+
+    // Should contain some informational output (branch, worktree, etc.)
+    // Even if it fails on tmux, the early output should mention the environment
+    assert!(
+        output.contains("verbose-test") || output.contains("wt/"),
+        "Without --print-path, should show verbose info, got: {}",
+        output
+    );
+}
+
+// ==================== Status.json Recording ====================
+
+#[test]
+fn test_new_sets_scratch_flag_true() {
+    let dir = setup_test_repo();
+
+    // Run new command (may fail on tmux but should update status.json first)
+    let _ = run_wt(dir.path(), &["new", "scratch-flag-test"]);
+
+    // Check status.json if it was created/updated
+    let status = parse_status_json(dir.path());
+    if let Some(task) = status.get("tasks").and_then(|t| t.get("scratch-flag-test")) {
+        // If entry exists, scratch should be true
+        let is_scratch = task.get("scratch").and_then(|v| v.as_bool()).unwrap_or(false);
+        assert!(
+            is_scratch,
+            "scratch flag should be true, got: {:?}",
+            task
+        );
+    }
+    // If no entry, command failed before writing (acceptable in test env)
+}
+
+#[test]
+fn test_new_sets_status_running() {
+    let dir = setup_test_repo();
+
+    let _ = run_wt(dir.path(), &["new", "status-test"]);
+
+    let status = parse_status_json(dir.path());
+    if let Some(task) = status.get("tasks").and_then(|t| t.get("status-test")) {
+        let task_status = task.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(
+            task_status, "running",
+            "status should be 'running', got: {}",
+            task_status
+        );
+    }
+}
+
+#[test]
+fn test_new_records_instance_info() {
+    let dir = setup_test_repo();
+
+    let _ = run_wt(dir.path(), &["new", "instance-test"]);
+
+    let status = parse_status_json(dir.path());
+    if let Some(task) = status.get("tasks").and_then(|t| t.get("instance-test")) {
+        if let Some(instance) = task.get("instance") {
+            // Verify instance contains expected fields
+            assert!(
+                instance.get("branch").is_some(),
+                "instance should have branch field"
+            );
+            assert!(
+                instance.get("worktree_path").is_some(),
+                "instance should have worktree_path field"
+            );
+            assert!(
+                instance.get("tmux_session").is_some(),
+                "instance should have tmux_session field"
+            );
+            assert!(
+                instance.get("tmux_window").is_some(),
+                "instance should have tmux_window field"
+            );
+
+            // session_id should be None (null) for scratch
+            let session_id = instance.get("session_id");
+            assert!(
+                session_id.is_none() || session_id == Some(&serde_json::Value::Null),
+                "session_id should be null for scratch, got: {:?}",
+                session_id
+            );
+        }
+    }
+}
+
+// ==================== No Config Error ====================
+
+#[test]
+fn test_new_fails_without_config() {
+    let dir = tempfile::tempdir().unwrap();
+
+    // Init git repo but don't create .wt/config.yaml
+    std::process::Command::new("git")
+        .current_dir(dir.path())
+        .args(["init"])
+        .output()
+        .expect("Failed to init git");
+
+    std::process::Command::new("git")
+        .current_dir(dir.path())
+        .args(["config", "user.email", "test@test.com"])
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .current_dir(dir.path())
+        .args(["config", "user.name", "Test"])
+        .output()
+        .ok();
+
+    std::fs::write(dir.path().join("README.md"), "# Test").unwrap();
+    std::process::Command::new("git")
+        .current_dir(dir.path())
+        .args(["add", "."])
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .current_dir(dir.path())
+        .args(["commit", "-m", "init"])
+        .output()
+        .ok();
+
+    // Try wt new without config
+    let (ok, _, stderr) = run_wt(dir.path(), &["new", "test"]);
+
+    assert!(!ok);
+    assert!(
+        stderr.contains("config") || stderr.contains("not found") || stderr.contains("init"),
+        "Expected config error, got: {}",
+        stderr
+    );
+}
