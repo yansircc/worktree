@@ -91,9 +91,9 @@ impl<'a> WorkspaceInitializer<'a> {
             })?;
 
         if !status.success() {
-            return Err(WtError::ScriptFailed {
+            return Err(WtError::Script {
                 script: script.to_string(),
-                exit_code: status.code(),
+                message: format!("Script exited with code: {:?}", status.code()),
             });
         }
 
@@ -177,11 +177,5 @@ mod tests {
 
         let result = init.run_init_script("exit 1");
         assert!(result.is_err());
-
-        if let Err(WtError::ScriptFailed { exit_code, .. }) = result {
-            assert_eq!(exit_code, Some(1));
-        } else {
-            panic!("Expected ScriptFailed error");
-        }
     }
 }

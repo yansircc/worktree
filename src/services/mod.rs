@@ -3,7 +3,6 @@ pub mod config_ops;
 pub mod dependency;
 pub mod files;
 pub mod git;
-pub mod hooks;
 pub mod multiplexer;
 pub mod notify;
 pub mod status_ops;
