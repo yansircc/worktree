@@ -68,16 +68,16 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     let mut completed: Vec<(usize, &Task)> = Vec::new();
     let mut ready: Vec<(usize, &Task)> = Vec::new();
     let mut blocked: Vec<(usize, &Task, Vec<&str>)> = Vec::new();
-    let mut running: Vec<(usize, &Task)> = Vec::new();
-    let mut review: Vec<(usize, &Task)> = Vec::new();
+    let mut active: Vec<(usize, &Task)> = Vec::new();
+    let mut idle: Vec<(usize, &Task)> = Vec::new();
 
     for task in tasks {
         let idx = index_map[task.name()];
         let status = store.get_status(task.name());
         match status {
             TaskStatus::Completed => completed.push((idx, task)),
-            TaskStatus::Running => running.push((idx, task)),
-            TaskStatus::Review => review.push((idx, task)),
+            TaskStatus::Active => active.push((idx, task)),
+            TaskStatus::Idle => idle.push((idx, task)),
             TaskStatus::Pending => {
                 // Check if all dependencies are completed
                 let incomplete_deps: Vec<&str> = task
@@ -113,19 +113,19 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
         println!();
     }
 
-    // Print Running
-    if !running.is_empty() {
-        println!("Running ({}):", running.len());
-        for (idx, task) in &running {
+    // Print Active
+    if !active.is_empty() {
+        println!("Active ({}):", active.len());
+        for (idx, task) in &active {
             print_task_with_deps_indexed(*idx, task, store, &index_map);
         }
         println!();
     }
 
-    // Print Review
-    if !review.is_empty() {
-        println!("Review ({}):", review.len());
-        for (idx, task) in &review {
+    // Print Idle
+    if !idle.is_empty() {
+        println!("Idle ({}):", idle.len());
+        for (idx, task) in &idle {
             print_task_with_deps_indexed(*idx, task, store, &index_map);
         }
         println!();

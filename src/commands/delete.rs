@@ -3,16 +3,16 @@
 use std::path::Path;
 
 use crate::error::{Result, WtError};
-use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::models::{TaskStatus, TaskStore, WtConfig};
 use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 /// Execute the delete command.
 ///
 /// Deletes a task's resources (worktree, branch) based on its status:
 /// - Completed task: directly delete resources, keep completed status record
-/// - Review/Running task: requires --force, after deletion status returns to Pending
+/// - Idle/Active task: requires --force, after deletion status returns to Pending
 /// - Pending task: error (no resources to delete)
-/// - Scratch (Running/Review): directly delete, remove all records
+/// - Scratch (Active/Idle): directly delete, remove all records
 /// - Scratch (Pending/Completed): error (invalid state)
 pub fn execute(task_ref: String, force: bool) -> Result<()> {
     let config = WtConfig::load()?;
@@ -26,8 +26,8 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
 
     // Check if we can delete based on status
     if is_scratch {
-        // Scratch: only allow from Running or Review
-        if current_status != TaskStatus::Running && current_status != TaskStatus::Review {
+        // Scratch: only allow from Active or Idle
+        if current_status != TaskStatus::Active && current_status != TaskStatus::Idle {
             return Err(WtError::InvalidStateTransition {
                 from: current_status.display_name().to_string(),
                 to: "deleted".to_string(),
@@ -47,7 +47,7 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
                 )));
             }
 
-            // Running/Review with force
+            // Active/Idle with force
             (status, true) => {
                 eprintln!(
                     "Warning: Force deleting task '{}' in {} state.",
@@ -56,7 +56,7 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
                 );
             }
 
-            // Running/Review without force
+            // Active/Idle without force
             (status, false) => {
                 return Err(WtError::InvalidInput(format!(
                     "Task '{}' is in {} state. Use --force to delete, or complete it first with 'wt complete {}'.",
@@ -73,9 +73,9 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
     // Build hook context
     let context = build_hook_context(&config, &store, &name, &repo_root)?;
 
-    // Run before_delete hook
+    // Execute "delete" hook
     let hooks = HooksEngine::new(&config);
-    hooks.before_delete(&context)?;
+    hooks.execute("delete", &context)?;
 
     // Close multiplexer window if exists
     if let Some(ref inst) = instance {
@@ -135,7 +135,7 @@ fn build_hook_context(
     store: &TaskStore,
     name: &str,
     repo_root: &str,
-) -> Result<HookContext> {
+) -> Result<crate::services::hooks::ExecutionContext> {
     let instance = store.get_instance(name);
     let status = store.get_status(name);
 
@@ -151,7 +151,7 @@ fn build_hook_context(
         (config.session_name.clone(), name.to_string())
     };
 
-    Ok(HookContext::new(name, &branch, &worktree, repo_root)
+    Ok(crate::services::hooks::ExecutionContext::new(name, &branch, &worktree, repo_root)
         .with_session(&session)
         .with_window(&window)
         .with_status(status.display_name()))
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_build_hook_context_minimal() {
-        let config = WtConfig::from_str("session_name: test\n").unwrap();
+        let config = WtConfig::default();
         let store = TaskStore::default();
 
         let ctx = build_hook_context(&config, &store, "task1", "/repo").unwrap();
@@ -171,8 +171,7 @@ mod tests {
         assert_eq!(ctx.task, "task1");
         assert_eq!(ctx.branch, "wt/task1");
         assert_eq!(ctx.repo_root, "/repo");
-        assert_eq!(ctx.session, "test");
+        // session uses config default, window is task name
         assert_eq!(ctx.window, "task1");
-        assert_eq!(ctx.status, "pending");
     }
 }

@@ -56,8 +56,8 @@ fn setup_test_repo() -> TempDir {
 
     fs::create_dir_all(dir.path().join(".wt")).unwrap();
     fs::write(
-        dir.path().join(".wt/config.yaml"),
-        "start_args: -p test\nsession_name: test-wt\n",
+        dir.path().join(".wt/config.jsonc"),
+        r#"{"multiplexer": "tmux", "session_name": "test-wt"}"#,
     )
     .unwrap();
 
@@ -247,7 +247,7 @@ fn test_task_file_mismatched_name() {
 // ==================== Config Edge Cases ====================
 
 #[test]
-fn test_corrupted_config_yaml() {
+fn test_corrupted_config_jsonc() {
     let dir = tempfile::tempdir().unwrap();
 
     Command::new("git")
@@ -258,19 +258,18 @@ fn test_corrupted_config_yaml() {
 
     fs::create_dir_all(dir.path().join(".wt")).unwrap();
     fs::write(
-        dir.path().join(".wt/config.yaml"),
-        "invalid: yaml: content: [",
+        dir.path().join(".wt/config.jsonc"),
+        "{ invalid json content",
     )
     .unwrap();
 
     let (ok, _stdout, stderr) = run_wt(dir.path(), &["list"]);
 
-    // Current behavior: serde_yaml may be lenient or strict
-    // Document actual behavior
+    // Current behavior: json parser should report error
     if !ok {
         assert!(
             stderr.contains("config")
-                || stderr.contains("YAML")
+                || stderr.contains("JSON")
                 || stderr.contains("parse")
                 || stderr.contains("Invalid"),
             "Should report config parse error: {}",
@@ -281,7 +280,7 @@ fn test_corrupted_config_yaml() {
 }
 
 #[test]
-fn test_empty_config_yaml() {
+fn test_empty_config_jsonc() {
     let dir = tempfile::tempdir().unwrap();
 
     Command::new("git")
@@ -291,7 +290,7 @@ fn test_empty_config_yaml() {
         .ok();
 
     fs::create_dir_all(dir.path().join(".wt")).unwrap();
-    fs::write(dir.path().join(".wt/config.yaml"), "").unwrap();
+    fs::write(dir.path().join(".wt/config.jsonc"), "").unwrap();
 
     let (ok, _, _) = run_wt(dir.path(), &["list"]);
 
@@ -308,7 +307,7 @@ fn test_status_entry_without_task_file() {
     // Create status entry without corresponding task file
     fs::write(
         dir.path().join(".wt/status.json"),
-        r#"{"tasks": {"orphan": {"status": "running"}}}"#,
+        r#"{"tasks": {"orphan": {"status": "active"}}}"#,
     )
     .unwrap();
 

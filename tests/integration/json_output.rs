@@ -25,12 +25,12 @@ fn test_task_status_serializes_to_lowercase() {
         "\"pending\""
     );
     assert_eq!(
-        serde_json::to_string(&TaskStatus::Running).unwrap(),
-        "\"running\""
+        serde_json::to_string(&TaskStatus::Active).unwrap(),
+        "\"active\""
     );
     assert_eq!(
-        serde_json::to_string(&TaskStatus::Review).unwrap(),
-        "\"review\""
+        serde_json::to_string(&TaskStatus::Idle).unwrap(),
+        "\"idle\""
     );
     assert_eq!(
         serde_json::to_string(&TaskStatus::Completed).unwrap(),
@@ -45,12 +45,12 @@ fn test_task_status_deserializes_from_lowercase() {
         TaskStatus::Pending
     );
     assert_eq!(
-        serde_json::from_str::<TaskStatus>("\"running\"").unwrap(),
-        TaskStatus::Running
+        serde_json::from_str::<TaskStatus>("\"active\"").unwrap(),
+        TaskStatus::Active
     );
     assert_eq!(
-        serde_json::from_str::<TaskStatus>("\"review\"").unwrap(),
-        TaskStatus::Review
+        serde_json::from_str::<TaskStatus>("\"idle\"").unwrap(),
+        TaskStatus::Idle
     );
     assert_eq!(
         serde_json::from_str::<TaskStatus>("\"completed\"").unwrap(),
@@ -89,7 +89,7 @@ fn test_list_json_schema_with_tasks() {
     store
         .tasks
         .insert("api".to_string(), make_task("api", vec!["auth"]));
-    store.set_status("auth", TaskStatus::Running);
+    store.set_status("auth", TaskStatus::Active);
 
     let tasks = store.list();
     let output = serde_json::json!({
@@ -112,7 +112,7 @@ fn test_list_json_schema_with_tasks() {
 
         // Status must be one of the valid values
         let status = task["status"].as_str().unwrap();
-        assert!(["pending", "running", "review", "completed"].contains(&status));
+        assert!(["pending", "active", "idle", "completed"].contains(&status));
     }
 }
 

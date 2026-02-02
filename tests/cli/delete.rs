@@ -14,7 +14,7 @@ fn test_delete_nonexistent() {
 
 #[test]
 fn test_delete_normal_task_fails() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "running")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "active")]);
 
     let (ok, _, stderr) = run_wt(dir.path(), &["delete", "task1"]);
 
@@ -47,7 +47,7 @@ fn test_delete_completed_task() {
 
 #[test]
 fn test_delete_running_task_with_force() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "running")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "active")]);
 
     let (ok, stdout, stderr) = run_wt(dir.path(), &["delete", "--force", "task1"]);
 
@@ -79,7 +79,7 @@ fn test_delete_pending_task_fails() {
 #[test]
 fn test_delete_scratch_running() {
     let dir = setup_test_repo();
-    set_scratch_status(dir.path(), "s1", "running");
+    set_scratch_status(dir.path(), "s1", "active");
 
     let (ok, stdout, _) = run_wt(dir.path(), &["delete", "s1"]);
 
@@ -94,7 +94,7 @@ fn test_delete_scratch_running() {
 #[test]
 fn test_delete_scratch_review() {
     let dir = setup_test_repo();
-    set_scratch_status(dir.path(), "s1", "review");
+    set_scratch_status(dir.path(), "s1", "idle");
 
     let (ok, stdout, _) = run_wt(dir.path(), &["delete", "s1"]);
 

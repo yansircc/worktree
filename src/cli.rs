@@ -90,11 +90,15 @@ pub enum Commands {
         name: String,
     },
 
-    /// Show status of running/review tasks (TUI by default, --json for programmatic use)
+    /// Show status of active/idle tasks (TUI by default, --json for programmatic use)
     Status {
         /// Output as JSON for programmatic use (non-interactive)
         #[arg(long)]
         json: bool,
+
+        /// Show verbose output (status + phase + idle_reason + active_since)
+        #[arg(long, short)]
+        verbose: bool,
 
         /// Execute action on task (list, review, resume, complete, enter, tail)
         #[arg(long, value_name = "ACTION")]
@@ -143,6 +147,38 @@ pub enum Commands {
         /// Arguments for the operation
         args: Vec<String>,
     },
+
+    /// Manually trigger a hook (for debugging)
+    Hooks {
+        #[command(subcommand)]
+        action: HooksAction,
+    },
+
+    /// Pause a running task (Active -> Idle)
+    Pause {
+        /// Task name to pause
+        name: String,
+
+        /// Reason for pausing
+        #[arg(long, default_value = "manual")]
+        reason: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum HooksAction {
+    /// Run a specific hook manually
+    Run {
+        /// Hook name (run, review, resume, complete, delete, reset)
+        hook: String,
+
+        /// Target task name
+        #[arg(long)]
+        task: Option<String>,
+    },
+
+    /// List available hooks
+    List,
 }
 
 #[derive(Subcommand)]

@@ -1,0 +1,103 @@
+{
+  // ============================================
+  // 基础配置
+  // ============================================
+
+  // Terminal multiplexer: tmux (默认) 或 zellij
+  "multiplexer": "tmux",
+
+  // Session 名称
+  "session_name": "my-project",
+
+  // Claude CLI 命令（默认: claude）
+  "claude_command": "claude",
+
+  // Worktree 目录
+  "worktree_dir": ".wt/worktrees",
+
+  // ============================================
+  // Hooks - 每个命令的行为定义
+  // ============================================
+  "hooks": {
+
+    // wt run: 启动开发
+    // 状态: Pending → Active, 阶段: → developing
+    "run": [
+      // 资源创建（wt 内置操作）
+      { "type": "internal", "run": "worktree:create" },
+      { "type": "internal", "run": "branch:create" },
+
+      // 环境准备
+      { "type": "script", "run": "cp .env.example .env" },
+      { "type": "script", "run": "npm install" },
+
+      // 启动 agent（交互模式，在 multiplexer 窗口中运行）
+      { "type": "internal", "run": "window:create" },
+      {
+        "type": "agent",
+        "interactive": true,
+        "model": "sonnet",
+        "prompt": "@.wt/tasks/${task}.md 请完成这个任务"
+      }
+    ],
+
+    // wt review: 进入审核阶段
+    // 状态: * → Active (执行中) → Idle (完成后), 阶段: → reviewing
+    "review": [
+      // 自动检查
+      { "type": "script", "run": "npm run lint && npm run test" },
+
+      // 关闭开发窗口
+      { "type": "internal", "run": "window:close" },
+
+      // 启动审核 agent（可选，非交互模式）
+      {
+        "type": "agent",
+        "interactive": false,
+        "model": "sonnet",
+        "prompt": "Review the code changes for task ${task}. Check against @.wt/tasks/${task}.md"
+      }
+    ],
+
+    // wt resume: 恢复开发
+    // 状态: Idle → Active, 阶段: 保持不变
+    "resume": [
+      { "type": "internal", "run": "window:create" },
+      {
+        "type": "agent",
+        "interactive": true,
+        "model": "sonnet",
+        "prompt": "Continue working on @.wt/tasks/${task}.md"
+      }
+    ],
+
+    // wt complete: 完成任务
+    // 状态: * → Completed, 阶段: reviewing → merging → (done)
+    "complete": [
+      // 最终验证
+      { "type": "script", "run": "npm run build && npm run test" },
+
+      // 合并
+      { "type": "internal", "run": "branch:merge" },
+
+      // 清理资源
+      { "type": "internal", "run": "worktree:destroy" },
+      { "type": "internal", "run": "branch:delete" }
+    ],
+
+    // wt delete: 删除任务
+    "delete": [
+      { "type": "script", "run": "rm -rf node_modules/ .next/" },
+      { "type": "internal", "run": "worktree:destroy" },
+      { "type": "internal", "run": "branch:delete" }
+    ],
+
+    // wt reset: 重置任务
+    "reset": [
+      { "type": "internal", "run": "files:backup" },
+      { "type": "script", "run": "rm -rf node_modules/ .next/" },
+      { "type": "internal", "run": "worktree:destroy" },
+      { "type": "internal", "run": "branch:delete" }
+    ]
+  }
+}

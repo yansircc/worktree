@@ -77,7 +77,7 @@ fn task_not_found_response(action: &str, task_name: &str) -> ActionResponse {
         action: action.to_string(),
         success: false,
         error: Some(format!(
-            "Task '{}' not found (only running/review tasks are available)",
+            "Task '{}' not found (only active/idle tasks are available)",
             task_name
         )),
         task: Some(TaskInfo {
@@ -185,34 +185,34 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
     let mut available = vec![];
     let mut unavailable = HashMap::new();
 
-    // tail/enter available for Running/Review
-    if matches!(task.status, TaskStatus::Running | TaskStatus::Review) {
+    // tail/enter available for Active/Idle
+    if matches!(task.status, TaskStatus::Active | TaskStatus::Idle) {
         available.push("tail".to_string());
         available.push("enter".to_string());
     } else {
         unavailable.insert(
             "tail".to_string(),
             format!(
-                "task is {} (need running or review)",
+                "task is {} (need active or idle)",
                 task.status.display_name()
             ),
         );
         unavailable.insert(
             "enter".to_string(),
             format!(
-                "task is {} (need running or review)",
+                "task is {} (need active or idle)",
                 task.status.display_name()
             ),
         );
     }
 
     // review check
-    if app.can_mark_review() {
+    if app.can_mark_idle() {
         available.push("review".to_string());
     } else {
         unavailable.insert(
-            "review".to_string(),
-            format!("task is {} (need running)", task.status.display_name()),
+            "idle".to_string(),
+            format!("task is {} (need active)", task.status.display_name()),
         );
     }
 
@@ -258,9 +258,9 @@ fn handle_review_action(app: &mut App, task_name: &str) -> ActionResponse {
     let status_before = task.status.clone();
     let mux_alive = task.mux_alive;
 
-    if !app.can_mark_review() {
+    if !app.can_mark_idle() {
         return error_response(
-            "review",
+            "idle",
             "Cannot mark for review: task is not running",
             task_name,
             Some(status_before),
@@ -268,9 +268,9 @@ fn handle_review_action(app: &mut App, task_name: &str) -> ActionResponse {
         );
     }
 
-    if let Err(e) = app.mark_review() {
+    if let Err(e) = app.mark_idle() {
         return error_response(
-            "review",
+            "idle",
             &format!("Failed to mark for review: {}", e),
             task_name,
             Some(status_before),
@@ -278,7 +278,7 @@ fn handle_review_action(app: &mut App, task_name: &str) -> ActionResponse {
         );
     }
 
-    success_response("review", task_name, status_before, TaskStatus::Review)
+    success_response("review", task_name, status_before, TaskStatus::Idle)
 }
 
 fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
@@ -309,7 +309,7 @@ fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
         );
     }
 
-    success_response("resume", task_name, status_before, TaskStatus::Running)
+    success_response("resume", task_name, status_before, TaskStatus::Active)
 }
 
 fn handle_complete_action(app: &mut App, task_name: &str) -> ActionResponse {

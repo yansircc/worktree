@@ -1,20 +1,18 @@
 //! Complete command - merge a task's changes to main and clean up.
-//!
-//! This replaces the old `wt merge` command with a simpler hook-based approach.
 
 use std::path::Path;
 
 use chrono::Utc;
 
 use crate::error::{Result, WtError};
-use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::models::{TaskStatus, TaskStore, WtConfig};
 use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
 
-    // Resolve task reference (name or index) to actual name
+    // Resolve task reference
     let name = store.resolve_task_ref(&task_ref)?;
 
     // Check if scratch environment
@@ -28,11 +26,11 @@ pub fn execute(task_ref: String) -> Result<()> {
     // Check task exists
     store.ensure_exists(&name)?;
 
-    // Check task status is Review
+    // Check task status is Idle
     let current_status = store.get_status(&name);
-    if current_status != TaskStatus::Review {
+    if current_status != TaskStatus::Idle {
         return Err(WtError::InvalidInput(format!(
-            "Task '{}' is {} (expected review). Run 'wt review {}' first.",
+            "Task '{}' is {} (expected idle). Run 'wt review {}' first.",
             name,
             current_status.display_name(),
             name
@@ -55,43 +53,31 @@ pub fn execute(task_ref: String) -> Result<()> {
     let repo_root = git::get_repo_root()?;
 
     // Build hook context
-    let context = HookContext::new(&name, &instance.branch, worktree_path, &repo_root)
+    let context = crate::services::hooks::ExecutionContext::new(&name, &instance.branch, worktree_path, &repo_root)
         .with_session(&instance.session_name)
         .with_window(&instance.window_name)
-        .with_status("review")
-        .with_prev_status("review")
+        .with_status("completed")
+        .with_prev_status("idle")
         .with_timestamp(&Utc::now().to_rfc3339());
 
     // Create hooks engine
     let hooks = HooksEngine::new(&config);
 
-    // Execute before_complete hook (tests, lint, etc.)
-    println!("Running before_complete hook...");
-    hooks.before_complete(&context)?;
+    // Execute "complete" hook
+    println!("Running complete hook...");
+    hooks.execute("complete", &context)?;
 
     // Execute default merge flow if no custom hook handles it
-    // The user can override this by defining their own merge logic in hooks
     if !config.has_custom_complete_hook() {
         default_merge_flow(&repo_root, worktree_path, &instance.branch, &name)?;
     }
 
+    // Clean up resources
+    cleanup_resources(&config, &instance, &repo_root)?;
+
     // Update status
     store.set_status(&name, TaskStatus::Completed);
     store.save_status()?;
-
-    // Execute after_complete hook
-    let completed_context = HookContext::new(&name, &instance.branch, worktree_path, &repo_root)
-        .with_session(&instance.session_name)
-        .with_window(&instance.window_name)
-        .with_status("completed")
-        .with_prev_status("review")
-        .with_timestamp(&Utc::now().to_rfc3339());
-
-    println!("Running after_complete hook...");
-    hooks.after_complete(&completed_context)?;
-
-    // Clean up resources
-    cleanup_resources(&config, &instance, &repo_root)?;
 
     println!("Task '{}' completed and merged to main.", name);
     Ok(())

@@ -25,7 +25,8 @@ wt tail auth                               # 查看最后输出
 wt logs                                    # 生成调试日志
 wt review auth                             # 标记待审核
 wt complete auth                           # 完成任务 (merge + 清理)
-wt resume auth                             # 继续开发（从 review 回到 running）
+wt resume auth                             # 继续开发
+wt pause auth                              # 暂停任务
 wt reset auth                              # 重置（会备份代码）
 ```
 
@@ -44,11 +45,14 @@ wt reset auth                              # 重置（会备份代码）
 | `wt tail <name\|index> [-n N]` | 查看最后 N 条输出 (JSON) |
 | `wt logs` | 生成所有任务的过滤日志 |
 | `wt review <name\|index>` | 标记待审核 |
-| `wt resume <name\|index>` | 继续开发（从 review 回到 running） |
+| `wt resume <name\|index>` | 继续开发 |
+| `wt pause <name\|index> [--reason R]` | 暂停任务 |
 | `wt complete <name\|index>` | 完成任务 (merge + 清理) |
 | `wt reset <name\|index>` | 重置到 pending（备份代码）|
 | `wt new [name]` | 创建 scratch 环境 |
 | `wt delete <name> [--force]` | 删除任务资源 |
+| `wt hooks list` | 列出配置的 hooks |
+| `wt hooks run <hook> [--task T]` | 手动触发 hook（调试用） |
 | `wt completions generate <shell>` | 生成 shell 补全脚本 |
 | `wt completions install` | 安装 shell 补全到配置文件 |
 
@@ -56,17 +60,46 @@ wt reset auth                              # 重置（会备份代码）
 
 ## 任务状态
 
+### 状态模型
+
+wt 使用两个维度描述任务状态：
+
+- **Status** - 资源状态（是否有进程在运行）
+- **Phase** - 业务阶段（开发进度）
+
 ```
-○ Pending  →  ● Running  →  ? Review  →  ✓ Completed
-  (wt run)    (wt review)   (wt complete)
-                  ↑            │
-                  └────────────┘  (wt resume)
+Status:
+○ Pending  →  ● Active  ⇄  ◐ Idle  →  ✓ Completed
+  (未创建)    (有进程)    (无进程)    (已完成)
+
+Phase:
+(none) → developing → reviewing → merging → (done)
 ```
 
-- **review** 标记任务待审核，关闭 multiplexer 窗口
-- **resume** 从 Review 恢复到 Running，继续开发
-- **complete** 执行 hooks + merge + cleanup
-- **reset** 可从任意状态回到 Pending（会备份代码到 `.wt/backups/`）
+### Status × Phase 组合
+
+| Status | Phase | 场景 |
+|--------|-------|------|
+| Pending | (none) | 任务已定义，未创建资源 |
+| Active | developing | agent 正在开发 |
+| Idle | developing | agent 暂停，等待用户 |
+| Active | reviewing | review pipeline 在运行 |
+| Idle | reviewing | review 完成，等待下一步 |
+| Active | merging | 合并/清理进行中 |
+| Completed | (none) | 任务完成 |
+
+### Idle 原因
+
+当任务处于 Idle 状态时，`idle_reason` 说明原因：
+
+| 原因 | 说明 |
+|------|------|
+| `done` | 当前阶段正常完成 |
+| `human_review` | 等待人工审核 |
+| `error` | 命令执行出错 |
+| `conflict` | 合并冲突待解决 |
+| `timeout` | 执行超时 |
+| `manual` | 用户手动暂停 |
 
 ## Status TUI 快捷键
 
@@ -95,91 +128,160 @@ wt status --action tail --task ui      # 查看输出
 
 ## 配置
 
-配置文件位于 `.wt/config.yaml`：
+配置文件位于 `.wt/config.jsonc`（JSONC 格式，支持注释）：
 
-```yaml
-# Terminal multiplexer: tmux (默认) 或 zellij
-multiplexer: tmux
+```jsonc
+{
+  // Terminal multiplexer: tmux (默认) 或 zellij
+  "multiplexer": "tmux",
 
-# Session 名称
-session_name: my-project
+  // Session 名称
+  "session_name": "my-project",
 
-# Claude CLI 命令（默认: claude）
-# claude_command: ccc
+  // Claude CLI 命令（默认: claude）
+  "claude_command": "claude",
 
-# wt run 执行的参数
-start_args: --verbose --output-format=stream-json -p "@.wt/tasks/${task}.md 请完成任务"
+  // Worktree 目录
+  "worktree_dir": ".wt/worktrees",
 
-# 其他可选配置
-# worktree_dir: .wt/worktrees
-# copy_files:
-#   - .env
-
-# 日志过滤 (wt logs)
-# logs:
-#   exclude_types: [system, progress]
-#   exclude_fields: [signature, uuid]
-
-# Hooks - 在任务生命周期各阶段执行脚本
-hooks:
-  on_create: npm install           # worktree 创建后
-  before_review: npm run lint      # review 前检查
-  before_complete: npm run build   # 完成前验证
-  before_delete: rm -rf node_modules/  # 删除前清理
-  before_reset: rm -rf node_modules/   # 重置前清理
+  // Hooks - 每个命令的行为定义
+  "hooks": {
+    "run": [
+      { "type": "script", "run": "npm install" },
+      { "type": "agent", "interactive": true, "prompt": "..." }
+    ],
+    "review": [
+      { "type": "script", "run": "npm run lint" }
+    ]
+  }
+}
 ```
+
+完整示例见 `.wt/config.example.jsonc`。
 
 ## Hooks 系统
 
+### 设计原则
+
+- **命令 = Hook** - 每个命令的行为完全由 hooks 定义
+- **全部 Hooks 化** - 没有特殊配置，全部统一为 hooks
+- **Pipeline 优先** - 多 agent 通过 stream-json 自动串联
+
 ### 可用 Hooks
 
-| Hook | 触发时机 | 用途 |
-|------|----------|------|
-| `on_create` | worktree 创建后 | 安装依赖、初始化环境 |
-| `before_run` | 启动 agent 前 | 前置检查 |
-| `after_run` | agent 启动后 | 通知、日志 |
-| `before_review` | 标记 review 前 | lint、测试 |
-| `after_review` | 标记 review 后 | 通知 |
-| `before_resume` | 恢复开发前 | 环境检查 |
-| `before_complete` | 完成任务前 | 构建、最终验证 |
-| `after_complete` | 完成任务后 | 清理、通知 |
-| `before_delete` | 删除资源前 | 清理大文件 |
-| `before_reset` | 重置任务前 | 清理大文件 |
+| Hook | 触发命令 | 默认状态转换 |
+|------|----------|--------------|
+| `run` | `wt run` | Pending → Active + developing |
+| `review` | `wt review` | * → Idle + reviewing |
+| `resume` | `wt resume` | Idle → Active |
+| `complete` | `wt complete` | * → Completed |
+| `delete` | `wt delete` | 移除记录 |
+| `reset` | `wt reset` | * → Pending |
+
+### Step 类型
+
+#### 1. script
+
+执行 shell 脚本：
+
+```jsonc
+{
+  "type": "script",
+  "run": "npm run lint",
+  "on_error": { ... }  // 可选：失败时执行的步骤
+}
+```
+
+#### 2. agent
+
+运行 Claude agent：
+
+```jsonc
+{
+  "type": "agent",
+  "interactive": false,           // false = -p 模式, true = REPL 模式
+  "model": "haiku",               // haiku | sonnet | opus
+  "prompt": "...",                // 内联 prompt 或 @file 引用
+  "tools": ["Read", "Edit"],      // 可用工具列表
+  "allowed_tools": ["Bash(npm *)"], // 自动批准的工具
+  "skip_permissions": false,      // 是否跳过权限提示
+  "output_format": "text",        // text | json | stream-json
+  "window": "new"                 // 交互模式: main | new
+}
+```
+
+#### 3. internal
+
+调用 wt 内置操作：
+
+```jsonc
+{
+  "type": "internal",
+  "run": "worktree:create",
+  "on_conflict": { ... }  // 可选：冲突时执行的步骤
+}
+```
+
+可用操作：`worktree:create`, `worktree:destroy`, `branch:create`, `branch:delete`, `branch:merge`, `window:create`, `window:close`, `files:backup`, `files:clean`
+
+#### 4. condition
+
+条件判断：
+
+```jsonc
+{
+  "type": "condition",
+  "if": "wt internal git:has-changes ${worktree}",
+  "then": { ... },
+  "else": { ... }
+}
+```
+
+### Pipeline 模式
+
+多个 agent 通过 stream-json 自动串联：
+
+```jsonc
+{
+  "hooks": {
+    "review": {
+      "pipeline": [
+        {
+          "type": "agent",
+          "model": "haiku",
+          "prompt": "List all changed files and summarize changes"
+        },
+        {
+          "type": "agent",
+          "model": "sonnet",
+          "prompt": "Based on the above, perform detailed code review"
+        }
+      ]
+    }
+  }
+}
+```
+
+wt 自动转换为：
+
+```bash
+claude -p --output-format stream-json "prompt1" | \
+claude -p --input-format stream-json --output-format stream-json "prompt2"
+```
 
 ### 变量
 
-Hooks 脚本中可使用以下变量：
+所有 step 中可使用：
 
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `${task}` | 任务名 | `auth` |
-| `${branch}` | 分支名 | `wt/auth-abc123` |
-| `${worktree}` | worktree 路径 | `.wt/worktrees/auth` |
-| `${session}` | multiplexer session | `my-project` |
-| `${window}` | multiplexer window | `auth` |
-
-### 示例
-
-```yaml
-hooks:
-  on_create: |
-    npm install
-    cp .env.example .env
-
-  before_review: |
-    npm run lint
-    npm run test
-
-  before_complete: |
-    npm run build
-    npm run test:e2e
-
-  after_complete: |
-    wt internal notify "Task Complete" "${task} merged to main"
-
-  before_delete: |
-    rm -rf node_modules/ dist/ .next/
-```
+| 变量 | 说明 |
+|------|------|
+| `${task}` | 任务名 |
+| `${branch}` | 分支名 |
+| `${worktree}` | worktree 路径 |
+| `${session}` | multiplexer session |
+| `${window}` | multiplexer window |
+| `${repo_root}` | 仓库根目录 |
+| `${phase}` | 当前阶段 |
 
 ## 内部操作 (wt internal)
 
@@ -224,7 +326,7 @@ wt internal files:clean <worktree> <patterns...>
 ### 状态操作
 
 ```bash
-wt internal status:set <task> <status>    # pending/running/review/completed
+wt internal status:set <task> <status>    # pending/active/idle/completed
 wt internal status:get <task>
 ```
 
@@ -239,7 +341,7 @@ wt internal task:blocked-by <task>   # 输出阻塞的任务列表
 ### 配置操作
 
 ```bash
-wt internal config:get <key>   # 支持: claude_command, session_name, multiplexer, worktree_dir, start_args
+wt internal config:get <key>   # 支持: claude_command, session_name, multiplexer, worktree_dir
 ```
 
 ### 通知操作

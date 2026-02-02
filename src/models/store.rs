@@ -200,12 +200,12 @@ impl TaskStore {
         self.status.save()
     }
 
-    /// Check if a task should be auto-marked for Review.
-    /// Condition: status is Running but tmux window is closed.
+    /// Check if a task should be auto-marked as Idle.
+    /// Condition: status is Active but multiplexer window is closed.
     /// Returns: whether auto-mark was performed.
-    pub fn auto_mark_review_if_needed(&mut self, task_name: &str) -> Result<bool> {
+    pub fn auto_mark_idle_if_needed(&mut self, task_name: &str) -> Result<bool> {
         let status = self.get_status(task_name);
-        if status != TaskStatus::Running {
+        if status != TaskStatus::Active {
             return Ok(false);
         }
 
@@ -225,8 +225,8 @@ impl TaskStore {
             return Ok(false);
         }
 
-        // Window closed, auto-mark for Review
-        self.set_status(task_name, TaskStatus::Review);
+        // Window closed, auto-mark as Idle
+        self.set_status(task_name, TaskStatus::Idle);
         Ok(true)
     }
 
@@ -759,8 +759,8 @@ mod tests {
     #[test]
     fn test_store_set_and_get_status() {
         let mut store = TaskStore::default();
-        store.set_status("test", TaskStatus::Running);
-        assert_eq!(store.get_status("test"), TaskStatus::Running);
+        store.set_status("test", TaskStatus::Active);
+        assert_eq!(store.get_status("test"), TaskStatus::Active);
     }
 
     #[test]
@@ -802,7 +802,7 @@ mod tests {
         let mut store = TaskStore::default();
         assert!(!store.name_exists_in_status("test"));
 
-        store.set_status("test", TaskStatus::Running);
+        store.set_status("test", TaskStatus::Active);
         assert!(store.name_exists_in_status("test"));
     }
 
@@ -836,22 +836,22 @@ mod tests {
     #[test]
     fn test_validate_transition_valid() {
         let mut store = TaskStore::default();
-        store.set_status("test", TaskStatus::Running);
+        store.set_status("test", TaskStatus::Active);
 
-        let result = store.validate_transition("test", TaskStatus::Review);
+        let result = store.validate_transition("test", TaskStatus::Idle);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_validate_transition_invalid() {
         let store = TaskStore::default();
-        // Default is Pending, cannot transition to Review directly
+        // Default is Pending, cannot transition to Idle directly
 
-        let result = store.validate_transition("test", TaskStatus::Review);
+        let result = store.validate_transition("test", TaskStatus::Idle);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("pending"));
-        assert!(err.contains("review"));
+        assert!(err.contains("idle"));
     }
 
     // ==================== resolve_task_ref Tests ====================

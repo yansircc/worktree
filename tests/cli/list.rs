@@ -32,8 +32,8 @@ fn test_list_shows_tasks() {
 fn test_list_shows_status_symbols() {
     let dir = setup_repo_with_tasks(&[
         ("pending_task", &[], "pending"),
-        ("running_task", &[], "running"),
-        ("review_task", &[], "review"),
+        ("running_task", &[], "active"),
+        ("review_task", &[], "idle"),
         ("completed_task", &[], "completed"),
     ]);
 
@@ -41,8 +41,8 @@ fn test_list_shows_status_symbols() {
 
     assert!(ok);
     assert!(stdout.contains("○")); // pending
-    assert!(stdout.contains("●")); // running
-    assert!(stdout.contains("?")); // review
+    assert!(stdout.contains("●")); // active
+    assert!(stdout.contains("◐")); // idle
     assert!(stdout.contains("✓")); // completed
 }
 
@@ -182,8 +182,8 @@ fn test_list_json_with_depends() {
 fn test_list_json_all_statuses() {
     let dir = setup_repo_with_tasks(&[
         ("p", &[], "pending"),
-        ("r", &[], "running"),
-        ("v", &[], "review"),
+        ("r", &[], "active"),
+        ("v", &[], "idle"),
         ("c", &[], "completed"),
     ]);
 
@@ -200,7 +200,7 @@ fn test_list_json_all_statuses() {
         .collect();
 
     assert!(statuses.contains(&"pending"));
-    assert!(statuses.contains(&"running"));
-    assert!(statuses.contains(&"review"));
+    assert!(statuses.contains(&"active"));
+    assert!(statuses.contains(&"idle"));
     assert!(statuses.contains(&"completed"));
 }

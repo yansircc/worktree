@@ -15,7 +15,7 @@ fn test_scratch_review_forbidden() {
     let dir = setup_test_repo();
 
     // Create scratch status entry (no task file)
-    set_scratch_status(dir.path(), "scratch-env", "running");
+    set_scratch_status(dir.path(), "scratch-env", "active");
 
     let (ok, _, stderr) = run_wt(dir.path(), &["review", "scratch-env"]);
 
@@ -31,7 +31,7 @@ fn test_scratch_review_forbidden() {
 fn test_scratch_review_suggests_delete() {
     let dir = setup_test_repo();
 
-    set_scratch_status(dir.path(), "scratch-env", "running");
+    set_scratch_status(dir.path(), "scratch-env", "active");
 
     let (ok, _, stderr) = run_wt(dir.path(), &["review", "scratch-env"]);
 
@@ -50,7 +50,7 @@ fn test_scratch_complete_forbidden() {
     let dir = setup_test_repo();
 
     // Create scratch in review state
-    set_scratch_status(dir.path(), "scratch-env", "review");
+    set_scratch_status(dir.path(), "scratch-env", "idle");
 
     let (ok, _, stderr) = run_wt(dir.path(), &["complete", "scratch-env"]);
 
@@ -72,7 +72,7 @@ fn test_scratch_delete_allowed_from_running() {
     set_scratch_status_with_instance(
         dir.path(),
         "scratch-env",
-        "running",
+        "active",
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
@@ -98,7 +98,7 @@ fn test_scratch_delete_removes_from_status() {
     set_scratch_status_with_instance(
         dir.path(),
         "scratch-env",
-        "running",
+        "active",
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
@@ -129,7 +129,7 @@ fn test_scratch_reset_removes_from_status() {
     set_scratch_status_with_instance(
         dir.path(),
         "scratch-env",
-        "running",
+        "active",
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
@@ -164,7 +164,7 @@ fn test_scratch_identified_by_flag_not_missing_file() {
     let dir = setup_test_repo();
 
     // Create normal status entry (no scratch flag) without task file
-    set_task_status(dir.path(), "orphan", "running");
+    set_task_status(dir.path(), "orphan", "active");
 
     // Try to mark for review - should fail because task file not found, not because scratch
     let (ok, _, stderr) = run_wt(dir.path(), &["review", "orphan"]);
@@ -188,7 +188,7 @@ fn test_scratch_not_in_status_without_task_file() {
     set_scratch_status_with_instance(
         dir.path(),
         "scratch-env",
-        "running",
+        "active",
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
@@ -220,7 +220,7 @@ fn test_scratch_not_in_task_list() {
     // Create both regular task and scratch
     create_task_file(dir.path(), "regular-task", &[]);
     set_task_status(dir.path(), "regular-task", "pending");
-    set_scratch_status(dir.path(), "scratch-env", "running");
+    set_scratch_status(dir.path(), "scratch-env", "active");
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list", "--json"]);
     assert!(ok);

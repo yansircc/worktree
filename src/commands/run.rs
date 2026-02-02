@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::constants::branch_name;
 use crate::error::{Result, WtError};
-use crate::models::{HookContext, Instance, TaskStatus, TaskStore, WtConfig};
+use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
 use crate::services::{
     dependency, git, hooks::HooksEngine, multiplexer::check_multiplexer_installed,
     workspace::WorkspaceInitializer,
@@ -20,13 +20,8 @@ pub fn execute(task_ref: Option<String>, all: bool) -> Result<()> {
             )
         })?;
 
-        // Resolve task reference (name or index) to actual name
         let store = TaskStore::load()?;
         let name = store.resolve_task_ref(&task_ref)?;
-        // NOTE: Explicitly drop store because execute_single loads it again.
-        // This is necessary since execute_single needs full control over store lifecycle
-        // (including modifying status and saving). Future refactor could have execute_single
-        // accept &mut TaskStore instead.
         drop(store);
 
         execute_single(name)
@@ -38,7 +33,6 @@ fn execute_all() -> Result<()> {
     let store = TaskStore::load()?;
     let tasks = store.list();
 
-    // Find all ready tasks (pending with all deps completed)
     let ready_tasks: Vec<String> = tasks
         .iter()
         .filter(|task| {
@@ -101,9 +95,9 @@ fn execute_single(name: String) -> Result<()> {
     // Check if this is the first run (no worktree yet)
     let is_first_run = store.get_instance(&name).is_none();
 
-    // Check status from StatusStore
-    if store.get_status(&name) == TaskStatus::Running {
-        return Err(WtError::AlreadyRunning(name.clone()));
+    // Check status
+    if store.get_status(&name) == TaskStatus::Active {
+        return Err(WtError::AlreadyActive(name.clone()));
     }
 
     dependency::check_dependencies_completed(&store, &name)?;
@@ -120,35 +114,30 @@ fn execute_single(name: String) -> Result<()> {
         .to_string();
 
     // Build hook context
-    let context = HookContext::new(&name, &branch, &worktree_path, &repo_root)
+    let context = crate::services::hooks::ExecutionContext::new(&name, &branch, &worktree_path, &repo_root)
         .with_session(&config.session_name)
         .with_window(&name)
-        .with_status("running")
+        .with_status("active")
         .with_prev_status("pending");
 
     if is_first_run {
-        // Check if branch already exists (e.g., from a previous failed cleanup)
+        // Check if branch already exists
         if git::branch_exists(&branch) {
             return Err(WtError::BranchExists(branch));
         }
 
         git::create_worktree(&branch, &worktree_path)?;
 
-        // Initialize workspace
+        // Initialize workspace - copy files
         let initializer = WorkspaceInitializer::new(&worktree_path, &cwd);
-
-        // Copy files from main project to worktree
         let copied = initializer.copy_files(&config.copy_files)?;
         for file in &copied {
             println!("  Copied: {}", file);
         }
-
-        // Execute on_create hook (after worktree is created)
-        hooks.on_create(&context)?;
     }
 
-    // Execute before_run hook
-    hooks.before_run(&context)?;
+    // Execute "run" hook (user-defined steps)
+    hooks.execute("run", &context)?;
 
     // Create multiplexer session if needed
     let mux = config.create_multiplexer();
@@ -156,14 +145,13 @@ fn execute_single(name: String) -> Result<()> {
         mux.create_session(&config.session_name)?;
     }
 
-    // Build agent command: claude_command + start_args
+    // Build agent command
     let expanded_args = config
         .start_args
         .replace("${task}", &name)
         .replace("${branch}", &branch)
         .replace("${worktree}", &worktree_path);
 
-    // Add --session-id to the command for session tracking
     let agent_cmd = format!(
         "{} {} --session-id {}",
         config.claude_command, expanded_args, session_id
@@ -171,8 +159,8 @@ fn execute_single(name: String) -> Result<()> {
 
     mux.create_window(&config.session_name, &name, &worktree_path, &agent_cmd)?;
 
-    // Update status in StatusStore
-    store.set_status(&name, TaskStatus::Running);
+    // Update status to Active
+    store.set_status(&name, TaskStatus::Active);
     store.set_instance(
         &name,
         Some(Instance {
@@ -185,9 +173,6 @@ fn execute_single(name: String) -> Result<()> {
         }),
     );
     store.save_status()?;
-
-    // Execute after_run hook
-    hooks.after_run(&context)?;
 
     let relative_path = format!("{}/{}", config.worktree_dir, name);
 

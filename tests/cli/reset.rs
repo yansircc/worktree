@@ -24,7 +24,7 @@ fn test_reset_pending_task_is_idempotent() {
 
 #[test]
 fn test_reset_running_task() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "running")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "active")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["reset", "task1"]);
 
@@ -41,7 +41,7 @@ fn test_reset_running_task() {
 
 #[test]
 fn test_reset_review_task() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "review")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "idle")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["reset", "task1"]);
 
@@ -53,7 +53,7 @@ fn test_reset_review_task() {
 fn test_reset_with_non_pending_dependents_fails() {
     // Create task1 and task2 where task2 depends on task1
     // If task2 is running, we should not be able to reset task1
-    let dir = setup_repo_with_tasks(&[("task1", &[], "running"), ("task2", &["task1"], "running")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "active"), ("task2", &["task1"], "active")]);
 
     let (ok, _stdout, stderr) = run_wt(dir.path(), &["reset", "task1"]);
 
@@ -66,7 +66,7 @@ fn test_reset_with_non_pending_dependents_fails() {
 #[test]
 fn test_reset_with_pending_dependents_succeeds() {
     // If dependent task is pending, reset should succeed
-    let dir = setup_repo_with_tasks(&[("task1", &[], "running"), ("task2", &["task1"], "pending")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "active"), ("task2", &["task1"], "pending")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["reset", "task1"]);
 

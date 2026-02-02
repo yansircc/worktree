@@ -176,30 +176,30 @@ fn test_validate_name_edge_cases() {
 fn test_task_status_transitions() {
     use wt::models::TaskStatus;
     // Valid transitions
-    assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Running));
-    assert!(TaskStatus::Running.can_transition_to(&TaskStatus::Review));
-    assert!(TaskStatus::Review.can_transition_to(&TaskStatus::Completed));
+    assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Active));
+    assert!(TaskStatus::Active.can_transition_to(&TaskStatus::Idle));
+    assert!(TaskStatus::Idle.can_transition_to(&TaskStatus::Completed));
 }
 
 // ==================== Config Edge Cases ====================
 
 #[test]
 fn test_config_extra_fields_ignored() {
-    let yaml = r#"
-agent_command: test
-unknown_field: should be ignored
-another_unknown: also ignored
-"#;
-    let result = wt::models::WtConfig::from_str(yaml);
+    let jsonc = r#"{
+        "multiplexer": "tmux",
+        "unknown_field": "should be ignored",
+        "another_unknown": "also ignored"
+    }"#;
+    let result = wt::models::WtConfig::from_str(jsonc);
     assert!(result.is_ok());
 }
 
 #[test]
 fn test_config_empty_copy_files() {
-    let yaml = r#"
-agent_command: test
-copy_files: []
-"#;
-    let config = wt::models::WtConfig::from_str(yaml).unwrap();
+    let jsonc = r#"{
+        "multiplexer": "tmux",
+        "copy_files": []
+    }"#;
+    let config = wt::models::WtConfig::from_str(jsonc).unwrap();
     assert!(config.copy_files.is_empty());
 }

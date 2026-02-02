@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::models::TaskStatus;
+use crate::models::{IdleReason, TaskPhase, TaskStatus};
 use crate::services::git::GitMetrics;
 
 /// Task metrics for status output
@@ -11,6 +11,12 @@ pub struct TaskMetrics {
     pub index: usize,
     pub name: String,
     pub status: TaskStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<TaskPhase>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idle_reason: Option<IdleReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_since: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_secs: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,8 +49,8 @@ pub struct StatusOutput {
 /// Summary statistics for status output
 #[derive(Serialize)]
 pub struct StatusSummary {
-    pub running: usize,
-    pub review: usize,
+    pub active: usize,
+    pub idle: usize,
     pub total_additions: i32,
     pub total_deletions: i32,
 }

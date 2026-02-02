@@ -2,14 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum WtError {
-    #[error("Config file .wt.yaml not found in current directory")]
-    ConfigNotFound,
-
     #[error("Failed to read config: {0}")]
     ConfigRead(String),
-
-    #[error("Failed to parse config: {0}")]
-    ConfigParse(#[from] serde_yaml::Error),
 
     #[error("Task '{0}' not found")]
     TaskNotFound(String),
@@ -39,7 +33,7 @@ pub enum WtError {
     MultiplexerNotInstalled(String),
 
     #[error("Task '{0}' is already running")]
-    AlreadyRunning(String),
+    AlreadyActive(String),
 
     #[error(
         "Branch '{0}' already exists.\nHint: Run `git branch -D {0}` to delete it, then retry."

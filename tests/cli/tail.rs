@@ -48,7 +48,7 @@ fn test_tail_running_task_without_transcript() {
     set_task_status_with_instance(
         dir.path(),
         "task1",
-        "running",
+        "active",
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
@@ -76,7 +76,7 @@ fn test_tail_review_task_without_transcript() {
     set_task_status_with_instance(
         dir.path(),
         "task1",
-        "review",
+        "idle",
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
@@ -106,7 +106,7 @@ fn test_tail_with_count_parameter() {
     set_task_status_with_instance(
         dir.path(),
         "task1",
-        "running",
+        "active",
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
@@ -147,7 +147,7 @@ fn test_tail_default_count_is_one() {
 
 #[test]
 fn test_tail_task_without_instance() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "review")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "idle")]);
 
     // Task is in review but has no instance info
     let (ok, _, stderr) = run_wt(dir.path(), &["tail", "task1"]);
@@ -173,7 +173,7 @@ fn test_tail_scratch_task() {
     set_scratch_status_with_instance(
         dir.path(),
         "scratch-env",
-        "running",
+        "active",
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent-worktree",

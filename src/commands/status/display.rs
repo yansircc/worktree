@@ -10,12 +10,12 @@ use crate::services::{git, multiplexer::create_multiplexer, transcript};
 use super::types::{StatusOutput, StatusSummary, TaskMetrics};
 
 /// Display status in JSON or human-readable format
-pub fn display_status(json: bool) -> Result<()> {
+pub fn display_status(json: bool, verbose: bool) -> Result<()> {
     let mut store = TaskStore::load()?;
 
     let mut metrics_list = Vec::new();
-    let mut running_count = 0;
-    let mut review_count = 0;
+    let mut active_count = 0;
+    let mut idle_count = 0;
     let mut total_additions = 0;
     let mut total_deletions = 0;
     let mut status_changed = false;
@@ -31,17 +31,23 @@ pub fn display_status(json: bool) -> Result<()> {
         .collect();
 
     for task_name in &task_names {
-        // Auto-mark for Review if Running but tmux window is closed
-        if store.auto_mark_review_if_needed(task_name)? {
+        // Auto-mark as Idle if Active but tmux window is closed
+        if store.auto_mark_idle_if_needed(task_name)? {
             status_changed = true;
         }
 
         let status = store.get_status(task_name);
 
-        // Only show Running and Review tasks
-        if status != TaskStatus::Running && status != TaskStatus::Review {
+        // Only show Active and Idle tasks
+        if status != TaskStatus::Active && status != TaskStatus::Idle {
             continue;
         }
+
+        // Get task state for verbose info
+        let state = store.status.get(task_name);
+        let phase = state.phase.clone();
+        let idle_reason = state.idle_reason.clone();
+        let active_since = state.active_since.map(|dt| dt.to_rfc3339());
 
         let instance = store.get_instance(task_name);
 
@@ -55,10 +61,10 @@ pub fn display_status(json: bool) -> Result<()> {
 
         let final_status = status;
 
-        if final_status == TaskStatus::Running {
-            running_count += 1;
+        if final_status == TaskStatus::Active {
+            active_count += 1;
         } else {
-            review_count += 1;
+            idle_count += 1;
         }
 
         let instance = store.get_instance(task_name);
@@ -98,7 +104,7 @@ pub fn display_status(json: bool) -> Result<()> {
         }
 
         // mux_alive for JSON output (only meaningful for running tasks)
-        let mux_alive_for_output = if final_status == TaskStatus::Running {
+        let mux_alive_for_output = if final_status == TaskStatus::Active {
             Some(mux_alive)
         } else {
             None
@@ -124,6 +130,9 @@ pub fn display_status(json: bool) -> Result<()> {
             index: index_map[task_name],
             name: task_name.to_string(),
             status: final_status,
+            phase: Some(phase),
+            idle_reason,
+            active_since,
             duration_secs,
             duration_human,
             context_percent,
@@ -137,7 +146,7 @@ pub fn display_status(json: bool) -> Result<()> {
         });
     }
 
-    // Save status if any task was auto-marked for Review
+    // Save status if any task was auto-marked as Idle
     if status_changed {
         store.save_status()?;
     }
@@ -145,8 +154,8 @@ pub fn display_status(json: bool) -> Result<()> {
     let output = StatusOutput {
         tasks: metrics_list,
         summary: StatusSummary {
-            running: running_count,
-            review: review_count,
+            active: active_count,
+            idle: idle_count,
             total_additions,
             total_deletions,
         },
@@ -158,15 +167,15 @@ pub fn display_status(json: bool) -> Result<()> {
             serde_json::to_string_pretty(&output).unwrap_or_default()
         );
     } else {
-        print_human_readable(&output);
+        print_human_readable(&output, verbose);
     }
 
     Ok(())
 }
 
-fn print_human_readable(output: &StatusOutput) {
+fn print_human_readable(output: &StatusOutput, verbose: bool) {
     if output.tasks.is_empty() {
-        println!("No running or review tasks.");
+        println!("No active or idle tasks.");
         return;
     }
 
@@ -174,8 +183,8 @@ fn print_human_readable(output: &StatusOutput) {
     println!();
 
     for task in &output.tasks {
-        // For Running status, use running_icon for consistent display with TUI
-        let (icon_str, status_suffix) = if task.status == TaskStatus::Running {
+        // For Active status, use running_icon for consistent display with TUI
+        let (icon_str, status_suffix) = if task.status == TaskStatus::Active {
             let (icon, color) = running_icon(task.mux_alive, task.active);
             let colored = format!("{}{}{}", color, icon, RESET);
             let suffix = match task.mux_alive {
@@ -200,6 +209,19 @@ fn print_human_readable(output: &StatusOutput) {
             status_suffix
         );
 
+        // Verbose mode: show phase, idle_reason, active_since
+        if verbose {
+            if let Some(ref phase) = task.phase {
+                println!("    Phase:    {}", phase.display_name());
+            }
+            if let Some(ref reason) = task.idle_reason {
+                println!("    Reason:   {}", reason.display_name());
+            }
+            if let Some(ref since) = task.active_since {
+                println!("    Since:    {}", since);
+            }
+        }
+
         if let Some(ref duration) = task.duration_human {
             println!("    Duration: {}", duration);
         }
@@ -218,9 +240,9 @@ fn print_human_readable(output: &StatusOutput) {
 
     println!("---");
     println!(
-        "Summary: {} running, {} review | +{} -{}",
-        output.summary.running,
-        output.summary.review,
+        "Summary: {} active, {} idle | +{} -{}",
+        output.summary.active,
+        output.summary.idle,
         output.summary.total_additions,
         output.summary.total_deletions
     );

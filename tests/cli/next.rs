@@ -57,8 +57,8 @@ fn test_next_unblocked_by_completed() {
 #[test]
 fn test_next_ignores_non_pending() {
     let dir = setup_repo_with_tasks(&[
-        ("running", &[], "running"),
-        ("review", &[], "review"),
+        ("active", &[], "active"),
+        ("idle", &[], "idle"),
         ("completed", &[], "completed"),
     ]);
 

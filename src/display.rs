@@ -13,7 +13,7 @@ pub fn colored_index(idx: usize) -> String {
     format!("{}{}{}", GRAY, idx, RESET)
 }
 
-/// Running status icon with color based on multiplexer state and activity.
+/// Active status icon with color based on multiplexer state and activity.
 ///
 /// Returns (icon, color_code) tuple for terminal display.
 /// - mux dead: ⚠ yellow (warning)

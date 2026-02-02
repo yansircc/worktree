@@ -16,22 +16,22 @@ fn test_resume_pending_task() {
     let (ok, _, stderr) = run_wt(dir.path(), &["resume", "task"]);
 
     assert!(!ok);
-    assert!(stderr.contains("review") || stderr.contains("expected review"));
+    assert!(stderr.contains("idle") || stderr.contains("expected review"));
 }
 
 #[test]
 fn test_resume_running_task() {
-    let dir = setup_repo_with_tasks(&[("task", &[], "running")]);
+    let dir = setup_repo_with_tasks(&[("task", &[], "active")]);
 
     let (ok, _, stderr) = run_wt(dir.path(), &["resume", "task"]);
 
     assert!(!ok);
-    assert!(stderr.contains("review") || stderr.contains("expected review"));
+    assert!(stderr.contains("idle") || stderr.contains("expected review"));
 }
 
 #[test]
 fn test_resume_review_task_without_instance() {
-    let dir = setup_repo_with_tasks(&[("task", &[], "review")]);
+    let dir = setup_repo_with_tasks(&[("task", &[], "idle")]);
 
     let (ok, _, stderr) = run_wt(dir.path(), &["resume", "task"]);
 

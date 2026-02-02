@@ -2,8 +2,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use crate::constants::{CONFIG_FILE, TASKS_DIR};
+use crate::constants::TASKS_DIR;
 use crate::error::{Result, WtError};
+use crate::models::CONFIG_FILE;
 
 const GITIGNORE_MARKER: &str = "# wt - Worktree Task Manager";
 
@@ -11,7 +12,7 @@ const GITIGNORE_ENTRIES: &str = r#"# wt - Worktree Task Manager
 # https://github.com/anthropics/wt
 .wt/*
 !.wt/tasks/
-!.wt/config.yaml
+!.wt/config.jsonc
 "#;
 
 fn get_project_name() -> String {
@@ -23,108 +24,64 @@ fn get_project_name() -> String {
 
 fn generate_config(project_name: &str) -> String {
     format!(
-        r#"# wt 配置文件
-# 文档: https://github.com/anthropics/wt
+        r#"{{
+  // ============================================
+  // 基础配置
+  // ============================================
 
-# ============================================
-# 主要配置
-# ============================================
+  // Terminal multiplexer: tmux (默认) 或 zellij
+  "multiplexer": "tmux",
 
-# wt run 执行的参数
-# 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}
-#
-# 交互模式（默认）- 启动 REPL 带初始 prompt
-start_args: '"@.wt/tasks/${{task}}.md 请完成这个任务"'
-#
-# 非交互模式 - 执行完自动退出，适合 CI/自动化
-# start_args: --verbose --output-format=stream-json --input-format=stream-json -p "@.wt/tasks/${{task}}.md 请完成这个任务"
+  // Session 名称
+  "session_name": "{}",
 
-# ============================================
-# 可选配置
-# ============================================
+  // Claude CLI 命令（默认: claude）
+  // "claude_command": "claude",
 
-# Claude CLI 命令
-# 默认: claude
-# 如果你使用别名或想添加全局 flags，在这里配置
-# 示例: ccc, claude --yolo, /path/to/claude
-# claude_command: claude
+  // Worktree 目录
+  // "worktree_dir": ".wt/worktrees",
 
-# tmux session 名称
-# 默认: 项目目录名
-session_name: {}
+  // ============================================
+  // Hooks - 每个命令的行为定义
+  // ============================================
+  // 支持的 step 类型:
+  // - script: 执行 shell 脚本
+  // - agent: 运行 Claude agent
+  // - internal: 调用 wt 内置操作
+  // - condition: 条件判断
+  //
+  // 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}, ${{session}}, ${{window}}
 
-# Worktree 存放目录
-# 默认: .wt/worktrees
-# 支持相对路径（相对于项目根目录）和绝对路径
-# worktree_dir: .wt/worktrees
+  "hooks": {{
+    // wt run: 启动开发
+    "run": [
+      // {{ "type": "script", "run": "npm install" }},
+      {{
+        "type": "agent",
+        "interactive": true,
+        "model": "sonnet",
+        "prompt": "@.wt/tasks/${{task}}.md 请完成这个任务"
+      }}
+    ]
 
-# 需要复制到 worktree 的文件
-# 这些文件不会被 git checkout 带过去
-# copy_files:
-#   - .env
-#   - .env.local
+    // wt review: 进入审核阶段
+    // "review": [
+    //   {{ "type": "script", "run": "npm run lint && npm run test" }}
+    // ],
 
-# ============================================
-# Hooks 配置
-# ============================================
-# 在任务生命周期的各个阶段执行脚本
-# 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}
+    // wt complete: 完成任务
+    // "complete": [
+    //   {{ "type": "script", "run": "npm run build" }},
+    //   {{ "type": "internal", "run": "branch:merge" }},
+    //   {{ "type": "internal", "run": "worktree:destroy" }}
+    // ],
 
-# hooks:
-#   # 创建 worktree 后执行 (安装依赖等)
-#   on_create: |
-#     npm install
-#
-#   # 进入 review 前检查 (lint, test)
-#   before_review: |
-#     npm run lint
-#     npm run test
-#
-#   # 完成任务前执行 (build, 最终验证)
-#   before_complete: |
-#     npm run build
-#
-#   # 完成任务后执行
-#   after_complete: |
-#     echo "Task ${{task}} completed!"
-#
-#   # 删除/重置前清理 (减少备份体积)
-#   before_delete: |
-#     rm -rf node_modules/
-#     rm -rf dist/
-#
-#   before_reset: |
-#     rm -rf node_modules/
-
-# ============================================
-# 日志配置 (wt logs)
-# ============================================
-
-# 过滤规则，用于 wt logs 命令生成调试日志
-# 默认不过滤，取消注释以启用
-# logs:
-#   exclude_types:
-#     - system
-#     - progress
-#     - file-history-snapshot
-#   exclude_fields:
-#     - signature
-#     - cwd
-#     - gitBranch
-#     - permissionMode
-#     - sessionId
-#     - id
-#     - model
-#     - tool_use_id
-#     - timestamp
-#     - version
-#     - usage
-#     - parentUuid
-#     - uuid
-#     - isSidechain
-#     - userType
-#     - slug
-#     - thinkingMetadata
+    // wt delete/reset: 删除或重置任务
+    // "delete": [
+    //   {{ "type": "script", "run": "rm -rf node_modules/" }}
+    // ]
+  }}
+}}
 "#,
         project_name
     )
@@ -194,7 +151,7 @@ pub fn execute() -> Result<()> {
         })?;
     }
 
-    // Create .wt/config.yaml
+    // Create .wt/config.jsonc
     let config_content = generate_config(&project_name);
     fs::write(config_path, &config_content).map_err(|e| WtError::Io {
         operation: "create".to_string(),
@@ -254,23 +211,15 @@ mod tests {
     #[test]
     fn test_generate_config_contains_project_name() {
         let config = generate_config("my-project");
-        assert!(config.contains("session_name: my-project"));
+        assert!(config.contains("\"session_name\": \"my-project\""));
     }
 
     #[test]
     fn test_generate_config_has_required_fields() {
         let config = generate_config("test");
-        assert!(config.contains("start_args:"));
-        assert!(config.contains("session_name:"));
-        assert!(config.contains("worktree_dir:"));
-        assert!(config.contains("copy_files:"));
-        assert!(config.contains(".env"));
-    }
-
-    #[test]
-    fn test_generate_config_has_claude_command_comment() {
-        let config = generate_config("test");
-        assert!(config.contains("claude_command:"));
+        assert!(config.contains("\"multiplexer\":"));
+        assert!(config.contains("\"session_name\":"));
+        assert!(config.contains("\"hooks\":"));
     }
 
     #[test]
@@ -282,10 +231,8 @@ mod tests {
     #[test]
     fn test_generate_config_has_hooks() {
         let config = generate_config("test");
-        assert!(config.contains("hooks:"));
-        assert!(config.contains("on_create:"));
-        assert!(config.contains("before_delete:"));
-        assert!(config.contains("node_modules"));
+        assert!(config.contains("\"run\":"));
+        assert!(config.contains("\"type\": \"agent\""));
     }
 
     #[test]
@@ -301,6 +248,6 @@ mod tests {
     #[test]
     fn test_gitignore_entries_exposes_tasks_and_config() {
         assert!(GITIGNORE_ENTRIES.contains("!.wt/tasks/"));
-        assert!(GITIGNORE_ENTRIES.contains("!.wt/config.yaml"));
+        assert!(GITIGNORE_ENTRIES.contains("!.wt/config.jsonc"));
     }
 }

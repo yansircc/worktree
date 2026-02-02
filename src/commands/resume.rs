@@ -2,14 +2,14 @@ use std::path::Path;
 
 use crate::constants::BACKUPS_DIR;
 use crate::error::{Result, WtError};
-use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::models::{TaskStatus, TaskStore, WtConfig};
 use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
 
-    // Resolve task reference (name or index) to actual name
+    // Resolve task reference
     let name = store.resolve_task_ref(&task_ref)?;
 
     // Check if scratch environment
@@ -23,11 +23,11 @@ pub fn execute(task_ref: String) -> Result<()> {
     // Check task exists
     store.ensure_exists(&name)?;
 
-    // Verify status is Review
+    // Verify status is Idle
     let current_status = store.get_status(&name);
-    if current_status != TaskStatus::Review {
+    if current_status != TaskStatus::Idle {
         return Err(WtError::InvalidInput(format!(
-            "Task '{}' is {} (expected review). Only tasks in review can be resumed.",
+            "Task '{}' is {} (expected idle). Only idle tasks can be resumed.",
             name,
             current_status.display_name()
         )));
@@ -48,15 +48,15 @@ pub fn execute(task_ref: String) -> Result<()> {
     let repo_root = git::get_repo_root()?;
     let hooks = HooksEngine::new(&config);
 
-    let context = HookContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
+    let context = crate::services::hooks::ExecutionContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
         .with_session(&instance.session_name)
         .with_window(&instance.window_name)
-        .with_status("running")
-        .with_prev_status("review")
+        .with_status("active")
+        .with_prev_status("idle")
         .with_backup_dir(BACKUPS_DIR);
 
-    // Run before_resume hook
-    hooks.before_resume(&context)?;
+    // Execute "resume" hook
+    hooks.execute("resume", &context)?;
 
     // Restart multiplexer window if closed
     let session_name = &instance.session_name;
@@ -86,8 +86,8 @@ pub fn execute(task_ref: String) -> Result<()> {
         );
     }
 
-    // Update status to Running
-    store.set_status(&name, TaskStatus::Running);
+    // Update status to Active
+    store.set_status(&name, TaskStatus::Active);
     store.save_status()?;
 
     println!("Task '{}' resumed.", name);

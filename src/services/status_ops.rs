@@ -79,11 +79,11 @@ pub fn list_blocked_by(task: &str) -> Result<Vec<String>> {
 pub fn parse_status(status_str: &str) -> Result<TaskStatus> {
     match status_str.to_lowercase().as_str() {
         "pending" => Ok(TaskStatus::Pending),
-        "running" => Ok(TaskStatus::Running),
-        "review" => Ok(TaskStatus::Review),
+        "active" => Ok(TaskStatus::Active),
+        "idle" => Ok(TaskStatus::Idle),
         "completed" => Ok(TaskStatus::Completed),
         _ => Err(WtError::InvalidInput(format!(
-            "Invalid status '{}'. Valid values: pending, running, review, completed",
+            "Invalid status '{}'. Valid values: pending, active, idle, completed",
             status_str
         ))),
     }
@@ -96,16 +96,16 @@ mod tests {
     #[test]
     fn test_parse_status_valid() {
         assert_eq!(parse_status("pending").unwrap(), TaskStatus::Pending);
-        assert_eq!(parse_status("running").unwrap(), TaskStatus::Running);
-        assert_eq!(parse_status("review").unwrap(), TaskStatus::Review);
+        assert_eq!(parse_status("active").unwrap(), TaskStatus::Active);
+        assert_eq!(parse_status("idle").unwrap(), TaskStatus::Idle);
         assert_eq!(parse_status("completed").unwrap(), TaskStatus::Completed);
     }
 
     #[test]
     fn test_parse_status_case_insensitive() {
         assert_eq!(parse_status("PENDING").unwrap(), TaskStatus::Pending);
-        assert_eq!(parse_status("Running").unwrap(), TaskStatus::Running);
-        assert_eq!(parse_status("REVIEW").unwrap(), TaskStatus::Review);
+        assert_eq!(parse_status("Active").unwrap(), TaskStatus::Active);
+        assert_eq!(parse_status("IDLE").unwrap(), TaskStatus::Idle);
     }
 
     #[test]

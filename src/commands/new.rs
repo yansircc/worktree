@@ -80,7 +80,7 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     mux.create_window(&config.session_name, &name, &worktree_path, "")?;
 
     // Update status.json with scratch=true
-    store.set_status(&name, TaskStatus::Running);
+    store.set_status(&name, TaskStatus::Active);
     store.set_scratch(&name, true);
     store.set_instance(
         &name,

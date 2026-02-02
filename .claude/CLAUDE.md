@@ -13,15 +13,14 @@ src/
 ├── main.rs           # CLI 入口
 ├── lib.rs            # 库导出
 ├── cli.rs            # Clap 命令定义
-├── constants.rs      # 路径常量 (TASKS_DIR, STATUS_FILE, DEFAULT_SESSION_NAME)
+├── constants.rs      # 路径常量 (TASKS_DIR, DEFAULT_SESSION_NAME)
 ├── display.rs        # 显示格式化 (颜色常量, colored_index, running_icon, format_duration)
 ├── error.rs          # 错误类型 (WtError)
 ├── models/
-│   ├── task.rs       # Task, TaskStatus, TaskInput, Instance
-│   ├── status.rs     # StatusStore, TaskState (运行时状态)
+│   ├── task.rs       # Task, TaskFrontmatter, TaskInput, Instance
+│   ├── status.rs     # StatusStore, TaskState, TaskStatus, TaskPhase, IdleReason
 │   ├── store.rs      # TaskStore (加载任务 + 状态)
-│   ├── config.rs     # WtConfig, HooksConfig (.wt/config.yaml 解析)
-│   └── hook_context.rs # HookContext (hook 变量展开)
+│   └── config.rs     # WtConfig, HooksConfig, Step, HookDef (.wt/config.jsonc 解析)
 ├── commands/         # 各子命令实现
 │   ├── init.rs
 │   ├── create.rs
@@ -30,11 +29,13 @@ src/
 │   ├── next.rs
 │   ├── run.rs        # 启动任务，支持 --all 批量启动
 │   ├── review.rs     # 标记待审核
-│   ├── resume.rs     # 从 Review 恢复到 Running
+│   ├── resume.rs     # 继续开发
+│   ├── pause.rs      # 暂停任务 (Active → Idle)
 │   ├── complete.rs   # 完成任务（hooks + merge + cleanup）
 │   ├── delete.rs     # 删除任务资源
 │   ├── reset.rs      # 重置任务到 Pending
 │   ├── new.rs        # scratch 环境创建
+│   ├── hooks_cmd.rs  # hooks 子命令 (list, run)
 │   ├── status/       # 状态命令（已模块化）
 │   │   ├── mod.rs    # 入口
 │   │   ├── types.rs  # 数据结构
@@ -46,7 +47,11 @@ src/
 ├── services/
 │   ├── command.rs    # 命令执行辅助 (CommandRunner)
 │   ├── git.rs        # git worktree 操作
-│   ├── hooks.rs      # HooksEngine (hook 执行)
+│   ├── hooks/        # Hooks 引擎
+│   │   ├── mod.rs    # HooksEngine 主引擎
+│   │   ├── context.rs # ExecutionContext (变量展开)
+│   │   ├── step.rs   # StepExecutor (script/agent/internal/condition)
+│   │   └── pipeline.rs # PipelineExecutor (stream-json 串联)
 │   ├── multiplexer/  # terminal multiplexer 抽象层
 │   │   ├── mod.rs    # Multiplexer trait + 工厂函数
 │   │   ├── tmux.rs   # TmuxBackend 实现
@@ -62,38 +67,39 @@ src/
 
 ## 核心概念
 
-### 配置文件 (.wt/config.yaml)
+### 配置文件 (.wt/config.jsonc)
 
-```yaml
-# Terminal multiplexer: tmux (默认) 或 zellij
-multiplexer: tmux
+JSONC 格式，支持注释：
 
-# Session 名称
-session_name: project-name
+```jsonc
+{
+  // Terminal multiplexer: tmux (默认) 或 zellij
+  "multiplexer": "tmux",
 
-# Claude CLI 命令（默认: claude）
-claude_command: claude
+  // Session 名称
+  "session_name": "project-name",
 
-# wt run 执行的参数
-start_args: --verbose --output-format=stream-json -p "@.wt/tasks/${task}.md ..."
+  // Claude CLI 命令（默认: claude）
+  "claude_command": "claude",
 
-# 其他可选配置
-worktree_dir: .wt/worktrees
-copy_files:
-  - .env
+  // Worktree 目录
+  "worktree_dir": ".wt/worktrees",
 
-# 日志过滤配置 (wt logs)
-logs:
-  exclude_types: [system, progress]
-  exclude_fields: [signature, uuid]
-
-# Hooks - 在任务生命周期各阶段执行脚本
-hooks:
-  on_create: npm install           # worktree 创建后
-  before_review: npm run lint      # review 前检查
-  before_complete: npm run build   # 完成前验证
-  before_delete: rm -rf node_modules/  # 删除前清理
-  before_reset: rm -rf node_modules/   # 重置前清理
+  // Hooks - 每个命令的行为定义
+  "hooks": {
+    "run": [
+      { "type": "script", "run": "npm install" },
+      { "type": "agent", "interactive": true, "prompt": "@.wt/tasks/${task}.md" }
+    ],
+    "review": [
+      { "type": "script", "run": "npm run lint && npm run test" }
+    ],
+    "complete": [
+      { "type": "internal", "run": "branch:merge" },
+      { "type": "internal", "run": "worktree:destroy" }
+    ]
+  }
+}
 ```
 
 ### Task（任务）
@@ -112,13 +118,15 @@ depends:            # 依赖的任务列表
 {
   "tasks": {
     "auth": {
-      "status": "running",
+      "status": "active",
+      "phase": "developing",
+      "idle_reason": null,
+      "active_since": "2026-02-03T10:30:00Z",
       "instance": {
         "branch": "wt/auth-abc123",
         "worktree_path": ".wt/worktrees/auth",
         "session_name": "wt",
-        "window_name": "auth",
-        "multiplexer": "tmux"
+        "window_name": "auth"
       }
     },
     "database": { "status": "completed" }
@@ -126,19 +134,56 @@ depends:            # 依赖的任务列表
 }
 ```
 
-### TaskStatus 状态流转
+### 状态模型
+
+两个维度描述任务状态：
+
+- **Status** - 资源状态（是否有进程在运行）
+- **Phase** - 业务阶段（开发进度）
 
 ```
-○ Pending  →  ● Running  →  ? Review  →  ✓ Completed
-  (wt run)    (wt review)   (wt complete)
-                   ↑            │
-                   └────────────┘  (wt resume)
+Status:
+○ Pending  →  ● Active  ⇄  ◐ Idle  →  ✓ Completed
+  (未创建)    (有进程)    (无进程)    (已完成)
+
+Phase:
+(none) → developing → reviewing → merging → (done)
 ```
 
-- `wt review` 标记任务待审核，关闭 multiplexer 窗口
-- `wt resume` 从 Review 恢复到 Running，继续开发
-- `wt complete` 执行 hooks + merge + cleanup
-- `wt reset` 可从任意状态回到 Pending（会备份代码到 `.wt/backups/`）
+| Status | Phase | 场景 |
+|--------|-------|------|
+| Pending | (none) | 任务已定义，未创建资源 |
+| Active | developing | agent 正在开发 |
+| Idle | developing | agent 暂停，等待用户 |
+| Active | reviewing | review pipeline 在运行 |
+| Idle | reviewing | review 完成，等待下一步 |
+| Completed | (none) | 任务完成 |
+
+### IdleReason
+
+当任务处于 Idle 状态时，说明原因：
+
+| 原因 | 说明 |
+|------|------|
+| `done` | 当前阶段正常完成 |
+| `human_review` | 等待人工审核 |
+| `error` | 命令执行出错 |
+| `conflict` | 合并冲突待解决 |
+| `timeout` | 执行超时 |
+| `manual` | 用户手动暂停 |
+
+### Hooks 系统
+
+每个命令的行为由 hooks 定义。Step 类型：
+
+| 类型 | 说明 |
+|------|------|
+| `script` | 执行 shell 脚本 |
+| `agent` | 运行 Claude agent |
+| `internal` | 调用 wt 内置操作 |
+| `condition` | 条件判断 |
+
+Pipeline 模式支持多 agent stream-json 串联。
 
 ### 任务索引
 
@@ -176,3 +221,4 @@ cargo install --path .   # 安装到 ~/.cargo/bin
 - @.claude/rules/rust-style.md - Rust 编码规范
 - @.claude/rules/testing.md - 测试指南
 - @.claude/rules/cli/commands.md - CLI 命令实现规范
+- @.claude/specs/agent-hooks.md - Agent Hooks 规格文档

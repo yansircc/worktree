@@ -1,13 +1,13 @@
 use crate::constants::BACKUPS_DIR;
 use crate::error::{Result, WtError};
-use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::models::{IdleReason, TaskStatus, TaskStore, WtConfig};
 use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
 
-    // Resolve task reference (name or index) to actual name
+    // Resolve task reference
     let name = store.resolve_task_ref(&task_ref)?;
 
     // Check if scratch environment
@@ -21,7 +21,7 @@ pub fn execute(task_ref: String) -> Result<()> {
     // Check task exists and validate transition
     store.ensure_exists(&name)?;
     let prev_status = store.get_status(&name);
-    store.validate_transition(&name, TaskStatus::Review)?;
+    store.validate_transition(&name, TaskStatus::Idle)?;
 
     // Close multiplexer window if still alive
     if let Some(instance) = store.get_instance(&name) {
@@ -39,28 +39,25 @@ pub fn execute(task_ref: String) -> Result<()> {
     let hooks = HooksEngine::new(&config);
 
     let context = if let Some(instance) = store.get_instance(&name) {
-        HookContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
+        crate::services::hooks::ExecutionContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
             .with_session(&instance.session_name)
             .with_window(&instance.window_name)
-            .with_status("review")
+            .with_status("idle")
             .with_prev_status(prev_status.display_name())
             .with_backup_dir(BACKUPS_DIR)
     } else {
-        // Minimal context for tasks without instance (shouldn't happen in normal flow)
-        HookContext::new(&name, "", "", &repo_root)
-            .with_status("review")
+        crate::services::hooks::ExecutionContext::new(&name, "", "", &repo_root)
+            .with_status("idle")
             .with_prev_status(prev_status.display_name())
     };
 
-    // Run before_review hook (lint, format checks, etc.)
-    hooks.before_review(&context)?;
+    // Execute "review" hook
+    hooks.execute("review", &context)?;
 
-    // Update status
-    store.set_status(&name, TaskStatus::Review);
+    // Update status to Idle with reviewing phase
+    let state = store.status.get_mut(&name);
+    state.to_idle(IdleReason::HumanReview);
     store.save_status()?;
-
-    // Run after_review hook
-    hooks.after_review(&context)?;
 
     println!("Task '{}' marked for review.", name);
     println!("To merge into main, run: wt complete {}", name);

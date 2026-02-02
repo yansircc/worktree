@@ -26,29 +26,29 @@ pub fn draw(frame: &mut Frame, app: &App) {
 }
 
 fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
-    let running = app
+    let active = app
         .tasks
         .iter()
-        .filter(|t| t.status == TaskStatus::Running)
+        .filter(|t| t.status == TaskStatus::Active)
         .count();
-    let review = app
+    let idle = app
         .tasks
         .iter()
-        .filter(|t| t.status == TaskStatus::Review)
+        .filter(|t| t.status == TaskStatus::Idle)
         .count();
 
     let mut spans = vec![
         Span::styled(" wt status", Style::default().fg(Color::Cyan).bold()),
         Span::raw("                              "),
         Span::styled(
-            format!("{} running", running),
+            format!("{} active", active),
             Style::default().fg(Color::Green),
         ),
     ];
-    if review > 0 {
+    if idle > 0 {
         spans.push(Span::raw(" · "));
         spans.push(Span::styled(
-            format!("{} review", review),
+            format!("{} idle", idle),
             Style::default().fg(Color::Yellow),
         ));
     }
@@ -69,7 +69,7 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
 
 fn draw_tasks(frame: &mut Frame, area: Rect, app: &App) {
     if app.tasks.is_empty() {
-        let text = Paragraph::new(" No running or done tasks.")
+        let text = Paragraph::new(" No active or idle tasks.")
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(text, area);
         return;
@@ -213,9 +213,9 @@ fn format_tool_name(tool: &str) -> String {
 
 fn get_status_icon(task: &TaskDisplay) -> (&'static str, Color) {
     match task.status {
-        TaskStatus::Review => ("?", Color::Yellow),
+        TaskStatus::Idle => ("?", Color::Yellow),
         TaskStatus::Completed => ("✓", Color::Magenta),
-        TaskStatus::Running => {
+        TaskStatus::Active => {
             if !task.mux_alive {
                 ("⚠", Color::Yellow)
             } else if task.active {
@@ -250,18 +250,18 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
 
         // Context-sensitive actions based on selected task
         if let Some(task) = app.selected_task() {
-            // t (tail) available for Running and Review
-            if task.status == TaskStatus::Running || task.status == TaskStatus::Review {
+            // t (tail) available for Active and Idle
+            if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
                 spans.push(Span::styled("t", Style::default().fg(Color::Yellow)));
                 spans.push(Span::raw(" tail  "));
             }
 
-            if task.status == TaskStatus::Running {
-                // Running: r (review)
+            if task.status == TaskStatus::Active {
+                // Active: r (idle)
                 spans.push(Span::styled("r", Style::default().fg(Color::Yellow)));
-                spans.push(Span::raw(" review  "));
-            } else if task.status == TaskStatus::Review {
-                // Review: u (resume) and c (complete)
+                spans.push(Span::raw(" idle  "));
+            } else if task.status == TaskStatus::Idle {
+                // Idle: u (resume) and c (complete)
                 spans.push(Span::styled("u", Style::default().fg(Color::Yellow)));
                 spans.push(Span::raw(" resume  "));
                 spans.push(Span::styled("c", Style::default().fg(Color::Yellow)));

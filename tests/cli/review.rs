@@ -25,7 +25,7 @@ fn test_review_pending_task() {
 
 #[test]
 fn test_review_already_review() {
-    let dir = setup_repo_with_tasks(&[("task", &[], "review")]);
+    let dir = setup_repo_with_tasks(&[("task", &[], "idle")]);
 
     let (ok, _, stderr) = run_wt(dir.path(), &["review", "task"]);
 

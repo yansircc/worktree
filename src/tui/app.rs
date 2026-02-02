@@ -101,15 +101,15 @@ impl App {
             .collect();
 
         for task_name in &task_names {
-            // Auto-mark for Review if Running but multiplexer window is closed
-            if store.auto_mark_review_if_needed(task_name)? {
+            // Auto-mark as Idle if Active but multiplexer window is closed
+            if store.auto_mark_idle_if_needed(task_name)? {
                 status_changed = true;
             }
 
             let status = store.get_status(task_name);
 
-            // Show Running and Review tasks
-            if status != TaskStatus::Running && status != TaskStatus::Review {
+            // Show Active and Idle tasks
+            if status != TaskStatus::Active && status != TaskStatus::Idle {
                 continue;
             }
 
@@ -243,31 +243,31 @@ impl App {
         }
     }
 
-    /// Check if selected task can be marked for review (Running status)
-    pub fn can_mark_review(&self) -> bool {
+    /// Check if selected task can be marked as idle (Active status)
+    pub fn can_mark_idle(&self) -> bool {
         self.selected_task()
-            .map(|t| t.status == TaskStatus::Running)
+            .map(|t| t.status == TaskStatus::Active)
             .unwrap_or(false)
     }
 
-    /// Check if selected task can be resumed (Review status)
+    /// Check if selected task can be resumed (Idle status)
     pub fn can_resume(&self) -> bool {
         self.selected_task()
-            .map(|t| t.status == TaskStatus::Review)
+            .map(|t| t.status == TaskStatus::Idle)
             .unwrap_or(false)
     }
 
-    /// Check if selected task can be completed (Review status)
+    /// Check if selected task can be completed (Idle status)
     pub fn can_complete(&self) -> bool {
         self.selected_task()
-            .map(|t| t.status == TaskStatus::Review)
+            .map(|t| t.status == TaskStatus::Idle)
             .unwrap_or(false)
     }
 
-    /// Mark selected task for review (closes multiplexer window if still running)
-    pub fn mark_review(&mut self) -> Result<()> {
+    /// Mark selected task as idle (closes multiplexer window if still running)
+    pub fn mark_idle(&mut self) -> Result<()> {
         if let Some(task) = self.selected_task() {
-            if task.status == TaskStatus::Running {
+            if task.status == TaskStatus::Active {
                 let name = task.name.clone();
 
                 // Close multiplexer window if still alive
@@ -279,7 +279,7 @@ impl App {
                 }
 
                 let mut store = TaskStore::load()?;
-                store.set_status(&name, TaskStatus::Review);
+                store.set_status(&name, TaskStatus::Idle);
                 store.save_status()?;
                 self.refresh()?;
             }
@@ -290,7 +290,7 @@ impl App {
     /// Mark selected task as completed (closes multiplexer window, cleans up resources)
     pub fn mark_completed(&mut self) -> Result<()> {
         if let Some(task) = self.selected_task() {
-            if task.status == TaskStatus::Review {
+            if task.status == TaskStatus::Idle {
                 let name = task.name.clone();
 
                 // Close multiplexer window if still alive
@@ -367,8 +367,8 @@ impl App {
     /// Get action to tail selected task's transcript
     pub fn tail_action(&self) -> Option<TuiAction> {
         self.selected_task().and_then(|task| {
-            // Can tail Running or Review tasks
-            if task.status == TaskStatus::Running || task.status == TaskStatus::Review {
+            // Can tail Active or Idle tasks
+            if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
                 Some(TuiAction::Tail {
                     name: task.name.clone(),
                 })

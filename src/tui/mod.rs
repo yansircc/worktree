@@ -154,21 +154,21 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                             }
                         }
 
-                        // Tail (Running or Done)
+                        // Tail (Active or Idle)
                         KeyCode::Char('t') => {
                             if let Some(action) = app.tail_action() {
                                 return Ok(action);
                             }
                         }
 
-                        // Mark for review (Running only)
+                        // Mark as idle (Active only)
                         KeyCode::Char('r') => {
-                            if app.can_mark_review() {
-                                app.mark_review()?;
+                            if app.can_mark_idle() {
+                                app.mark_idle()?;
                             }
                         }
 
-                        // Resume (Review only)
+                        // Resume (Idle only)
                         KeyCode::Char('u') => {
                             if app.can_resume() {
                                 // Call resume command
@@ -180,7 +180,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                             }
                         }
 
-                        // Complete (Review only)
+                        // Complete (Idle only)
                         KeyCode::Char('c') => {
                             if app.can_complete() {
                                 app.mark_completed()?;

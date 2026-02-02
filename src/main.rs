@@ -25,7 +25,7 @@ fn main() {
         Commands::Delete { name, force } => commands::delete::execute(name, force),
         Commands::Next { json } => commands::next::execute(json),
         Commands::Reset { name } => commands::reset::execute(name),
-        Commands::Status { json, action, task } => commands::status::execute(json, action, task),
+        Commands::Status { json, verbose, action, task } => commands::status::execute(json, verbose, action, task),
         Commands::Tail { name, count } => commands::tail::execute(name, count),
         Commands::Logs => commands::logs::execute(),
         Commands::New { name, print_path } => commands::new::execute(name, print_path),
@@ -36,6 +36,8 @@ fn main() {
             CompletionsAction::Install => commands::completions::install(),
         },
         Commands::Internal { operation, args } => commands::internal::execute(operation, args),
+        Commands::Hooks { action } => commands::hooks_cmd::execute(action),
+        Commands::Pause { name, reason } => commands::pause::execute(name, reason),
     };
 
     if let Err(e) = result {

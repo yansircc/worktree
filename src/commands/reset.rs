@@ -6,7 +6,7 @@ use chrono::Utc;
 
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
-use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::models::{TaskStatus, TaskStore, WtConfig};
 use crate::services::{dependency, git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 pub fn execute(task_ref: String) -> Result<()> {
@@ -51,16 +51,16 @@ pub fn execute(task_ref: String) -> Result<()> {
         // Build hook context and run before_reset hook
         let hooks = HooksEngine::new(&config);
         let context =
-            HookContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
+            crate::services::hooks::ExecutionContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
                 .with_session(&instance.session_name)
                 .with_window(&instance.window_name)
                 .with_status("pending")
                 .with_prev_status(current_status.display_name())
                 .with_backup_dir(BACKUPS_DIR);
 
-        // Run before_reset hook (cleanup scripts, slim down before backup)
+        // Execute "reset" hook (cleanup scripts, slim down before backup)
         if worktree_path.exists() {
-            hooks.before_reset(&context)?;
+            hooks.execute("reset", &context)?;
 
             // Skip backup for scratch environments
             if !is_scratch {

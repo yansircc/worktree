@@ -3,20 +3,11 @@
 /// Task markdown files directory
 pub const TASKS_DIR: &str = ".wt/tasks";
 
-/// Configuration file name
-pub const CONFIG_FILE: &str = ".wt/config.yaml";
-
-/// Default worktree directory
-pub const DEFAULT_WORKTREE_DIR: &str = ".wt/worktrees";
-
 /// Default session name for multiplexer
 pub const DEFAULT_SESSION_NAME: &str = "wt";
 
 /// Branch name prefix for worktree tasks
 pub const BRANCH_PREFIX: &str = "wt/";
-
-/// Status file for runtime state
-pub const STATUS_FILE: &str = ".wt/status.json";
 
 /// Logs directory for debug output
 pub const LOGS_DIR: &str = ".wt/logs";

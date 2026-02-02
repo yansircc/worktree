@@ -45,7 +45,7 @@ fn test_logs_processes_running_task_without_transcript() {
     set_task_status_with_instance(
         dir.path(),
         "task1",
-        "running",
+        "active",
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
@@ -73,7 +73,7 @@ fn test_logs_processes_done_tasks() {
     set_task_status_with_instance(
         dir.path(),
         "task1",
-        "review",
+        "idle",
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
@@ -98,8 +98,8 @@ fn test_logs_processes_done_tasks() {
 #[test]
 fn test_logs_skips_tasks_without_instance() {
     let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "running"), // No instance
-        ("task2", &[], "review"),  // No instance
+        ("task1", &[], "active"), // No instance
+        ("task2", &[], "idle"),  // No instance
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
@@ -159,8 +159,8 @@ fn test_logs_shows_summary() {
 fn test_logs_multiple_tasks_summary() {
     let dir = setup_repo_with_tasks(&[
         ("task1", &[], "pending"),
-        ("task2", &[], "running"),
-        ("task3", &[], "review"),
+        ("task2", &[], "active"),
+        ("task3", &[], "idle"),
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
@@ -180,7 +180,7 @@ fn test_logs_mixed_states() {
     create_task_file(dir.path(), "regular", &[]);
     set_task_status(dir.path(), "regular", "pending");
 
-    set_scratch_status(dir.path(), "scratch-env", "running");
+    set_scratch_status(dir.path(), "scratch-env", "active");
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
 
