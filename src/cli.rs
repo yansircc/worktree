@@ -55,10 +55,14 @@ pub enum Commands {
         name: String,
     },
 
-    /// Mark a task as merged (keeps worktree/branch for review)
-    Merged {
-        /// Task name to mark as merged
+    /// Execute merge via Claude (rebase + squash merge + cleanup)
+    Merge {
+        /// Task name to merge
         name: String,
+
+        /// Run in agent mode (non-interactive, for automation)
+        #[arg(long)]
+        agent: bool,
     },
 
     /// Archive a merged task (cleanup worktree and branch)

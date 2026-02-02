@@ -1,7 +1,7 @@
 //! CLI tests for scratch environment behavior
 //!
 //! Scratch environments (created via `wt new`) have special lifecycle rules:
-//! - Cannot use `wt done` or `wt merged`
+//! - Cannot use `wt done` or `wt merge`
 //! - Can archive directly from Running state
 //! - Archive/reset removes entry from status.json entirely (no Archived state)
 
@@ -43,32 +43,32 @@ fn test_scratch_done_suggests_archive() {
     );
 }
 
-// ==================== Merged Forbidden ====================
+// ==================== Merge Forbidden ====================
 
 #[test]
-fn test_scratch_merged_forbidden() {
+fn test_scratch_merge_forbidden() {
     let dir = setup_test_repo();
 
     // Create scratch in done-like state
     set_scratch_status(dir.path(), "scratch-env", "running");
 
-    let (ok, _, stderr) = run_wt(dir.path(), &["merged", "scratch-env"]);
+    let (ok, _, stderr) = run_wt(dir.path(), &["merge", "scratch-env"]);
 
     assert!(!ok);
     assert!(
-        stderr.contains("Scratch") || stderr.contains("cannot be marked as merged"),
+        stderr.contains("Scratch") || stderr.contains("cannot be merged"),
         "Expected scratch-specific error, got: {}",
         stderr
     );
 }
 
 #[test]
-fn test_scratch_merged_suggests_archive() {
+fn test_scratch_merge_suggests_archive() {
     let dir = setup_test_repo();
 
     set_scratch_status(dir.path(), "scratch-env", "running");
 
-    let (ok, _, stderr) = run_wt(dir.path(), &["merged", "scratch-env"]);
+    let (ok, _, stderr) = run_wt(dir.path(), &["merge", "scratch-env"]);
 
     assert!(!ok);
     assert!(

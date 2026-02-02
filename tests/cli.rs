@@ -22,8 +22,8 @@ mod next;
 mod start;
 #[path = "cli/done.rs"]
 mod done;
-#[path = "cli/merged.rs"]
-mod merged;
+#[path = "cli/merge.rs"]
+mod merge;
 #[path = "cli/help.rs"]
 mod help;
 #[path = "cli/no_config.rs"]

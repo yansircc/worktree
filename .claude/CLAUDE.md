@@ -29,7 +29,7 @@ src/
 │   ├── next.rs
 │   ├── start.rs      # 支持 --all 批量启动
 │   ├── done.rs
-│   ├── merged.rs
+│   ├── merge.rs      # Claude 自动 merge（rebase + squash）
 │   ├── archive.rs
 │   ├── reset.rs
 │   ├── new.rs        # scratch 环境创建
@@ -109,11 +109,14 @@ depends:            # 依赖的任务列表
 ### TaskStatus 状态流转
 
 ```
-○ Pending  →  ● Running  →  ✓ Done  →  ✓✓ Merged  →  ☑ Archived
-   (wt start)    (wt done)    (wt merged)   (wt archive)
-      ↑______________|__________|____________|
-                    (wt reset，会备份)
+○ Pending  →  ● Running  →  ✓ Done  →  ☑ Archived
+   (wt start)    (wt done)    (wt merge 或 wt archive)
+      ↑______________|_________|
+                (wt reset，会备份)
 ```
+
+- `wt merge` 执行 rebase + squash merge + commit，然后自动 archive
+- `wt archive` 直接清理 worktree 和分支（不执行 merge）
 
 ### 任务索引
 

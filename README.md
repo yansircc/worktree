@@ -24,7 +24,8 @@ wt status                                  # 查看状态 (TUI)
 wt tail auth                               # 查看最后输出
 wt logs                                    # 生成调试日志
 wt done auth                               # 标记完成
-wt merged auth                             # PR 合并后（保留代码供查看）
+wt merge auth                              # 自动 merge 到 main（rebase + squash）
+wt merge auth --agent                      # 静默模式（用于自动化）
 wt archive auth                            # 归档（清理 worktree 和分支）
 wt reset auth                              # 重置（会备份代码）
 ```
@@ -44,7 +45,7 @@ wt reset auth                              # 重置（会备份代码）
 | `wt tail <name\|index> [-n N]` | 查看最后 N 条输出 (JSON) |
 | `wt logs` | 生成所有任务的过滤日志 |
 | `wt done <name\|index>` | 标记完成 |
-| `wt merged <name\|index>` | 标记已合并（保留 worktree）|
+| `wt merge <name\|index> [--agent]` | 自动 merge 到 main（rebase + squash + archive）|
 | `wt archive <name\|index>` | 归档（清理 worktree/分支）|
 | `wt reset <name\|index>` | 重置到 pending（备份代码）|
 | `wt new [name]` | 创建 scratch 环境 |
@@ -113,11 +114,14 @@ tmux_session: my-project
 ## 任务状态
 
 ```
-○ Pending  →  ● Running  →  ✓ Done  →  ✓✓ Merged  →  ☑ Archived
+○ Pending  →  ● Running  →  ✓ Done  →  ☑ Archived
+                              ↓
+                        (wt merge)
+                     自动 merge + archive
 ```
 
-- **reset** 可从 Running/Done/Merged/Archived 回到 Pending（会备份代码到 `.wt/backups/`）
-- **merged** 保留 worktree 和分支，方便查看代码
+- **reset** 可从 Running/Done/Archived 回到 Pending（会备份代码到 `.wt/backups/`）
+- **merge** 执行 rebase + squash merge + commit，然后自动 archive
 - **archive** 执行清理脚本后删除 worktree 和分支
 
 ## License

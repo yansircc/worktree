@@ -5,7 +5,7 @@ pub mod done;
 pub mod init;
 pub mod list;
 pub mod logs;
-pub mod merged;
+pub mod merge;
 pub mod new;
 pub mod next;
 pub mod reset;

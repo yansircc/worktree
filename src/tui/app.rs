@@ -263,12 +263,20 @@ impl App {
         Ok(())
     }
 
-    /// Mark selected task as merged
+    /// Mark selected task as merged (closes tmux window, keeps worktree for review)
     pub fn mark_merged(&mut self) -> Result<()> {
         if let Some(task) = self.selected_task() {
             if task.status == TaskStatus::Done {
                 let name = task.name.clone();
-                crate::commands::merged::execute(name, true)?; // silent=true for TUI
+
+                // Close tmux window if still alive
+                if let (Some(session), Some(window)) = (&task.tmux_session, &task.tmux_window) {
+                    tmux::kill_window_if_exists(session, window).ok();
+                }
+
+                let mut store = TaskStore::load()?;
+                store.set_status(&name, TaskStatus::Merged);
+                store.save_status()?;
                 self.refresh()?;
             }
         }

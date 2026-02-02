@@ -31,6 +31,6 @@ pub fn execute(task_ref: String) -> Result<()> {
     store.save_status()?;
 
     println!("Task '{}' marked as done.", name);
-    println!("After PR is merged, run: wt merged {}", name);
+    println!("To merge into main, run: wt merge {}", name);
     Ok(())
 }
