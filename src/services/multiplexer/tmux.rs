@@ -67,4 +67,21 @@ impl Multiplexer for TmuxBackend {
         let target = format!("{}:{}", session, window);
         self.runner().run(&["kill-window", "-t", &target])
     }
+
+    fn focus_window(&self, session: &str, window: &str) -> Result<()> {
+        let target = format!("{}:{}", session, window);
+        self.runner().run(&["select-window", "-t", &target])
+    }
+
+    fn send_keys(&self, session: &str, window: &str, keys: &str) -> Result<()> {
+        let target = format!("{}:{}", session, window);
+        self.runner().run(&["send-keys", "-t", &target, keys])
+    }
+
+    fn list_windows(&self, session: &str) -> Result<Vec<String>> {
+        let output =
+            self.runner()
+                .output(&["list-windows", "-t", session, "-F", "#{window_name}"])?;
+        Ok(output.lines().map(|s| s.to_string()).collect())
+    }
 }

@@ -88,6 +88,15 @@ pub trait Multiplexer: Send + Sync {
             Ok(false)
         }
     }
+
+    /// Focus (select) a window/tab
+    fn focus_window(&self, session: &str, window: &str) -> Result<()>;
+
+    /// Send keys to a window/tab
+    fn send_keys(&self, session: &str, window: &str, keys: &str) -> Result<()>;
+
+    /// List all windows/tabs in a session
+    fn list_windows(&self, session: &str) -> Result<Vec<String>>;
 }
 
 /// Factory function to create a multiplexer backend

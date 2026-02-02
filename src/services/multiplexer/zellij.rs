@@ -213,4 +213,28 @@ impl Multiplexer for ZellijBackend {
             Ok(false)
         }
     }
+
+    fn focus_window(&self, session: &str, window: &str) -> Result<()> {
+        // zellij's go-to-tab-name action requires a tty, which we don't have
+        // in a script context. Return an error explaining the limitation.
+        Err(WtError::Zellij(format!(
+            "Cannot focus window '{}' in session '{}': zellij requires an interactive terminal for this operation",
+            window, session
+        )))
+    }
+
+    fn send_keys(&self, session: &str, window: &str, keys: &str) -> Result<()> {
+        // zellij's write-chars action requires a tty, which we don't have
+        // in a script context. Return an error explaining the limitation.
+        Err(WtError::Zellij(format!(
+            "Cannot send keys '{}' to window '{}' in session '{}': zellij requires an interactive terminal for this operation",
+            keys, window, session
+        )))
+    }
+
+    fn list_windows(&self, session: &str) -> Result<Vec<String>> {
+        self.runner()
+            .output(&["-s", session, "action", "query-tab-names"])
+            .map(|out| out.lines().map(|s| s.trim().to_string()).collect())
+    }
 }

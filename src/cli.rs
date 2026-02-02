@@ -134,124 +134,14 @@ pub enum Commands {
         action: CompletionsAction,
     },
 
-    /// Internal commands for hooks (not for direct use)
+    /// Internal commands for hooks (not for direct user use)
     #[command(hide = true)]
     Internal {
-        #[command(subcommand)]
-        command: InternalCommands,
-    },
-}
+        /// Operation in format "category:action" (e.g., "mux:focus-window", "git:fetch")
+        operation: String,
 
-#[derive(Subcommand)]
-pub enum InternalCommands {
-    /// Git atomic operations
-    #[command(name = "git:fetch")]
-    GitFetch {
-        /// Repository root path
-        repo: String,
-        /// Remote name
-        remote: String,
-    },
-
-    /// Rebase current branch onto target
-    #[command(name = "git:rebase")]
-    GitRebase {
-        /// Worktree path
-        worktree: String,
-        /// Target branch or commit
-        target: String,
-    },
-
-    /// Squash merge a branch
-    #[command(name = "git:squash-merge")]
-    GitSquashMerge {
-        /// Repository root path
-        repo: String,
-        /// Branch to merge
-        branch: String,
-    },
-
-    /// Create a commit
-    #[command(name = "git:commit")]
-    GitCommit {
-        /// Path to repository/worktree
-        path: String,
-        /// Commit message
-        message: String,
-    },
-
-    /// Push a branch to remote
-    #[command(name = "git:push")]
-    GitPush {
-        /// Repository root path
-        repo: String,
-        /// Branch to push
-        branch: String,
-        /// Remote name (default: origin)
-        #[arg(default_value = "origin")]
-        remote: String,
-    },
-
-    /// Check if working directory has changes
-    #[command(name = "git:has-changes")]
-    GitHasChanges {
-        /// Path to check
-        path: String,
-    },
-
-    /// Check if working directory has conflicts
-    #[command(name = "git:has-conflicts")]
-    GitHasConflicts {
-        /// Path to check
-        path: String,
-    },
-
-    /// Stash changes
-    #[command(name = "git:stash")]
-    GitStash {
-        /// Path to repository/worktree
-        path: String,
-    },
-
-    /// Pop stashed changes
-    #[command(name = "git:stash-pop")]
-    GitStashPop {
-        /// Path to repository/worktree
-        path: String,
-    },
-
-    /// Create a new branch
-    #[command(name = "git:create-branch")]
-    GitCreateBranch {
-        /// Repository root path
-        repo: String,
-        /// Branch name
-        branch: String,
-    },
-
-    /// Delete a branch
-    #[command(name = "git:delete-branch")]
-    GitDeleteBranch {
-        /// Repository root path
-        repo: String,
-        /// Branch name
-        branch: String,
-    },
-
-    /// Checkout a branch
-    #[command(name = "git:checkout")]
-    GitCheckout {
-        /// Path to repository/worktree
-        path: String,
-        /// Branch to checkout
-        branch: String,
-    },
-
-    /// Get current branch name
-    #[command(name = "git:current-branch")]
-    GitCurrentBranch {
-        /// Path to repository/worktree
-        path: String,
+        /// Arguments for the operation
+        args: Vec<String>,
     },
 }
 
