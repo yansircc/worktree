@@ -179,13 +179,16 @@ mod tests {
 
     #[test]
     fn test_status_store_set_and_get_instance() {
+        use crate::services::multiplexer::MultiplexerType;
+
         let mut store = StatusStore::default();
         let instance = Instance {
             branch: "wt/test".to_string(),
             worktree_path: "/path".to_string(),
-            tmux_session: "wt".to_string(),
-            tmux_window: "test".to_string(),
+            session_name: "wt".to_string(),
+            window_name: "test".to_string(),
             session_id: None,
+            multiplexer: MultiplexerType::Tmux,
         };
         store.set_instance("test", Some(instance.clone()));
 

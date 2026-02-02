@@ -121,7 +121,7 @@ fn test_init_config_has_required_fields() {
     let config = fs::read_to_string(dir.path().join(".wt/config.yaml")).unwrap();
 
     assert!(config.contains("start_args:"));
-    assert!(config.contains("tmux_session:"));
+    assert!(config.contains("session_name:"));
     assert!(config.contains("worktree_dir:"));
     assert!(config.contains("copy_files:"));
     assert!(config.contains(".env"));
@@ -148,7 +148,7 @@ fn test_init_uses_directory_name_as_session() {
 
     // The tempdir has a random name, just check it's not the default "wt"
     // and that tmux_session field exists with some value
-    assert!(config.contains("tmux_session:"));
+    assert!(config.contains("session_name:"));
 }
 
 #[test]

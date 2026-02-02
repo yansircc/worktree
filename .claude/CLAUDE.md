@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-wt 通过 git worktree 隔离工作区、tmux 管理 agent 进程、依赖关系控制任务执行顺序，实现多个 AI agent 并行开发不同功能分支。
+wt 通过 git worktree 隔离工作区、terminal multiplexer (tmux/zellij) 管理 agent 进程、依赖关系控制任务执行顺序，实现多个 AI agent 并行开发不同功能分支。
 
 ## 目录结构
 
@@ -13,7 +13,7 @@ src/
 ├── main.rs           # CLI 入口
 ├── lib.rs            # 库导出
 ├── cli.rs            # Clap 命令定义
-├── constants.rs      # 路径常量 (TASKS_DIR, STATUS_FILE 等)
+├── constants.rs      # 路径常量 (TASKS_DIR, STATUS_FILE, DEFAULT_SESSION_NAME)
 ├── display.rs        # 显示格式化 (颜色常量, colored_index, running_icon, format_duration)
 ├── error.rs          # 错误类型 (WtError)
 ├── models/
@@ -44,7 +44,10 @@ src/
 ├── services/
 │   ├── command.rs    # 命令执行辅助 (CommandRunner)
 │   ├── git.rs        # git worktree 操作
-│   ├── tmux.rs       # tmux session/window 操作
+│   ├── multiplexer/  # terminal multiplexer 抽象层
+│   │   ├── mod.rs    # Multiplexer trait + 工厂函数
+│   │   ├── tmux.rs   # TmuxBackend 实现
+│   │   └── zellij.rs # ZellijBackend 实现
 │   ├── workspace.rs  # worktree 初始化 (WorkspaceInitializer)
 │   ├── transcript.rs # Claude transcript 解析
 │   └── dependency.rs # 依赖检查
@@ -59,14 +62,17 @@ src/
 ### 配置文件 (.wt/config.yaml)
 
 ```yaml
+# Terminal multiplexer: tmux (默认) 或 zellij
+multiplexer: tmux
+
+# Session 名称
+session_name: project-name
+
 # Claude CLI 命令（默认: claude）
 claude_command: claude
 
 # wt start 执行的参数
 start_args: --verbose --output-format=stream-json -p "@.wt/tasks/${task}.md ..."
-
-# tmux session 名称
-tmux_session: project-name
 
 # 其他可选配置
 worktree_dir: .wt/worktrees
@@ -100,7 +106,16 @@ depends:            # 依赖的任务列表
 ```json
 {
   "tasks": {
-    "auth": { "status": "running", "instance": {...} },
+    "auth": {
+      "status": "running",
+      "instance": {
+        "branch": "wt/auth-abc123",
+        "worktree_path": ".wt/worktrees/auth",
+        "session_name": "wt",
+        "window_name": "auth",
+        "multiplexer": "tmux"
+      }
+    },
     "database": { "status": "merged" }
   }
 }

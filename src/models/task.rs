@@ -68,14 +68,29 @@ impl TaskStatus {
     }
 }
 
+use crate::services::multiplexer::MultiplexerType;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Instance {
     pub branch: String,
     pub worktree_path: String,
-    pub tmux_session: String,
-    pub tmux_window: String,
+    pub session_name: String,
+    pub window_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    #[serde(default = "default_multiplexer")]
+    pub multiplexer: MultiplexerType,
+}
+
+fn default_multiplexer() -> MultiplexerType {
+    MultiplexerType::Tmux
+}
+
+impl Instance {
+    /// Get the multiplexer type for this instance
+    pub fn multiplexer_type(&self) -> MultiplexerType {
+        self.multiplexer
+    }
 }
 
 /// Frontmatter of task markdown file (definition only, no runtime state)

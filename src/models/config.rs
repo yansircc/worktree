@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use crate::constants::{CONFIG_FILE, DEFAULT_TMUX_SESSION, DEFAULT_WORKTREE_DIR};
+use crate::constants::{CONFIG_FILE, DEFAULT_SESSION_NAME, DEFAULT_WORKTREE_DIR};
 use crate::error::{Result, WtError};
+use crate::services::multiplexer::{create_multiplexer, Multiplexer, MultiplexerType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WtConfig {
@@ -10,8 +11,12 @@ pub struct WtConfig {
     pub claude_command: String,
     #[serde(default = "default_start_args")]
     pub start_args: String,
-    #[serde(default = "default_tmux_session")]
-    pub tmux_session: String,
+    /// Multiplexer to use: tmux (default) or zellij
+    #[serde(default = "default_multiplexer")]
+    pub multiplexer: String,
+    /// Session name for the multiplexer
+    #[serde(default = "default_session_name")]
+    pub session_name: String,
     #[serde(default = "default_worktree_dir")]
     pub worktree_dir: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -41,8 +46,12 @@ fn default_start_args() -> String {
     r#"--verbose --output-format=stream-json --input-format=stream-json -p "@.wt/tasks/${task}.md 请完成这个任务""#.to_string()
 }
 
-fn default_tmux_session() -> String {
-    DEFAULT_TMUX_SESSION.to_string()
+fn default_multiplexer() -> String {
+    "tmux".to_string()
+}
+
+fn default_session_name() -> String {
+    DEFAULT_SESSION_NAME.to_string()
 }
 
 fn default_worktree_dir() -> String {
@@ -55,9 +64,7 @@ impl WtConfig {
         if !path.exists() {
             return Err(WtError::ConfigNotFound);
         }
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            WtError::ConfigRead(e.to_string())
-        })?;
+        let content = std::fs::read_to_string(path).map_err(|e| WtError::ConfigRead(e.to_string()))?;
         Self::from_str(&content)
     }
 
@@ -65,6 +72,16 @@ impl WtConfig {
     pub fn from_str(content: &str) -> Result<Self> {
         let config: WtConfig = serde_yaml::from_str(content)?;
         Ok(config)
+    }
+
+    /// Get the configured multiplexer type
+    pub fn multiplexer_type(&self) -> MultiplexerType {
+        MultiplexerType::from_str(&self.multiplexer).unwrap_or_default()
+    }
+
+    /// Create a multiplexer instance based on config
+    pub fn create_multiplexer(&self) -> Box<dyn Multiplexer> {
+        create_multiplexer(self.multiplexer_type())
     }
 }
 
@@ -79,7 +96,8 @@ mod tests {
 
         assert_eq!(config.claude_command, "claude"); // default
         assert_eq!(config.start_args, "-p test");
-        assert_eq!(config.tmux_session, "wt"); // default
+        assert_eq!(config.multiplexer, "tmux"); // default
+        assert_eq!(config.session_name, "wt"); // default
         assert_eq!(config.worktree_dir, ".wt/worktrees"); // default
         assert!(config.copy_files.is_empty());
         assert!(config.init_script.is_none());
@@ -92,7 +110,8 @@ mod tests {
 
         assert_eq!(config.claude_command, "claude");
         assert!(config.start_args.contains("--output-format=stream-json"));
-        assert_eq!(config.tmux_session, "wt");
+        assert_eq!(config.multiplexer, "tmux");
+        assert_eq!(config.session_name, "wt");
         assert_eq!(config.worktree_dir, ".wt/worktrees");
     }
 
@@ -101,7 +120,8 @@ mod tests {
         let yaml = r#"
 claude_command: ccc --yolo
 start_args: -p "test"
-tmux_session: my-session
+multiplexer: zellij
+session_name: my-session
 worktree_dir: /custom/path
 copy_files:
   - .env
@@ -112,7 +132,8 @@ init_script: npm install
 
         assert_eq!(config.claude_command, "ccc --yolo");
         assert_eq!(config.start_args, "-p \"test\"");
-        assert_eq!(config.tmux_session, "my-session");
+        assert_eq!(config.multiplexer, "zellij");
+        assert_eq!(config.session_name, "my-session");
         assert_eq!(config.worktree_dir, "/custom/path");
         assert_eq!(config.copy_files, vec![".env", "config.json"]);
         assert_eq!(config.init_script, Some("npm install".to_string()));
@@ -149,7 +170,8 @@ init_script: |
         let config = WtConfig {
             claude_command: "ccc".to_string(),
             start_args: "-p test".to_string(),
-            tmux_session: "wt".to_string(),
+            multiplexer: "tmux".to_string(),
+            session_name: "wt".to_string(),
             worktree_dir: ".wt/worktrees".to_string(),
             copy_files: vec![".env".to_string()],
             init_script: Some("npm i".to_string()),
@@ -191,5 +213,21 @@ logs:
 
         assert_eq!(config.logs.exclude_types, vec!["system", "progress"]);
         assert_eq!(config.logs.exclude_fields, vec!["signature", "parentUuid"]);
+    }
+
+    #[test]
+    fn test_multiplexer_type() {
+        let yaml = "multiplexer: tmux\n";
+        let config = WtConfig::from_str(yaml).unwrap();
+        assert_eq!(config.multiplexer_type(), MultiplexerType::Tmux);
+
+        let yaml = "multiplexer: zellij\n";
+        let config = WtConfig::from_str(yaml).unwrap();
+        assert_eq!(config.multiplexer_type(), MultiplexerType::Zellij);
+
+        // Unknown defaults to tmux
+        let yaml = "multiplexer: unknown\n";
+        let config = WtConfig::from_str(yaml).unwrap();
+        assert_eq!(config.multiplexer_type(), MultiplexerType::Tmux);
     }
 }

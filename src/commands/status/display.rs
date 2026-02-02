@@ -5,7 +5,7 @@ use crate::constants::IDLE_THRESHOLD_SECS;
 use crate::display::{colored_index, format_duration, running_icon, RESET};
 use crate::error::Result;
 use crate::models::{TaskStatus, TaskStore};
-use crate::services::{git, tmux, transcript};
+use crate::services::{git, multiplexer::create_multiplexer, transcript};
 
 use super::types::{StatusOutput, StatusSummary, TaskMetrics};
 
@@ -45,9 +45,12 @@ pub fn display_status(json: bool) -> Result<()> {
 
         let instance = store.get_instance(task_name);
 
-        // Check if tmux window is alive
+        // Check if multiplexer window is alive
         let tmux_alive = instance
-            .map(|i| tmux::window_exists(&i.tmux_session, &i.tmux_window))
+            .map(|i| {
+                let mux = create_multiplexer(i.multiplexer_type());
+                mux.window_exists(&i.session_name, &i.window_name)
+            })
             .unwrap_or(false);
 
         let final_status = status;

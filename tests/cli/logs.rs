@@ -52,8 +52,8 @@ fn test_logs_processes_running_task_without_transcript() {
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
-            "tmux_session": "test-session",
-            "tmux_window": "task1"
+            "session_name": "test-session",
+            "window_name": "task1"
         })),
     );
 
@@ -80,8 +80,8 @@ fn test_logs_processes_done_tasks() {
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
-            "tmux_session": "test-session",
-            "tmux_window": "task1"
+            "session_name": "test-session",
+            "window_name": "task1"
         })),
     );
 

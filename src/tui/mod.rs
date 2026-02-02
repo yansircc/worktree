@@ -17,6 +17,7 @@ use crossterm::{
 use ratatui::prelude::*;
 
 use crate::error::Result;
+use crate::services::multiplexer::MultiplexerType;
 
 /// Run the TUI application and return the action to perform
 pub fn run() -> Result<TuiAction> {
@@ -94,28 +95,48 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                         KeyCode::Up | KeyCode::Char('k') => app.previous(),
                         KeyCode::Down | KeyCode::Char('j') => app.next(),
 
-                        // Enter: switch/attach tmux or show resume command
+                        // Enter: switch/attach multiplexer or show resume command
                         KeyCode::Enter => {
                             if let Some(action) = app.enter_action() {
                                 match &action {
-                                    TuiAction::SwitchTmuxWindow { session, window } => {
-                                        // Inside tmux: temporarily leave TUI to switch window
+                                    TuiAction::SwitchWindow {
+                                        multiplexer,
+                                        session,
+                                        window,
+                                    } => {
+                                        // Inside multiplexer: temporarily leave TUI to switch window
                                         disable_raw_mode().ok();
                                         let mut stdout = io::stdout();
                                         execute!(stdout, LeaveAlternateScreen, DisableMouseCapture)
                                             .ok();
 
-                                        // Switch to target tmux window
-                                        Command::new("tmux")
-                                            .args([
-                                                "select-window",
-                                                "-t",
-                                                &format!("{}:{}", session, window),
-                                            ])
-                                            .status()
-                                            .ok();
+                                        // Switch to target window based on multiplexer type
+                                        match multiplexer {
+                                            MultiplexerType::Tmux => {
+                                                Command::new("tmux")
+                                                    .args([
+                                                        "select-window",
+                                                        "-t",
+                                                        &format!("{}:{}", session, window),
+                                                    ])
+                                                    .status()
+                                                    .ok();
+                                            }
+                                            MultiplexerType::Zellij => {
+                                                Command::new("zellij")
+                                                    .args([
+                                                        "-s",
+                                                        session,
+                                                        "action",
+                                                        "go-to-tab-name",
+                                                        window,
+                                                    ])
+                                                    .status()
+                                                    .ok();
+                                            }
+                                        }
 
-                                        // Re-enter TUI (user can switch back with tmux keybind)
+                                        // Re-enter TUI (user can switch back with keybind)
                                         enable_raw_mode().ok();
                                         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
                                             .ok();
@@ -123,7 +144,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                                         // Refresh data after returning
                                         app.refresh()?;
                                     }
-                                    TuiAction::AttachTmux { .. }
+                                    TuiAction::AttachSession { .. }
                                     | TuiAction::ShowResume { .. } => {
                                         // Exit TUI and handle in status.rs
                                         return Ok(action);

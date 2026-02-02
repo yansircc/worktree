@@ -148,8 +148,8 @@ fn test_status_auto_marks_done_when_tmux_window_closed() {
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent",
-            "tmux_session": "nonexistent-session-12345",
-            "tmux_window": "task1"
+            "session_name": "nonexistent-session-12345",
+            "window_name": "task1"
         })),
     );
 
@@ -178,8 +178,8 @@ fn test_status_json_auto_marks_done_when_tmux_closed() {
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent",
-            "tmux_session": "nonexistent-session-12345",
-            "tmux_window": "task1"
+            "session_name": "nonexistent-session-12345",
+            "window_name": "task1"
         })),
     );
 

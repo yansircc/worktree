@@ -51,7 +51,7 @@ start_args: '"@.wt/tasks/${{task}}.md 请完成这个任务"'
 
 # tmux session 名称
 # 默认: 项目目录名
-tmux_session: {}
+session_name: {}
 
 # Worktree 存放目录
 # 默认: .wt/worktrees
@@ -233,14 +233,14 @@ mod tests {
     #[test]
     fn test_generate_config_contains_project_name() {
         let config = generate_config("my-project");
-        assert!(config.contains("tmux_session: my-project"));
+        assert!(config.contains("session_name: my-project"));
     }
 
     #[test]
     fn test_generate_config_has_required_fields() {
         let config = generate_config("test");
         assert!(config.contains("start_args:"));
-        assert!(config.contains("tmux_session:"));
+        assert!(config.contains("session_name:"));
         assert!(config.contains("worktree_dir:"));
         assert!(config.contains("copy_files:"));
         assert!(config.contains(".env"));

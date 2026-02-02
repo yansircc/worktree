@@ -1,11 +1,11 @@
 # wt - Worktree Task Manager
 
-通过 git worktree 隔离工作区，tmux 管理 agent 进程，依赖关系控制任务执行顺序。
+通过 git worktree 隔离工作区，terminal multiplexer 管理 agent 进程，依赖关系控制任务执行顺序。
 
 ## 依赖
 
 - Git (支持 worktree)
-- tmux
+- tmux 或 zellij
 - Rust (编译安装)
 
 ## 安装
@@ -59,9 +59,9 @@ wt reset auth                              # 重置（会备份代码）
 | 按键 | 功能 |
 |------|------|
 | `↑↓` / `jk` | 导航 |
-| `Enter` | 进入 tmux 窗口 |
+| `Enter` | 进入 multiplexer 窗口 |
 | `t` | tail (查看输出) |
-| `d` | 标记 done (自动关闭 tmux) |
+| `d` | 标记 done (自动关闭窗口) |
 | `m` | 标记 merged |
 | `a` | archive (归档) |
 | `q` | 退出 |
@@ -75,7 +75,7 @@ wt status --action list --task ui      # 查看可用操作
 wt status --action done --task ui      # 标记完成
 wt status --action merged --task ui    # 标记已合并
 wt status --action archive --task ui   # 归档任务
-wt status --action enter --task ui     # 获取 tmux 命令
+wt status --action enter --task ui     # 获取切换命令
 wt status --action tail --task ui      # 查看输出
 ```
 
@@ -84,6 +84,12 @@ wt status --action tail --task ui      # 查看输出
 配置文件位于 `.wt/config.yaml`：
 
 ```yaml
+# Terminal multiplexer: tmux (默认) 或 zellij
+multiplexer: tmux
+
+# Session 名称
+session_name: my-project
+
 # Claude CLI 命令（默认: claude）
 # 如果你使用别名，在这里配置
 # claude_command: ccc
@@ -91,12 +97,9 @@ wt status --action tail --task ui      # 查看输出
 # wt start 执行的参数
 start_args: --verbose --output-format=stream-json -p "@.wt/tasks/${task}.md 请完成任务"
 
-# tmux session 名称
-tmux_session: my-project
-
 # 其他可选配置
 # worktree_dir: .wt/worktrees
-# init_script: npm install   # 在 tmux 窗口内并行执行
+# init_script: npm install   # 在 multiplexer 窗口内并行执行
 # copy_files:
 #   - .env
 

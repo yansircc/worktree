@@ -219,7 +219,7 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
             status: Some(task.status.clone()),
             status_before: None,
             status_after: None,
-            tmux_alive: Some(task.tmux_alive),
+            tmux_alive: Some(task.mux_alive),
         }),
         available_actions: Some(available),
         unavailable_actions: Some(unavailable),
@@ -230,7 +230,7 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
 fn handle_done_action(app: &mut App, task_name: &str) -> ActionResponse {
     let task = app.selected_task().unwrap();
     let status_before = task.status.clone();
-    let tmux_alive = task.tmux_alive;
+    let tmux_alive = task.mux_alive;
 
     if !app.can_mark_done() {
         return error_response("done", "Cannot mark as done: task is not running", task_name, Some(status_before), Some(tmux_alive));
@@ -289,8 +289,8 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
     let task = app.selected_task().unwrap();
 
     match app.enter_action() {
-        Some(TuiAction::SwitchTmuxWindow { session, window })
-        | Some(TuiAction::AttachTmux { session, window }) => ActionResponse {
+        Some(TuiAction::SwitchWindow { session, window, .. })
+        | Some(TuiAction::AttachSession { session, window, .. }) => ActionResponse {
             action: "enter".to_string(),
             success: true,
             error: None,
@@ -304,7 +304,7 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
             available_actions: None,
             unavailable_actions: None,
             command: Some(CommandInfo {
-                cmd_type: "tmux_switch".to_string(),
+                cmd_type: "mux_switch".to_string(),
                 session: Some(session),
                 window: Some(window),
                 ..Default::default()
@@ -341,13 +341,13 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
         _ => ActionResponse {
             action: "enter".to_string(),
             success: false,
-            error: Some("Cannot enter: no tmux info available".to_string()),
+            error: Some("Cannot enter: no multiplexer info available".to_string()),
             task: Some(TaskInfo {
                 name: task_name.to_string(),
                 status: Some(task.status.clone()),
                 status_before: None,
                 status_after: None,
-                tmux_alive: Some(task.tmux_alive),
+                tmux_alive: Some(task.mux_alive),
             }),
             available_actions: None,
             unavailable_actions: None,

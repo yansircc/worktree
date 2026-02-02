@@ -209,7 +209,7 @@ fn get_status_icon(task: &TaskDisplay) -> (&'static str, Color) {
         TaskStatus::Merged => ("✓✓", Color::Magenta),
         TaskStatus::Archived => ("☑", Color::DarkGray),
         TaskStatus::Running => {
-            if !task.tmux_alive {
+            if !task.mux_alive {
                 ("⚠", Color::Yellow)
             } else if task.active {
                 ("●", Color::Green)

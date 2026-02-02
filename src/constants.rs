@@ -9,8 +9,8 @@ pub const CONFIG_FILE: &str = ".wt/config.yaml";
 /// Default worktree directory
 pub const DEFAULT_WORKTREE_DIR: &str = ".wt/worktrees";
 
-/// Default tmux session name
-pub const DEFAULT_TMUX_SESSION: &str = "wt";
+/// Default session name for multiplexer
+pub const DEFAULT_SESSION_NAME: &str = "wt";
 
 /// Branch name prefix for worktree tasks
 pub const BRANCH_PREFIX: &str = "wt/";

@@ -1,6 +1,6 @@
 use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore};
-use crate::services::tmux;
+use crate::services::multiplexer::create_multiplexer;
 
 pub fn execute(task_ref: String) -> Result<()> {
     let mut store = TaskStore::load()?;
@@ -20,10 +20,14 @@ pub fn execute(task_ref: String) -> Result<()> {
     store.ensure_exists(&name)?;
     store.validate_transition(&name, TaskStatus::Done)?;
 
-    // Close tmux window if still alive
+    // Close multiplexer window if still alive
     if let Some(instance) = store.get_instance(&name) {
-        if tmux::kill_window_if_exists(&instance.tmux_session, &instance.tmux_window)? {
-            println!("Closed tmux window {}:{}", instance.tmux_session, instance.tmux_window);
+        let mux = create_multiplexer(instance.multiplexer_type());
+        if mux.kill_window_if_exists(&instance.session_name, &instance.window_name)? {
+            println!(
+                "Closed {} window {}:{}",
+                instance.multiplexer, instance.session_name, instance.window_name
+            );
         }
     }
 

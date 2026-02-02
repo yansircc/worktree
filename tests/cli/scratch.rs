@@ -92,8 +92,8 @@ fn test_scratch_archive_allowed_from_running() {
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
-            "tmux_session": "test-session",
-            "tmux_window": "scratch-env"
+            "session_name": "test-session",
+            "window_name": "scratch-env"
         }),
     );
 
@@ -118,8 +118,8 @@ fn test_scratch_archive_removes_from_status() {
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
-            "tmux_session": "test-session",
-            "tmux_window": "scratch-env"
+            "session_name": "test-session",
+            "window_name": "scratch-env"
         }),
     );
 
@@ -149,8 +149,8 @@ fn test_scratch_reset_removes_from_status() {
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
-            "tmux_session": "test-session",
-            "tmux_window": "scratch-env"
+            "session_name": "test-session",
+            "window_name": "scratch-env"
         }),
     );
 
@@ -208,8 +208,8 @@ fn test_scratch_not_in_status_without_task_file() {
         json!({
             "branch": "wt/scratch-env",
             "worktree_path": "/tmp/nonexistent",
-            "tmux_session": "test-session",
-            "tmux_window": "scratch-env"
+            "session_name": "test-session",
+            "window_name": "scratch-env"
         }),
     );
 

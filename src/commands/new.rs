@@ -4,13 +4,13 @@ use std::path::Path;
 use crate::constants::{BRANCH_PREFIX, TASKS_DIR};
 use crate::error::{Result, WtError};
 use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, tmux, workspace::WorkspaceInitializer};
+use crate::services::{git, multiplexer::check_multiplexer_installed, workspace::WorkspaceInitializer};
 
 pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
 
-    // Generate or validate name
+    // Generate or validate name first (fast validation before expensive checks)
     let name = match name {
         Some(n) => {
             TaskStore::validate_task_name(&n)?;
@@ -65,18 +65,22 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     // Create symlink for status.json so wt commands work from worktree
     initializer.link_status_file()?;
 
-    // Create tmux session if needed
-    if !tmux::session_exists(&config.tmux_session) {
-        tmux::create_session(&config.tmux_session)?;
+    // Check multiplexer is installed before attempting to use it
+    check_multiplexer_installed(config.multiplexer_type())?;
+
+    // Create multiplexer session if needed
+    let mux = config.create_multiplexer();
+    if !mux.session_exists(&config.session_name) {
+        mux.create_session(&config.session_name)?;
     }
 
-    // Create tmux window with just init_script (or empty command for shell)
+    // Create window with just init_script (or empty command for shell)
     let cmd = match &config.init_script {
         Some(script) => script.clone(),
         None => String::new(),
     };
 
-    tmux::create_window(&config.tmux_session, &name, &worktree_path, &cmd)?;
+    mux.create_window(&config.session_name, &name, &worktree_path, &cmd)?;
 
     // Update status.json with scratch=true
     store.set_status(&name, TaskStatus::Running);
@@ -86,9 +90,10 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
         Some(Instance {
             branch: branch.clone(),
             worktree_path: worktree_path.clone(),
-            tmux_session: config.tmux_session.clone(),
-            tmux_window: name.clone(),
+            session_name: config.session_name.clone(),
+            window_name: name.clone(),
             session_id: None, // No Claude session
+            multiplexer: config.multiplexer_type(),
         }),
     );
     store.save_status()?;
@@ -100,12 +105,12 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
         println!("{}", relative_path);
     } else {
         if config.init_script.is_some() {
-            println!("  Init script will run in tmux window");
+            println!("  Init script will run in {} window", config.multiplexer);
         }
         println!("Created scratch environment '{}'", name);
         println!("  Worktree: {}", relative_path);
         println!("  Branch:   {}", branch);
-        println!("  Tmux:     {}:{}", config.tmux_session, name);
+        println!("  Window:   {}:{}", config.session_name, name);
     }
 
     Ok(())

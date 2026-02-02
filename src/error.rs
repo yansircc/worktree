@@ -32,6 +32,12 @@ pub enum WtError {
     #[error("Tmux command failed: {0}")]
     Tmux(String),
 
+    #[error("Zellij command failed: {0}")]
+    Zellij(String),
+
+    #[error("Multiplexer '{0}' is not installed. Please install it first.")]
+    MultiplexerNotInstalled(String),
+
     #[error("Task '{0}' is already running")]
     AlreadyRunning(String),
 

@@ -6,6 +6,7 @@ use std::process::Command;
 
 use crate::error::Result;
 use crate::models::WtConfig;
+use crate::services::multiplexer::MultiplexerType;
 use crate::tui::TuiAction;
 
 pub fn execute(json: bool, action: Option<String>, task: Option<String>) -> Result<()> {
@@ -34,16 +35,30 @@ pub fn execute(json: bool, action: Option<String>, task: Option<String>) -> Resu
 fn handle_tui_action(action: TuiAction) -> Result<()> {
     match action {
         TuiAction::Quit => Ok(()),
-        TuiAction::SwitchTmuxWindow { .. } => {
+        TuiAction::SwitchWindow { .. } => {
             // This should be handled within TUI, not here
             Ok(())
         }
-        TuiAction::AttachTmux { session, window } => {
-            // Outside tmux: directly attach to session
-            Command::new("tmux")
-                .args(["attach", "-t", &format!("{}:{}", session, window)])
-                .status()
-                .ok();
+        TuiAction::AttachSession {
+            multiplexer,
+            session,
+            window,
+        } => {
+            // Outside multiplexer: directly attach to session
+            match multiplexer {
+                MultiplexerType::Tmux => {
+                    Command::new("tmux")
+                        .args(["attach", "-t", &format!("{}:{}", session, window)])
+                        .status()
+                        .ok();
+                }
+                MultiplexerType::Zellij => {
+                    Command::new("zellij")
+                        .args(["attach", &session])
+                        .status()
+                        .ok();
+                }
+            }
             Ok(())
         }
         TuiAction::ShowResume {
@@ -51,7 +66,7 @@ fn handle_tui_action(action: TuiAction) -> Result<()> {
             session_id,
             claude_command,
         } => {
-            eprintln!("Tmux window closed. Run this command to resume:");
+            eprintln!("Multiplexer window closed. Run this command to resume:");
             println!("cd {} && {} -r {}", worktree, claude_command, session_id);
             Ok(())
         }

@@ -7,7 +7,7 @@ use chrono::Utc;
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{dependency, git, tmux, workspace::WorkspaceInitializer};
+use crate::services::{dependency, git, multiplexer::create_multiplexer, workspace::WorkspaceInitializer};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
@@ -67,11 +67,15 @@ pub fn execute(task_ref: String) -> Result<()> {
 
         println!("Cleaning up resources...");
 
-        // Kill tmux window
-        if let Err(e) = tmux::kill_window(&instance.tmux_session, &instance.tmux_window) {
-            eprintln!("  Warning: Failed to kill tmux window: {}", e);
+        // Kill multiplexer window
+        let mux = create_multiplexer(instance.multiplexer_type());
+        if let Err(e) = mux.kill_window(&instance.session_name, &instance.window_name) {
+            eprintln!("  Warning: Failed to kill {} window: {}", instance.multiplexer, e);
         } else {
-            println!("  Killed tmux window: {}:{}", instance.tmux_session, instance.tmux_window);
+            println!(
+                "  Killed {} window: {}:{}",
+                instance.multiplexer, instance.session_name, instance.window_name
+            );
         }
 
         // Remove worktree

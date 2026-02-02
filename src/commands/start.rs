@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::constants::branch_name;
 use crate::error::{Result, WtError};
 use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
-use crate::services::{dependency, git, tmux, workspace::WorkspaceInitializer};
+use crate::services::{dependency, git, multiplexer::check_multiplexer_installed, workspace::WorkspaceInitializer};
 
 pub fn execute(task_ref: Option<String>, all: bool) -> Result<()> {
     if all {
@@ -86,7 +86,7 @@ fn execute_single(name: String) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
 
-    // Check task exists
+    // Check task exists (fast validation first)
     store.ensure_exists(&name)?;
 
     // Check status from StatusStore
@@ -122,8 +122,13 @@ fn execute_single(name: String) -> Result<()> {
         println!("  Copied: {}", file);
     }
 
-    if !tmux::session_exists(&config.tmux_session) {
-        tmux::create_session(&config.tmux_session)?;
+    // Check multiplexer is installed before attempting to use it
+    check_multiplexer_installed(config.multiplexer_type())?;
+
+    // Create multiplexer session if needed
+    let mux = config.create_multiplexer();
+    if !mux.session_exists(&config.session_name) {
+        mux.create_session(&config.session_name)?;
     }
 
     // Build agent command: claude_command + start_args
@@ -145,10 +150,10 @@ fn execute_single(name: String) -> Result<()> {
         None => agent_cmd,
     };
 
-    tmux::create_window(&config.tmux_session, &name, &worktree_path, &full_cmd)?;
+    mux.create_window(&config.session_name, &name, &worktree_path, &full_cmd)?;
 
     if config.init_script.is_some() {
-        println!("  Init script will run in tmux window");
+        println!("  Init script will run in {} window", config.multiplexer);
     }
 
     // Update status in StatusStore
@@ -158,9 +163,10 @@ fn execute_single(name: String) -> Result<()> {
         Some(Instance {
             branch: branch.clone(),
             worktree_path: worktree_path.clone(),
-            tmux_session: config.tmux_session.clone(),
-            tmux_window: name.clone(),
+            session_name: config.session_name.clone(),
+            window_name: name.clone(),
             session_id: Some(session_id),
+            multiplexer: config.multiplexer_type(),
         }),
     );
     store.save_status()?;

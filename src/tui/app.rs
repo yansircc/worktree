@@ -6,18 +6,26 @@ use crate::constants::IDLE_THRESHOLD_SECS;
 use crate::display::format_duration;
 use crate::error::Result;
 use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, tmux, transcript};
+use crate::services::{git, multiplexer::{create_multiplexer, MultiplexerType}, transcript};
 
 /// Action to perform after TUI exits or during TUI
 #[derive(Debug, Clone)]
 pub enum TuiAction {
     /// Just quit, no action
     Quit,
-    /// Switch to tmux window (inside tmux, window exists)
-    SwitchTmuxWindow { session: String, window: String },
-    /// Attach to tmux session (outside tmux, window exists)
-    AttachTmux { session: String, window: String },
-    /// Show resume command (tmux window closed, need to copy command)
+    /// Switch to multiplexer window (inside multiplexer, window exists)
+    SwitchWindow {
+        multiplexer: MultiplexerType,
+        session: String,
+        window: String,
+    },
+    /// Attach to multiplexer session (outside multiplexer, window exists)
+    AttachSession {
+        multiplexer: MultiplexerType,
+        session: String,
+        window: String,
+    },
+    /// Show resume command (multiplexer window closed, need to copy command)
     ShowResume {
         worktree: String,
         session_id: String,
@@ -38,10 +46,11 @@ pub struct TaskDisplay {
     pub additions: i32,
     pub deletions: i32,
     pub active: bool,
-    pub tmux_alive: bool,
+    pub mux_alive: bool,
     pub worktree_path: Option<String>,
-    pub tmux_session: Option<String>,
-    pub tmux_window: Option<String>,
+    pub multiplexer: Option<MultiplexerType>,
+    pub session_name: Option<String>,
+    pub window_name: Option<String>,
     pub session_id: Option<String>,
     pub commit_count: i32,
     pub has_conflict: bool,
@@ -88,7 +97,7 @@ impl App {
             .collect();
 
         for task_name in &task_names {
-            // Auto-mark as Done if Running but tmux window is closed
+            // Auto-mark as Done if Running but multiplexer window is closed
             if store.auto_mark_done_if_needed(task_name)? {
                 status_changed = true;
             }
@@ -104,9 +113,10 @@ impl App {
             let instance = store.get_instance(task.name());
             let worktree_path = instance.map(|i| i.worktree_path.clone());
 
-            // Tmux status
-            let tmux_alive = if let Some(inst) = instance {
-                tmux::window_exists(&inst.tmux_session, &inst.tmux_window)
+            // Multiplexer status
+            let mux_alive = if let Some(inst) = instance {
+                let mux = create_multiplexer(inst.multiplexer_type());
+                mux.window_exists(&inst.session_name, &inst.window_name)
             } else {
                 false
             };
@@ -164,16 +174,17 @@ impl App {
                 .map(|m| (m.commits, m.has_conflict))
                 .unwrap_or((0, false));
 
-            // Get tmux and session info
-            let (tmux_session, tmux_window, session_id) = instance
+            // Get multiplexer and session info
+            let (multiplexer, session_name, window_name, session_id) = instance
                 .map(|i| {
                     (
-                        Some(i.tmux_session.clone()),
-                        Some(i.tmux_window.clone()),
+                        Some(i.multiplexer_type()),
+                        Some(i.session_name.clone()),
+                        Some(i.window_name.clone()),
                         i.session_id.clone(),
                     )
                 })
-                .unwrap_or((None, None, None));
+                .unwrap_or((None, None, None, None));
 
             tasks.push(TaskDisplay {
                 index: index_map[task_name.as_str()],
@@ -184,10 +195,11 @@ impl App {
                 additions,
                 deletions,
                 active,
-                tmux_alive,
+                mux_alive,
                 worktree_path,
-                tmux_session,
-                tmux_window,
+                multiplexer,
+                session_name,
+                window_name,
                 session_id,
                 commit_count,
                 has_conflict,
@@ -243,15 +255,18 @@ impl App {
             .unwrap_or(false)
     }
 
-    /// Mark selected task as done (closes tmux if still running)
+    /// Mark selected task as done (closes multiplexer window if still running)
     pub fn mark_done(&mut self) -> Result<()> {
         if let Some(task) = self.selected_task() {
             if task.status == TaskStatus::Running {
                 let name = task.name.clone();
 
-                // Close tmux window if still alive
-                if let (Some(session), Some(window)) = (&task.tmux_session, &task.tmux_window) {
-                    tmux::kill_window_if_exists(session, window).ok();
+                // Close multiplexer window if still alive
+                if let (Some(mux_type), Some(session), Some(window)) =
+                    (task.multiplexer, &task.session_name, &task.window_name)
+                {
+                    let mux = create_multiplexer(mux_type);
+                    mux.kill_window_if_exists(session, window).ok();
                 }
 
                 let mut store = TaskStore::load()?;
@@ -302,21 +317,25 @@ impl App {
         Ok(())
     }
 
-    /// Check if running inside tmux
-    pub fn is_in_tmux(&self) -> bool {
-        std::env::var("TMUX").is_ok()
+    /// Check if running inside a multiplexer
+    pub fn is_in_multiplexer(&self, mux_type: MultiplexerType) -> bool {
+        match mux_type {
+            MultiplexerType::Tmux => std::env::var("TMUX").is_ok(),
+            MultiplexerType::Zellij => std::env::var("ZELLIJ").is_ok(),
+        }
     }
 
     /// Get action for Enter key on selected task
-    /// - Inside tmux + window exists: attach to it
-    /// - Inside tmux + window closed: show resume command
-    /// - Outside tmux: show tmux attach command
+    /// - Inside multiplexer + window exists: switch to it
+    /// - Inside multiplexer + window closed: show resume command
+    /// - Outside multiplexer: show attach command
     pub fn enter_action(&self) -> Option<TuiAction> {
         let task = self.selected_task()?;
 
-        // Need tmux session and window info
-        let session = task.tmux_session.as_ref()?;
-        let window = task.tmux_window.as_ref()?;
+        // Need multiplexer and session info
+        let mux_type = task.multiplexer?;
+        let session = task.session_name.as_ref()?;
+        let window = task.window_name.as_ref()?;
 
         let claude_command = self
             .config
@@ -324,22 +343,24 @@ impl App {
             .map(|c| c.claude_command.clone())
             .unwrap_or_else(|| "claude".to_string());
 
-        if task.tmux_alive {
-            if self.is_in_tmux() {
-                // Inside tmux: switch to target window
-                Some(TuiAction::SwitchTmuxWindow {
+        if task.mux_alive {
+            if self.is_in_multiplexer(mux_type) {
+                // Inside multiplexer: switch to target window
+                Some(TuiAction::SwitchWindow {
+                    multiplexer: mux_type,
                     session: session.clone(),
                     window: window.clone(),
                 })
             } else {
-                // Outside tmux: attach to session
-                Some(TuiAction::AttachTmux {
+                // Outside multiplexer: attach to session
+                Some(TuiAction::AttachSession {
+                    multiplexer: mux_type,
                     session: session.clone(),
                     window: window.clone(),
                 })
             }
         } else {
-            // Tmux window closed, show resume command
+            // Multiplexer window closed, show resume command
             let worktree = task.worktree_path.as_ref()?;
             let session_id = task.session_id.as_ref()?;
             Some(TuiAction::ShowResume {

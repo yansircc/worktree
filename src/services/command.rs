@@ -40,6 +40,21 @@ impl CommandRunner {
         }
     }
 
+    /// Create a runner for zellij commands.
+    pub fn zellij() -> Self {
+        Self {
+            program: "zellij",
+            error_mapper: WtError::Zellij,
+            cwd: None,
+        }
+    }
+
+    /// Set a custom error mapper.
+    pub fn with_error_mapper(mut self, mapper: fn(String) -> WtError) -> Self {
+        self.error_mapper = mapper;
+        self
+    }
+
     /// Set the working directory for the command.
     pub fn current_dir(mut self, dir: &str) -> Self {
         self.cwd = Some(dir.to_string());

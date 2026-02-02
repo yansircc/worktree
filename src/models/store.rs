@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::constants::TASKS_DIR;
 use crate::error::{Result, WtError};
 use crate::models::{Instance, StatusStore, Task, TaskFrontmatter, TaskInput, TaskStatus};
-use crate::services::tmux;
+use crate::services::multiplexer::create_multiplexer;
 
 #[derive(Debug, Default)]
 pub struct TaskStore {
@@ -217,8 +217,9 @@ impl TaskStore {
             None => return Ok(false),
         };
 
-        // Check if tmux window still exists
-        if tmux::window_exists(&instance.tmux_session, &instance.tmux_window) {
+        // Check if multiplexer window still exists
+        let mux = create_multiplexer(instance.multiplexer_type());
+        if mux.window_exists(&instance.session_name, &instance.window_name) {
             return Ok(false);
         }
 
@@ -707,13 +708,16 @@ mod tests {
 
     #[test]
     fn test_store_set_and_get_instance() {
+        use crate::services::multiplexer::MultiplexerType;
+
         let mut store = TaskStore::default();
         let instance = Instance {
             branch: "wt/test".to_string(),
             worktree_path: "/path".to_string(),
-            tmux_session: "wt".to_string(),
-            tmux_window: "test".to_string(),
+            session_name: "wt".to_string(),
+            window_name: "test".to_string(),
             session_id: None,
+            multiplexer: MultiplexerType::Tmux,
         };
         store.set_instance("test", Some(instance));
         assert!(store.get_instance("test").is_some());

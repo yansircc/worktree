@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, tmux, workspace::WorkspaceInitializer};
+use crate::services::{git, multiplexer::create_multiplexer, workspace::WorkspaceInitializer};
 
 pub fn execute(task_ref: String, silent: bool) -> Result<()> {
     let config = WtConfig::load()?;
@@ -59,8 +59,9 @@ pub fn execute(task_ref: String, silent: bool) -> Result<()> {
             println!("Archiving resources...");
         }
 
-        // Kill tmux window (may already be gone from merged)
-        let _ = tmux::kill_window(&inst.tmux_session, &inst.tmux_window);
+        // Kill multiplexer window (may already be gone from merged)
+        let mux = create_multiplexer(inst.multiplexer_type());
+        let _ = mux.kill_window(&inst.session_name, &inst.window_name);
 
         // Remove worktree
         if let Err(e) = git::remove_worktree(&inst.worktree_path) {
