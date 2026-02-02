@@ -97,15 +97,15 @@ impl App {
             .collect();
 
         for task_name in &task_names {
-            // Auto-mark as Done if Running but multiplexer window is closed
-            if store.auto_mark_done_if_needed(task_name)? {
+            // Auto-mark for Review if Running but multiplexer window is closed
+            if store.auto_mark_review_if_needed(task_name)? {
                 status_changed = true;
             }
 
             let status = store.get_status(task_name);
 
-            // Show Running, Done, and Merged tasks (for archive)
-            if status != TaskStatus::Running && status != TaskStatus::Done && status != TaskStatus::Merged {
+            // Show Running and Review tasks
+            if status != TaskStatus::Running && status != TaskStatus::Review {
                 continue;
             }
 
@@ -241,22 +241,29 @@ impl App {
         }
     }
 
-    /// Check if selected task can be marked as done (Running status)
-    pub fn can_mark_done(&self) -> bool {
+    /// Check if selected task can be marked for review (Running status)
+    pub fn can_mark_review(&self) -> bool {
         self.selected_task()
             .map(|t| t.status == TaskStatus::Running)
             .unwrap_or(false)
     }
 
-    /// Check if selected task can be marked as merged (Done status)
-    pub fn can_mark_merged(&self) -> bool {
+    /// Check if selected task can be resumed (Review status)
+    pub fn can_resume(&self) -> bool {
         self.selected_task()
-            .map(|t| t.status == TaskStatus::Done)
+            .map(|t| t.status == TaskStatus::Review)
             .unwrap_or(false)
     }
 
-    /// Mark selected task as done (closes multiplexer window if still running)
-    pub fn mark_done(&mut self) -> Result<()> {
+    /// Check if selected task can be completed (Review status)
+    pub fn can_complete(&self) -> bool {
+        self.selected_task()
+            .map(|t| t.status == TaskStatus::Review)
+            .unwrap_or(false)
+    }
+
+    /// Mark selected task for review (closes multiplexer window if still running)
+    pub fn mark_review(&mut self) -> Result<()> {
         if let Some(task) = self.selected_task() {
             if task.status == TaskStatus::Running {
                 let name = task.name.clone();
@@ -270,7 +277,7 @@ impl App {
                 }
 
                 let mut store = TaskStore::load()?;
-                store.set_status(&name, TaskStatus::Done);
+                store.set_status(&name, TaskStatus::Review);
                 store.save_status()?;
                 self.refresh()?;
             }
@@ -278,10 +285,10 @@ impl App {
         Ok(())
     }
 
-    /// Mark selected task as merged (closes multiplexer window, keeps worktree for review)
-    pub fn mark_merged(&mut self) -> Result<()> {
+    /// Mark selected task as completed (closes multiplexer window, cleans up resources)
+    pub fn mark_completed(&mut self) -> Result<()> {
         if let Some(task) = self.selected_task() {
-            if task.status == TaskStatus::Done {
+            if task.status == TaskStatus::Review {
                 let name = task.name.clone();
 
                 // Close multiplexer window if still alive
@@ -293,27 +300,8 @@ impl App {
                 }
 
                 let mut store = TaskStore::load()?;
-                store.set_status(&name, TaskStatus::Merged);
+                store.set_status(&name, TaskStatus::Completed);
                 store.save_status()?;
-                self.refresh()?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Check if selected task can be archived (Merged status)
-    pub fn can_archive(&self) -> bool {
-        self.selected_task()
-            .map(|t| t.status == TaskStatus::Merged)
-            .unwrap_or(false)
-    }
-
-    /// Archive selected task
-    pub fn archive(&mut self) -> Result<()> {
-        if let Some(task) = self.selected_task() {
-            if task.status == TaskStatus::Merged {
-                let name = task.name.clone();
-                crate::commands::archive::execute(name, true)?; // silent=true for TUI
                 self.refresh()?;
             }
         }
@@ -377,8 +365,8 @@ impl App {
     /// Get action to tail selected task's transcript
     pub fn tail_action(&self) -> Option<TuiAction> {
         self.selected_task().and_then(|task| {
-            // Can tail Running or Done tasks
-            if task.status == TaskStatus::Running || task.status == TaskStatus::Done {
+            // Can tail Running or Review tasks
+            if task.status == TaskStatus::Running || task.status == TaskStatus::Review {
                 Some(TuiAction::Tail {
                     name: task.name.clone(),
                 })

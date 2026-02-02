@@ -44,7 +44,7 @@ pub struct StatusOutput {
 #[derive(Serialize)]
 pub struct StatusSummary {
     pub running: usize,
-    pub done: usize,
+    pub review: usize,
     pub total_additions: i32,
     pub total_deletions: i32,
 }

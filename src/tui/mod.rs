@@ -161,24 +161,29 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                             }
                         }
 
-                        // Mark as done (Running + tmux exited)
-                        KeyCode::Char('d') => {
-                            if app.can_mark_done() {
-                                app.mark_done()?;
+                        // Mark for review (Running only)
+                        KeyCode::Char('r') => {
+                            if app.can_mark_review() {
+                                app.mark_review()?;
                             }
                         }
 
-                        // Mark as merged (Done only)
-                        KeyCode::Char('m') => {
-                            if app.can_mark_merged() {
-                                app.mark_merged()?;
+                        // Resume (Review only)
+                        KeyCode::Char('u') => {
+                            if app.can_resume() {
+                                // Call resume command
+                                if let Some(task) = app.selected_task() {
+                                    let name = task.name.clone();
+                                    crate::commands::resume::execute(name)?;
+                                    app.refresh()?;
+                                }
                             }
                         }
 
-                        // Archive (Merged only)
-                        KeyCode::Char('a') => {
-                            if app.can_archive() {
-                                app.archive()?;
+                        // Complete (Review only)
+                        KeyCode::Char('c') => {
+                            if app.can_complete() {
+                                app.mark_completed()?;
                             }
                         }
 

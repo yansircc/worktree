@@ -66,7 +66,7 @@ fn task_not_found_response(action: &str, task_name: &str) -> ActionResponse {
         action: action.to_string(),
         success: false,
         error: Some(format!(
-            "Task '{}' not found (only running/done/merged tasks are available)",
+            "Task '{}' not found (only running/review tasks are available)",
             task_name
         )),
         task: Some(TaskInfo {
@@ -127,9 +127,9 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
 
     let response = match action {
         "list" => handle_list_action(&app, &task_name),
-        "done" => handle_done_action(&mut app, &task_name),
-        "merged" => handle_merged_action(&mut app, &task_name),
-        "archive" => handle_archive_action(&mut app, &task_name),
+        "review" | "done" => handle_review_action(&mut app, &task_name),
+        "resume" => handle_resume_action(&mut app, &task_name),
+        "complete" | "merged" | "archive" => handle_complete_action(&mut app, &task_name),
         "enter" => handle_enter_action(&app, &task_name),
         "tail" => handle_tail_action(&task_name),
         _ => ActionResponse {
@@ -165,48 +165,48 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
     let mut available = vec![];
     let mut unavailable = HashMap::new();
 
-    // tail/enter available for Running/Done
-    if matches!(task.status, TaskStatus::Running | TaskStatus::Done) {
+    // tail/enter available for Running/Review
+    if matches!(task.status, TaskStatus::Running | TaskStatus::Review) {
         available.push("tail".to_string());
         available.push("enter".to_string());
     } else {
         unavailable.insert(
             "tail".to_string(),
-            format!("task is {} (need running or done)", task.status.display_name()),
+            format!("task is {} (need running or review)", task.status.display_name()),
         );
         unavailable.insert(
             "enter".to_string(),
-            format!("task is {} (need running or done)", task.status.display_name()),
+            format!("task is {} (need running or review)", task.status.display_name()),
         );
     }
 
-    // done check
-    if app.can_mark_done() {
-        available.push("done".to_string());
+    // review check
+    if app.can_mark_review() {
+        available.push("review".to_string());
     } else {
         unavailable.insert(
-            "done".to_string(),
+            "review".to_string(),
             format!("task is {} (need running)", task.status.display_name()),
         );
     }
 
-    // merged check
-    if app.can_mark_merged() {
-        available.push("merged".to_string());
+    // resume check
+    if app.can_resume() {
+        available.push("resume".to_string());
     } else {
         unavailable.insert(
-            "merged".to_string(),
-            format!("task is {} (need done)", task.status.display_name()),
+            "resume".to_string(),
+            format!("task is {} (need review)", task.status.display_name()),
         );
     }
 
-    // archive check
-    if app.can_archive() {
-        available.push("archive".to_string());
+    // complete check
+    if app.can_complete() {
+        available.push("complete".to_string());
     } else {
         unavailable.insert(
-            "archive".to_string(),
-            format!("task is {} (need merged)", task.status.display_name()),
+            "complete".to_string(),
+            format!("task is {} (need review)", task.status.display_name()),
         );
     }
 
@@ -227,62 +227,63 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
     }
 }
 
-fn handle_done_action(app: &mut App, task_name: &str) -> ActionResponse {
+fn handle_review_action(app: &mut App, task_name: &str) -> ActionResponse {
     let task = app.selected_task().unwrap();
     let status_before = task.status.clone();
     let mux_alive = task.mux_alive;
 
-    if !app.can_mark_done() {
-        return error_response("done", "Cannot mark as done: task is not running", task_name, Some(status_before), Some(mux_alive));
+    if !app.can_mark_review() {
+        return error_response("review", "Cannot mark for review: task is not running", task_name, Some(status_before), Some(mux_alive));
     }
 
-    if let Err(e) = app.mark_done() {
-        return error_response("done", &format!("Failed to mark as done: {}", e), task_name, Some(status_before), None);
+    if let Err(e) = app.mark_review() {
+        return error_response("review", &format!("Failed to mark for review: {}", e), task_name, Some(status_before), None);
     }
 
-    success_response("done", task_name, status_before, TaskStatus::Done)
+    success_response("review", task_name, status_before, TaskStatus::Review)
 }
 
-fn handle_merged_action(app: &mut App, task_name: &str) -> ActionResponse {
+fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
     let task = app.selected_task().unwrap();
     let status_before = task.status.clone();
 
-    if !app.can_mark_merged() {
+    if !app.can_resume() {
         return error_response(
-            "merged",
-            &format!("Cannot mark as merged: task is {} (need done)", status_before.display_name()),
+            "resume",
+            &format!("Cannot resume: task is {} (need review)", status_before.display_name()),
             task_name,
             Some(status_before),
             None,
         );
     }
 
-    if let Err(e) = app.mark_merged() {
-        return error_response("merged", &format!("Failed to mark as merged: {}", e), task_name, Some(status_before), None);
+    // Resume by calling the resume command
+    if let Err(e) = crate::commands::resume::execute(task_name.to_string()) {
+        return error_response("resume", &format!("Failed to resume: {}", e), task_name, Some(status_before), None);
     }
 
-    success_response("merged", task_name, status_before, TaskStatus::Merged)
+    success_response("resume", task_name, status_before, TaskStatus::Running)
 }
 
-fn handle_archive_action(app: &mut App, task_name: &str) -> ActionResponse {
+fn handle_complete_action(app: &mut App, task_name: &str) -> ActionResponse {
     let task = app.selected_task().unwrap();
     let status_before = task.status.clone();
 
-    if !app.can_archive() {
+    if !app.can_complete() {
         return error_response(
-            "archive",
-            &format!("Cannot archive: task is {} (need merged)", status_before.display_name()),
+            "complete",
+            &format!("Cannot complete: task is {} (need review)", status_before.display_name()),
             task_name,
             Some(status_before),
             None,
         );
     }
 
-    if let Err(e) = app.archive() {
-        return error_response("archive", &format!("Failed to archive: {}", e), task_name, Some(status_before), None);
+    if let Err(e) = app.mark_completed() {
+        return error_response("complete", &format!("Failed to complete: {}", e), task_name, Some(status_before), None);
     }
 
-    success_response("archive", task_name, status_before, TaskStatus::Archived)
+    success_response("complete", task_name, status_before, TaskStatus::Completed)
 }
 
 fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {

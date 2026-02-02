@@ -28,6 +28,12 @@ pub struct WtConfig {
     /// Script to run before archiving/reset (optional, for cleanup like rm -rf node_modules/)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive_script: Option<String>,
+    /// Script to run when marking task as review (optional, e.g., run tests)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_script: Option<String>,
+    /// Script to run during merge (optional, e.g., additional build steps)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_script: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -177,6 +183,8 @@ init_script: |
             init_script: Some("npm i".to_string()),
             logs: LogsConfig::default(),
             archive_script: None,
+            review_script: None,
+            merge_script: None,
         };
         let yaml = serde_yaml::to_string(&config).unwrap();
 

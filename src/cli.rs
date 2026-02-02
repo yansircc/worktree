@@ -49,9 +49,15 @@ pub enum Commands {
         all: bool,
     },
 
-    /// Mark a task as done (ready for review)
-    Done {
-        /// Task name to mark as done
+    /// Mark a task for review (ready to be merged)
+    Review {
+        /// Task name to mark for review
+        name: String,
+    },
+
+    /// Resume a task from review state back to running
+    Resume {
+        /// Task name to resume
         name: String,
     },
 
@@ -65,9 +71,9 @@ pub enum Commands {
         agent: bool,
     },
 
-    /// Archive a merged task (cleanup worktree and branch)
-    Archive {
-        /// Task name to archive
+    /// Delete a scratch environment
+    Delete {
+        /// Scratch environment name to delete
         name: String,
     },
 
@@ -84,13 +90,13 @@ pub enum Commands {
         name: String,
     },
 
-    /// Show status of running/done tasks (TUI by default, --json for programmatic use)
+    /// Show status of running/review tasks (TUI by default, --json for programmatic use)
     Status {
         /// Output as JSON for programmatic use (non-interactive)
         #[arg(long)]
         json: bool,
 
-        /// Execute action on task (list, done, merged, archive, enter, tail)
+        /// Execute action on task (list, review, resume, complete, enter, tail)
         #[arg(long, value_name = "ACTION")]
         action: Option<String>,
 

@@ -25,11 +25,11 @@ pub fn execute(task_ref: String, agent_mode: bool) -> Result<()> {
     // Check task exists
     store.ensure_exists(&name)?;
 
-    // Check task status is Done
+    // Check task status is Review
     let current_status = store.get_status(&name);
-    if current_status != TaskStatus::Done {
+    if current_status != TaskStatus::Review {
         return Err(WtError::InvalidInput(format!(
-            "Task '{}' is {} (expected done). Run 'wt done {}' first.",
+            "Task '{}' is {} (expected review). Run 'wt review {}' first.",
             name,
             current_status.display_name(),
             name
@@ -62,7 +62,7 @@ pub fn execute(task_ref: String, agent_mode: bool) -> Result<()> {
     let prompt_path = Path::new(&repo_root).join(MERGE_PROMPT_FILE);
     if !prompt_path.exists() {
         return Err(WtError::InvalidInput(format!(
-            "Merge prompt file not found: {}\nCreate it first or use 'wt status --action merged --task {}' to just mark as merged.",
+            "Merge prompt file not found: {}\nCreate it first or use 'wt status --action complete --task {}' to just mark as completed.",
             MERGE_PROMPT_FILE, name
         )));
     }

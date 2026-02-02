@@ -28,9 +28,10 @@ src/
 │   ├── list.rs
 │   ├── next.rs
 │   ├── start.rs      # 支持 --all 批量启动
-│   ├── done.rs
-│   ├── merge.rs      # Claude 自动 merge（rebase + squash）
-│   ├── archive.rs
+│   ├── review.rs     # 标记待审核
+│   ├── resume.rs     # 从 Review 恢复到 Running
+│   ├── merge.rs      # Claude 自动 merge（rebase + squash + 清理）
+│   ├── delete.rs     # 删除 scratch 环境
 │   ├── reset.rs
 │   ├── new.rs        # scratch 环境创建
 │   ├── status/       # 状态命令（已模块化）
@@ -89,6 +90,14 @@ logs:
 archive_script: |
   rm -rf node_modules/
   rm -rf dist/
+
+# 进入 Review 前的检查脚本（可选）
+review_script: |
+  npm run lint
+
+# merge 前执行的脚本（可选）
+merge_script: |
+  npm run build
 ```
 
 ### Task（任务）
@@ -116,7 +125,7 @@ depends:            # 依赖的任务列表
         "multiplexer": "tmux"
       }
     },
-    "database": { "status": "merged" }
+    "database": { "status": "completed" }
   }
 }
 ```
@@ -124,14 +133,16 @@ depends:            # 依赖的任务列表
 ### TaskStatus 状态流转
 
 ```
-○ Pending  →  ● Running  →  ✓ Done  →  ☑ Archived
-   (wt start)    (wt done)    (wt merge 或 wt archive)
-      ↑______________|_________|
-                (wt reset，会备份)
+○ Pending  →  ● Running  →  ? Review  →  ✓ Completed
+  (wt start)   (wt review)   (wt merge)
+                   ↑            │
+                   └────────────┘  (wt resume)
 ```
 
-- `wt merge` 执行 rebase + squash merge + commit，然后自动 archive
-- `wt archive` 直接清理 worktree 和分支（不执行 merge）
+- `wt review` 标记任务待审核，关闭 tmux 窗口
+- `wt resume` 从 Review 恢复到 Running，继续开发
+- `wt merge` 执行 rebase + squash merge + commit，然后自动清理资源
+- `wt reset` 可从任意状态回到 Pending（会备份代码到 `.wt/backups/`）
 
 ### 任务索引
 
@@ -141,7 +152,7 @@ depends:            # 依赖的任务列表
 
 ### 依赖规则
 
-- 任务只能在所有依赖都 `Merged` 或 `Archived` 后才能 `start`
+- 任务只能在所有依赖都 `Completed` 后才能 `start`
 - `validate` 会检测循环依赖
 - `reset` 会在清理前备份代码到 `.wt/backups/`
 

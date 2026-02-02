@@ -1,44 +1,44 @@
 //! CLI tests for scratch environment behavior
 //!
 //! Scratch environments (created via `wt new`) have special lifecycle rules:
-//! - Cannot use `wt done` or `wt merge`
-//! - Can archive directly from Running state
-//! - Archive/reset removes entry from status.json entirely (no Archived state)
+//! - Cannot use `wt review` or `wt merge`
+//! - Can delete directly from Running or Review state
+//! - Delete removes entry from status.json entirely (no Completed state)
 
 use crate::common::*;
 use serde_json::json;
 
-// ==================== Done Forbidden ====================
+// ==================== Review Forbidden ====================
 
 #[test]
-fn test_scratch_done_forbidden() {
+fn test_scratch_review_forbidden() {
     let dir = setup_test_repo();
 
     // Create scratch status entry (no task file)
     set_scratch_status(dir.path(), "scratch-env", "running");
 
-    let (ok, _, stderr) = run_wt(dir.path(), &["done", "scratch-env"]);
+    let (ok, _, stderr) = run_wt(dir.path(), &["review", "scratch-env"]);
 
     assert!(!ok);
     assert!(
-        stderr.contains("Scratch") || stderr.contains("cannot be marked as done"),
+        stderr.contains("Scratch") || stderr.contains("cannot be marked"),
         "Expected scratch-specific error, got: {}",
         stderr
     );
 }
 
 #[test]
-fn test_scratch_done_suggests_archive() {
+fn test_scratch_review_suggests_delete() {
     let dir = setup_test_repo();
 
     set_scratch_status(dir.path(), "scratch-env", "running");
 
-    let (ok, _, stderr) = run_wt(dir.path(), &["done", "scratch-env"]);
+    let (ok, _, stderr) = run_wt(dir.path(), &["review", "scratch-env"]);
 
     assert!(!ok);
     assert!(
-        stderr.contains("archive"),
-        "Error should suggest using 'wt archive', got: {}",
+        stderr.contains("delete"),
+        "Error should suggest using 'wt delete', got: {}",
         stderr
     );
 }
@@ -49,8 +49,8 @@ fn test_scratch_done_suggests_archive() {
 fn test_scratch_merge_forbidden() {
     let dir = setup_test_repo();
 
-    // Create scratch in done-like state
-    set_scratch_status(dir.path(), "scratch-env", "running");
+    // Create scratch in review state
+    set_scratch_status(dir.path(), "scratch-env", "review");
 
     let (ok, _, stderr) = run_wt(dir.path(), &["merge", "scratch-env"]);
 
@@ -62,26 +62,10 @@ fn test_scratch_merge_forbidden() {
     );
 }
 
-#[test]
-fn test_scratch_merge_suggests_archive() {
-    let dir = setup_test_repo();
-
-    set_scratch_status(dir.path(), "scratch-env", "running");
-
-    let (ok, _, stderr) = run_wt(dir.path(), &["merge", "scratch-env"]);
-
-    assert!(!ok);
-    assert!(
-        stderr.contains("archive"),
-        "Error should suggest using 'wt archive', got: {}",
-        stderr
-    );
-}
-
-// ==================== Archive Allowed ====================
+// ==================== Delete Allowed ====================
 
 #[test]
-fn test_scratch_archive_allowed_from_running() {
+fn test_scratch_delete_allowed_from_running() {
     let dir = setup_test_repo();
 
     // Create scratch with instance info
@@ -97,18 +81,18 @@ fn test_scratch_archive_allowed_from_running() {
         }),
     );
 
-    let (ok, stdout, _) = run_wt(dir.path(), &["archive", "scratch-env"]);
+    let (ok, stdout, _) = run_wt(dir.path(), &["delete", "scratch-env"]);
 
-    assert!(ok, "Scratch should be archivable directly from running");
+    assert!(ok, "Scratch should be deletable directly from running");
     assert!(
-        stdout.contains("cleaned up") || stdout.contains("Scratch"),
-        "Expected scratch cleanup message, got: {}",
+        stdout.contains("deleted") || stdout.contains("Scratch"),
+        "Expected scratch delete message, got: {}",
         stdout
     );
 }
 
 #[test]
-fn test_scratch_archive_removes_from_status() {
+fn test_scratch_delete_removes_from_status() {
     let dir = setup_test_repo();
 
     set_scratch_status_with_instance(
@@ -126,13 +110,13 @@ fn test_scratch_archive_removes_from_status() {
     // Verify scratch exists before
     assert!(task_exists_in_status(dir.path(), "scratch-env"));
 
-    let (ok, _, _) = run_wt(dir.path(), &["archive", "scratch-env"]);
+    let (ok, _, _) = run_wt(dir.path(), &["delete", "scratch-env"]);
     assert!(ok);
 
-    // Verify scratch entry is completely removed (not set to Archived)
+    // Verify scratch entry is completely removed
     assert!(
         !task_exists_in_status(dir.path(), "scratch-env"),
-        "Scratch should be removed from status.json, not set to Archived"
+        "Scratch should be removed from status.json"
     );
 }
 
@@ -182,8 +166,8 @@ fn test_scratch_identified_by_flag_not_missing_file() {
     // Create normal status entry (no scratch flag) without task file
     set_task_status(dir.path(), "orphan", "running");
 
-    // Try to mark as done - should fail because task file not found, not because scratch
-    let (ok, _, stderr) = run_wt(dir.path(), &["done", "orphan"]);
+    // Try to mark for review - should fail because task file not found, not because scratch
+    let (ok, _, stderr) = run_wt(dir.path(), &["review", "orphan"]);
 
     assert!(!ok);
     assert!(
@@ -257,15 +241,15 @@ fn test_scratch_not_in_task_list() {
 // ==================== Scratch State Validation ====================
 
 #[test]
-fn test_scratch_archive_fails_from_pending() {
+fn test_scratch_delete_fails_from_pending() {
     let dir = setup_test_repo();
 
     // Scratch in pending state (unusual but possible)
     set_scratch_status(dir.path(), "scratch-env", "pending");
 
-    let (ok, _, stderr) = run_wt(dir.path(), &["archive", "scratch-env"]);
+    let (ok, _, stderr) = run_wt(dir.path(), &["delete", "scratch-env"]);
 
-    // Should fail - scratch needs to be running or merged
+    // Should fail - scratch needs to be running or review
     assert!(!ok);
     assert!(
         stderr.contains("Invalid") || stderr.contains("transition"),

@@ -1,94 +1,61 @@
 # Session Handoff
 
-## Session 15 (Part 2): Multiplexer 抽象层
+## Session 16: 任务状态重设计
 
 ### 完成的工作
 
-**新增 multiplexer 抽象层**，支持 tmux 和 zellij：
+**核心变更：将 5 状态简化为 4 状态**
 
-1. **新文件**
-   - `src/services/multiplexer/mod.rs` - Multiplexer trait + MultiplexerType enum + 工厂函数
-   - `src/services/multiplexer/tmux.rs` - TmuxBackend 实现
-   - `src/services/multiplexer/zellij.rs` - ZellijBackend 实现
+```
+旧: Pending → Running → Done → Merged → Archived
+新: Pending → Running → Review → Completed
+```
 
-2. **修改的文件**
-   - `src/error.rs` - 新增 `Zellij`、`MultiplexerNotInstalled` 错误
-   - `src/services/command.rs` - 新增 `zellij()` 工厂方法
-   - `src/constants.rs` - `DEFAULT_TMUX_SESSION` → `DEFAULT_SESSION_NAME`
-   - `src/models/config.rs` - 新增 `multiplexer`、`session_name` 字段
-   - `src/models/task.rs` - Instance 字段重命名 (`tmux_session` → `session_name`, `tmux_window` → `window_name`)，新增 `multiplexer` 字段
-   - 所有命令文件 - 从 `tmux::` 调用改为 multiplexer trait
+**命令变更：**
 
-3. **删除的文件**
-   - `src/services/tmux.rs` - 已迁移到 multiplexer/tmux.rs
-
-4. **配置变更** (不向后兼容)
-   ```yaml
-   # 旧配置
-   tmux_session: wt
-
-   # 新配置
-   multiplexer: tmux  # 或 zellij
-   session_name: wt
-   ```
-
----
-
-## Session 15 (Part 1): wt merge 命令实现
-
-### 完成的工作
-
-**核心功能：将 `wt merged` 改造为 `wt merge`**
-
-从"标记状态"变为"执行实际 git merge"：
-- 使用 Claude 自动完成 rebase + squash merge + commit
-- 支持交互模式（默认，在 tmux 中启动 TUI）和 agent 模式（`--agent`，静默执行）
-- merge 成功后自动执行 `wt archive` 清理
+| 旧命令 | 新命令 | 说明 |
+|--------|--------|------|
+| `wt done` | `wt review` | 标记任务待审核 |
+| - | `wt resume` | 从 Review 恢复到 Running |
+| `wt archive` | `wt delete` | 仅用于删除 scratch 环境 |
+| `wt merge` | `wt merge` | 保持，merge 成功后自动清理 |
 
 **文件变更：**
 
 | 操作 | 文件 |
 |------|------|
-| 新增 | `src/commands/merge.rs` - 新命令实现 |
-| 新增 | `.wt/prompts/merge.md` - Claude merge 提示词 |
-| 新增 | `tests/cli/merge.rs` - 新命令测试 |
-| 删除 | `src/commands/merged.rs` - 旧命令 |
-| 删除 | `tests/cli/merged.rs` - 旧测试 |
-| 修改 | `src/cli.rs` - Merged → Merge，添加 --agent 标志 |
-| 修改 | `src/main.rs` - 更新路由 |
-| 修改 | `src/commands/mod.rs` - merged → merge |
-| 修改 | `src/commands/done.rs` - 更新提示信息 |
-| 修改 | `src/tui/app.rs` - 内联 mark_merged 逻辑 |
-| 修改 | `tests/cli/scratch.rs` - merged → merge |
+| 新增 | `src/commands/review.rs` - 替代 done.rs |
+| 新增 | `src/commands/resume.rs` - Review → Running |
+| 新增 | `src/commands/delete.rs` - scratch 专用 |
+| 删除 | `src/commands/done.rs` |
+| 删除 | `src/commands/archive.rs` |
+| 修改 | `src/models/task.rs` - TaskStatus enum 简化 |
+| 修改 | `src/models/config.rs` - 新增 review_script, merge_script |
+| 修改 | `src/services/dependency.rs` - 依赖检查改为 Completed |
+| 修改 | TUI 和 Actions API - 适配新状态 |
+| 修改 | 所有测试文件 - 适配新状态名 |
 
-### 使用方式
+**向后兼容：**
+- 旧 status.json 中的 `done` 自动映射到 `Review`
+- 旧 status.json 中的 `merged`/`archived` 自动映射到 `Completed`
 
-```bash
-# 交互模式（在 tmux 窗口中启动 Claude TUI）
-wt merge <task>
+### TUI 快捷键
 
-# Agent 模式（静默执行，用于自动化）
-wt merge <task> --agent
-```
-
-**前置条件：**
-- 任务状态必须是 Done
-- 必须有 worktree（instance 存在）
-- 需要 `.wt/prompts/merge.md` 提示词文件
-
-### 兼容性说明
-
-- `wt merged` 命令已移除
-- 仅标记状态功能通过 `wt status --action merged --task <name>` 或 TUI 中的 `m` 键保留
+| 按键 | 功能 |
+|------|------|
+| `r` | 标记 review (原 `d`) |
+| `u` | resume (新增) |
+| `c` | complete (原 `m` + `a`) |
 
 ---
 
 ## 之前 Sessions 摘要
 
-- Session 1-10: 基础功能实现（init, create, start, done, merged, archive, reset, list, next, validate）
+- Session 1-10: 基础功能（init, create, start, done, merged, archive, reset, list, next, validate）
 - Session 11-12: TUI 状态面板、tail 命令、logs 命令
 - Session 13: shell 补全（completions generate/install）
 - Session 14: wt new（scratch 环境）
+- Session 15: wt merge 命令实现（rebase + squash merge + auto archive）
 
 ## 相关文件索引
 

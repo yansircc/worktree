@@ -6,9 +6,10 @@ pub enum TaskStatus {
     #[default]
     Pending,
     Running,
-    Done,
-    Merged,
-    Archived,
+    #[serde(alias = "done")]
+    Review,
+    #[serde(alias = "merged", alias = "archived")]
+    Completed,
 }
 
 impl TaskStatus {
@@ -16,18 +17,16 @@ impl TaskStatus {
     ///
     /// Valid transitions:
     /// - Pending -> Running
-    /// - Running -> Done
-    /// - Running -> Merged (skip done)
-    /// - Done -> Merged
-    /// - Merged -> Archived
+    /// - Running -> Review
+    /// - Review -> Running (resume)
+    /// - Review -> Completed
     pub fn can_transition_to(&self, target: &TaskStatus) -> bool {
         matches!(
             (self, target),
             (TaskStatus::Pending, TaskStatus::Running)
-                | (TaskStatus::Running, TaskStatus::Done)
-                | (TaskStatus::Running, TaskStatus::Merged)
-                | (TaskStatus::Done, TaskStatus::Merged)
-                | (TaskStatus::Merged, TaskStatus::Archived)
+                | (TaskStatus::Running, TaskStatus::Review)
+                | (TaskStatus::Review, TaskStatus::Running)
+                | (TaskStatus::Review, TaskStatus::Completed)
         )
     }
 
@@ -36,9 +35,8 @@ impl TaskStatus {
         match self {
             TaskStatus::Pending => "pending",
             TaskStatus::Running => "running",
-            TaskStatus::Done => "done",
-            TaskStatus::Merged => "merged",
-            TaskStatus::Archived => "archived",
+            TaskStatus::Review => "review",
+            TaskStatus::Completed => "completed",
         }
     }
 
@@ -47,22 +45,20 @@ impl TaskStatus {
         match self {
             TaskStatus::Pending => "○",
             TaskStatus::Running => "●",
-            TaskStatus::Done => "✓",
-            TaskStatus::Merged => "✓✓",
-            TaskStatus::Archived => "☑",
+            TaskStatus::Review => "?",
+            TaskStatus::Completed => "✓",
         }
     }
 
     /// Get colored status icon for terminal display.
     pub fn colored_icon(&self) -> String {
-        use crate::display::{GRAY, GREEN, MAGENTA, RESET, WHITE};
+        use crate::display::{GREEN, MAGENTA, RESET, WHITE, YELLOW};
 
         let color = match self {
             TaskStatus::Pending => WHITE,
             TaskStatus::Running => GREEN,
-            TaskStatus::Done => GREEN,
-            TaskStatus::Merged => MAGENTA,
-            TaskStatus::Archived => GRAY,
+            TaskStatus::Review => YELLOW,
+            TaskStatus::Completed => MAGENTA,
         };
         format!("{}{}{}", color, self.icon(), RESET)
     }
@@ -161,28 +157,24 @@ mod tests {
     fn test_task_status_can_transition_to() {
         // Valid transitions
         assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Running));
-        assert!(TaskStatus::Running.can_transition_to(&TaskStatus::Done));
-        assert!(TaskStatus::Running.can_transition_to(&TaskStatus::Merged));
-        assert!(TaskStatus::Done.can_transition_to(&TaskStatus::Merged));
-        assert!(TaskStatus::Merged.can_transition_to(&TaskStatus::Archived));
+        assert!(TaskStatus::Running.can_transition_to(&TaskStatus::Review));
+        assert!(TaskStatus::Review.can_transition_to(&TaskStatus::Running)); // resume
+        assert!(TaskStatus::Review.can_transition_to(&TaskStatus::Completed));
 
         // Invalid transitions
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Done));
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Merged));
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Archived));
-        assert!(!TaskStatus::Done.can_transition_to(&TaskStatus::Running));
-        assert!(!TaskStatus::Done.can_transition_to(&TaskStatus::Archived));
-        assert!(!TaskStatus::Merged.can_transition_to(&TaskStatus::Pending));
-        assert!(!TaskStatus::Archived.can_transition_to(&TaskStatus::Pending));
+        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Review));
+        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Completed));
+        assert!(!TaskStatus::Running.can_transition_to(&TaskStatus::Completed));
+        assert!(!TaskStatus::Completed.can_transition_to(&TaskStatus::Pending));
+        assert!(!TaskStatus::Completed.can_transition_to(&TaskStatus::Running));
     }
 
     #[test]
     fn test_task_status_display_name() {
         assert_eq!(TaskStatus::Pending.display_name(), "pending");
         assert_eq!(TaskStatus::Running.display_name(), "running");
-        assert_eq!(TaskStatus::Done.display_name(), "done");
-        assert_eq!(TaskStatus::Merged.display_name(), "merged");
-        assert_eq!(TaskStatus::Archived.display_name(), "archived");
+        assert_eq!(TaskStatus::Review.display_name(), "review");
+        assert_eq!(TaskStatus::Completed.display_name(), "completed");
     }
 
     #[test]
@@ -196,16 +188,12 @@ mod tests {
             "running"
         );
         assert_eq!(
-            serde_yaml::to_string(&TaskStatus::Done).unwrap().trim(),
-            "done"
+            serde_yaml::to_string(&TaskStatus::Review).unwrap().trim(),
+            "review"
         );
         assert_eq!(
-            serde_yaml::to_string(&TaskStatus::Merged).unwrap().trim(),
-            "merged"
-        );
-        assert_eq!(
-            serde_yaml::to_string(&TaskStatus::Archived).unwrap().trim(),
-            "archived"
+            serde_yaml::to_string(&TaskStatus::Completed).unwrap().trim(),
+            "completed"
         );
     }
 
@@ -220,16 +208,29 @@ mod tests {
             TaskStatus::Running
         );
         assert_eq!(
+            serde_yaml::from_str::<TaskStatus>("review").unwrap(),
+            TaskStatus::Review
+        );
+        assert_eq!(
+            serde_yaml::from_str::<TaskStatus>("completed").unwrap(),
+            TaskStatus::Completed
+        );
+    }
+
+    #[test]
+    fn test_task_status_deserialize_aliases() {
+        // Old status names should map to new statuses
+        assert_eq!(
             serde_yaml::from_str::<TaskStatus>("done").unwrap(),
-            TaskStatus::Done
+            TaskStatus::Review
         );
         assert_eq!(
             serde_yaml::from_str::<TaskStatus>("merged").unwrap(),
-            TaskStatus::Merged
+            TaskStatus::Completed
         );
         assert_eq!(
             serde_yaml::from_str::<TaskStatus>("archived").unwrap(),
-            TaskStatus::Archived
+            TaskStatus::Completed
         );
     }
 

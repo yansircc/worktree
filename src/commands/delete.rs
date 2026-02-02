@@ -4,6 +4,9 @@ use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore, WtConfig};
 use crate::services::{git, multiplexer::create_multiplexer, workspace::WorkspaceInitializer};
 
+/// Delete a scratch environment or clean up a task's resources.
+/// For scratch: removes worktree, branch, and status entry.
+/// For tasks: only cleans up resources (worktree, branch) without changing status.
 pub fn execute(task_ref: String, silent: bool) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
@@ -12,20 +15,22 @@ pub fn execute(task_ref: String, silent: bool) -> Result<()> {
     let name = store.resolve_task_ref(&task_ref)?;
 
     let is_scratch = store.is_scratch(&name);
+
+    if !is_scratch {
+        return Err(WtError::InvalidInput(format!(
+            "'{}' is a task, not a scratch environment. Use 'wt merge {}' or 'wt reset {}' instead.",
+            name, name, name
+        )));
+    }
+
     let current_status = store.get_status(&name);
 
-    if is_scratch {
-        // Scratch: allow from Running directly (skip Merged requirement)
-        if current_status != TaskStatus::Running && current_status != TaskStatus::Merged {
-            return Err(WtError::InvalidStateTransition {
-                from: current_status.display_name().to_string(),
-                to: "archived".to_string(),
-            });
-        }
-    } else {
-        // Normal task: check task file exists and validate transition
-        store.ensure_exists(&name)?;
-        store.validate_transition(&name, TaskStatus::Archived)?;
+    // Scratch: allow from Running or Review
+    if current_status != TaskStatus::Running && current_status != TaskStatus::Review {
+        return Err(WtError::InvalidStateTransition {
+            from: current_status.display_name().to_string(),
+            to: "deleted".to_string(),
+        });
     }
 
     // Get instance info and repo root before modifying anything
@@ -36,7 +41,7 @@ pub fn execute(task_ref: String, silent: bool) -> Result<()> {
     if let Some(ref script) = config.archive_script {
         if let Some(ref inst) = instance {
             if !silent {
-                println!("Running archive script...");
+                println!("Running cleanup script...");
             }
             let source_dir = Path::new(".");
             let initializer = WorkspaceInitializer::new(&inst.worktree_path, source_dir);
@@ -44,19 +49,14 @@ pub fn execute(task_ref: String, silent: bool) -> Result<()> {
         }
     }
 
-    // Update status BEFORE deleting worktree (symlink would be deleted with worktree)
-    if is_scratch {
-        store.status.tasks.remove(&name);
-    } else {
-        store.set_status(&name, TaskStatus::Archived);
-        store.set_instance(&name, None);
-    }
+    // Remove status entry for scratch
+    store.status.tasks.remove(&name);
     store.save_status()?;
 
     // Cleanup all resources (after status is saved)
     if let Some(inst) = instance {
         if !silent {
-            println!("Archiving resources...");
+            println!("Deleting scratch environment...");
         }
 
         // Kill multiplexer window (may already be gone from merged)
@@ -83,11 +83,7 @@ pub fn execute(task_ref: String, silent: bool) -> Result<()> {
     }
 
     if !silent {
-        if is_scratch {
-            println!("Scratch environment '{}' cleaned up.", name);
-        } else {
-            println!("Task '{}' archived.", name);
-        }
+        println!("Scratch environment '{}' deleted.", name);
     }
     Ok(())
 }

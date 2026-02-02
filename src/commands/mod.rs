@@ -1,7 +1,6 @@
-pub mod archive;
 pub mod completions;
 pub mod create;
-pub mod done;
+pub mod delete;
 pub mod init;
 pub mod list;
 pub mod logs;
@@ -9,6 +8,8 @@ pub mod merge;
 pub mod new;
 pub mod next;
 pub mod reset;
+pub mod resume;
+pub mod review;
 pub mod start;
 pub mod status;
 pub mod tail;

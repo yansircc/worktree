@@ -38,8 +38,8 @@ fn test_reset_running_task() {
 }
 
 #[test]
-fn test_reset_done_task() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "done")]);
+fn test_reset_review_task() {
+    let dir = setup_repo_with_tasks(&[("task1", &[], "review")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["reset", "task1"]);
 
@@ -79,8 +79,8 @@ fn test_reset_with_pending_dependents_succeeds() {
 }
 
 #[test]
-fn test_reset_merged_task() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "merged")]);
+fn test_reset_completed_task() {
+    let dir = setup_repo_with_tasks(&[("task1", &[], "completed")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["reset", "task1"]);
 

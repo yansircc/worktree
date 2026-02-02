@@ -33,7 +33,7 @@ fn execute_all() -> Result<()> {
     let store = TaskStore::load()?;
     let tasks = store.list();
 
-    // Find all ready tasks (pending with all deps merged/archived)
+    // Find all ready tasks (pending with all deps completed)
     let ready_tasks: Vec<String> = tasks
         .iter()
         .filter(|task| {
@@ -42,7 +42,7 @@ fn execute_all() -> Result<()> {
             }
             task.depends().iter().all(|dep| {
                 let status = store.get_status(dep);
-                status == TaskStatus::Merged || status == TaskStatus::Archived
+                status == TaskStatus::Completed
             })
         })
         .map(|task| task.name().to_string())
@@ -97,7 +97,7 @@ fn execute_single(name: String) -> Result<()> {
         return Err(WtError::AlreadyRunning(name.clone()));
     }
 
-    dependency::check_dependencies_merged(&store, &name)?;
+    dependency::check_dependencies_completed(&store, &name)?;
 
     // Generate session ID for branch naming and Claude Code tracking
     let session_id = Uuid::new_v4().to_string();

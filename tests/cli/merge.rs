@@ -13,7 +13,7 @@ fn test_merge_nonexistent() {
 fn test_merge_scratch_environment_fails() {
     let dir = setup_test_repo();
     // Create a scratch environment in status.json
-    set_scratch_status(dir.path(), "s1", "done");
+    set_scratch_status(dir.path(), "s1", "review");
 
     let (ok, _, stderr) = run_wt(dir.path(), &["merge", "s1"]);
 
@@ -30,7 +30,7 @@ fn test_merge_by_index() {
 
     assert!(!ok);
     // Should resolve index to task name and give proper error
-    assert!(stderr.contains("pending") || stderr.contains("expected done"));
+    assert!(stderr.contains("pending") || stderr.contains("expected review"));
 }
 
 #[test]
@@ -39,9 +39,9 @@ fn test_merge_pending_task_fails() {
 
     let (ok, _, stderr) = run_wt(dir.path(), &["merge", "task"]);
 
-    // Cannot merge pending task - needs to be done first
+    // Cannot merge pending task - needs to be in review first
     assert!(!ok);
-    assert!(stderr.contains("pending") || stderr.contains("expected done"));
+    assert!(stderr.contains("pending") || stderr.contains("expected review"));
 }
 
 #[test]
@@ -50,29 +50,29 @@ fn test_merge_running_task_fails() {
 
     let (ok, _, stderr) = run_wt(dir.path(), &["merge", "task"]);
 
-    // Cannot merge running task - needs to be done first
+    // Cannot merge running task - needs to be in review first
     assert!(!ok);
-    assert!(stderr.contains("running") || stderr.contains("expected done"));
+    assert!(stderr.contains("running") || stderr.contains("expected review"));
 }
 
 #[test]
-fn test_merge_merged_task_fails() {
-    let dir = setup_repo_with_tasks(&[("task", &[], "merged")]);
+fn test_merge_completed_task_fails() {
+    let dir = setup_repo_with_tasks(&[("task", &[], "completed")]);
 
     let (ok, _, stderr) = run_wt(dir.path(), &["merge", "task"]);
 
-    // Cannot merge already merged task
+    // Cannot merge already completed task
     assert!(!ok);
-    assert!(stderr.contains("merged") || stderr.contains("expected done"));
+    assert!(stderr.contains("completed") || stderr.contains("expected review"));
 }
 
 #[test]
-fn test_merge_done_task_without_instance_fails() {
-    let dir = setup_repo_with_tasks(&[("task", &[], "done")]);
+fn test_merge_review_task_without_instance_fails() {
+    let dir = setup_repo_with_tasks(&[("task", &[], "review")]);
 
     let (ok, _, stderr) = run_wt(dir.path(), &["merge", "task"]);
 
-    // Done task without instance (worktree) cannot be merged
+    // Review task without instance (worktree) cannot be merged
     assert!(!ok);
     assert!(stderr.contains("not been started") || stderr.contains("instance"));
 }

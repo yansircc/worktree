@@ -65,56 +65,45 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
         .collect();
 
     // Group tasks by status (with index)
-    let mut archived: Vec<(usize, &Task)> = Vec::new();
-    let mut merged: Vec<(usize, &Task)> = Vec::new();
+    let mut completed: Vec<(usize, &Task)> = Vec::new();
     let mut ready: Vec<(usize, &Task)> = Vec::new();
     let mut blocked: Vec<(usize, &Task, Vec<&str>)> = Vec::new();
     let mut running: Vec<(usize, &Task)> = Vec::new();
-    let mut done: Vec<(usize, &Task)> = Vec::new();
+    let mut review: Vec<(usize, &Task)> = Vec::new();
 
     for task in tasks {
         let idx = index_map[task.name()];
         let status = store.get_status(task.name());
         match status {
-            TaskStatus::Archived => archived.push((idx, task)),
-            TaskStatus::Merged => merged.push((idx, task)),
+            TaskStatus::Completed => completed.push((idx, task)),
             TaskStatus::Running => running.push((idx, task)),
-            TaskStatus::Done => done.push((idx, task)),
+            TaskStatus::Review => review.push((idx, task)),
             TaskStatus::Pending => {
-                // Check if all dependencies are merged or archived
-                let unmerged_deps: Vec<&str> = task
+                // Check if all dependencies are completed
+                let incomplete_deps: Vec<&str> = task
                     .depends()
                     .iter()
                     .filter(|dep| {
                         let dep_status = store.get_status(dep);
-                        dep_status != TaskStatus::Merged && dep_status != TaskStatus::Archived
+                        dep_status != TaskStatus::Completed
                     })
                     .map(|s| s.as_str())
                     .collect();
 
-                if unmerged_deps.is_empty() {
+                if incomplete_deps.is_empty() {
                     ready.push((idx, task));
                 } else {
-                    blocked.push((idx, task, unmerged_deps));
+                    blocked.push((idx, task, incomplete_deps));
                 }
             }
         }
     }
 
-    // Print Archived
-    if !archived.is_empty() {
-        println!("Archived ({}):", archived.len());
-        for (idx, task) in &archived {
-            println!("  {} {} {}", colored_index(*idx), TaskStatus::Archived.colored_icon(), task.name());
-        }
-        println!();
-    }
-
-    // Print Merged
-    if !merged.is_empty() {
-        println!("Merged ({}):", merged.len());
-        for (idx, task) in &merged {
-            println!("  {} {} {}", colored_index(*idx), TaskStatus::Merged.colored_icon(), task.name());
+    // Print Completed
+    if !completed.is_empty() {
+        println!("Completed ({}):", completed.len());
+        for (idx, task) in &completed {
+            println!("  {} {} {}", colored_index(*idx), TaskStatus::Completed.colored_icon(), task.name());
         }
         println!();
     }
@@ -128,10 +117,10 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
         println!();
     }
 
-    // Print Done
-    if !done.is_empty() {
-        println!("Done ({}):", done.len());
-        for (idx, task) in &done {
+    // Print Review
+    if !review.is_empty() {
+        println!("Review ({}):", review.len());
+        for (idx, task) in &review {
             print_task_with_deps_indexed(*idx, task, store, &index_map);
         }
         println!();
@@ -160,7 +149,7 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
                     let icon = if waiting_for.contains(&dep.as_str()) {
                         TaskStatus::Pending.colored_icon()
                     } else {
-                        TaskStatus::Merged.colored_icon()
+                        TaskStatus::Completed.colored_icon()
                     };
                     print!(" {}{}", dep, icon);
                 }

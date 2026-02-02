@@ -50,9 +50,9 @@ fn test_next_blocked_by_pending() {
 }
 
 #[test]
-fn test_next_unblocked_by_merged() {
+fn test_next_unblocked_by_completed() {
     let dir = setup_repo_with_tasks(&[
-        ("auth", &[], "merged"),
+        ("auth", &[], "completed"),
         ("api", &["auth"], "pending"),
     ]);
 
@@ -67,8 +67,8 @@ fn test_next_unblocked_by_merged() {
 fn test_next_ignores_non_pending() {
     let dir = setup_repo_with_tasks(&[
         ("running", &[], "running"),
-        ("done", &[], "done"),
-        ("merged", &[], "merged"),
+        ("review", &[], "review"),
+        ("completed", &[], "completed"),
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["next"]);
@@ -80,7 +80,7 @@ fn test_next_ignores_non_pending() {
 #[test]
 fn test_next_diamond_dependency() {
     let dir = setup_repo_with_tasks(&[
-        ("a", &[], "merged"),
+        ("a", &[], "completed"),
         ("b", &["a"], "pending"),
         ("c", &["a"], "pending"),
         ("d", &["b", "c"], "pending"),

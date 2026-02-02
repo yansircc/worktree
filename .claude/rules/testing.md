@@ -53,11 +53,11 @@ cd /Users/yansir/code/nextjs-project/try-wt
 
 ```bash
 wt start ui                              # 启动任务
-wt status --action list --task ui        # 预期: available_actions 含 done
+wt status --action list --task ui        # 预期: available_actions 含 review
 wt status --action enter --task ui       # 预期: command.type = tmux_switch
-wt status --action done --task ui        # 预期: success, tmux 被关闭
-wt status --action merged --task ui      # 预期: success
-wt status --action archive --task ui     # 预期: success
+wt status --action review --task ui      # 预期: success, tmux 被关闭
+wt status --action resume --task ui      # 预期: success, 回到 running
+wt status --action complete --task ui    # 预期: success
 wt reset ui                              # 重置
 ```
 

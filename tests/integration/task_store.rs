@@ -184,8 +184,8 @@ fn test_task_status_transitions() {
     use wt::models::TaskStatus;
     // Valid transitions
     assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Running));
-    assert!(TaskStatus::Running.can_transition_to(&TaskStatus::Done));
-    assert!(TaskStatus::Done.can_transition_to(&TaskStatus::Merged));
+    assert!(TaskStatus::Running.can_transition_to(&TaskStatus::Review));
+    assert!(TaskStatus::Review.can_transition_to(&TaskStatus::Completed));
 }
 
 // ==================== Config Edge Cases ====================

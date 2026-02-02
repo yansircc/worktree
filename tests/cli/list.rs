@@ -26,8 +26,8 @@ fn test_list_shows_status_symbols() {
     let dir = setup_repo_with_tasks(&[
         ("pending_task", &[], "pending"),
         ("running_task", &[], "running"),
-        ("done_task", &[], "done"),
-        ("merged_task", &[], "merged"),
+        ("review_task", &[], "review"),
+        ("completed_task", &[], "completed"),
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list"]);
@@ -35,7 +35,8 @@ fn test_list_shows_status_symbols() {
     assert!(ok);
     assert!(stdout.contains("○")); // pending
     assert!(stdout.contains("●")); // running
-    assert!(stdout.contains("✓")); // done or merged
+    assert!(stdout.contains("?")); // review
+    assert!(stdout.contains("✓")); // completed
 }
 
 #[test]
@@ -118,8 +119,8 @@ fn test_list_json_all_statuses() {
     let dir = setup_repo_with_tasks(&[
         ("p", &[], "pending"),
         ("r", &[], "running"),
-        ("d", &[], "done"),
-        ("m", &[], "merged"),
+        ("v", &[], "review"),
+        ("c", &[], "completed"),
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["list", "--json"]);
@@ -134,6 +135,6 @@ fn test_list_json_all_statuses() {
 
     assert!(statuses.contains(&"pending"));
     assert!(statuses.contains(&"running"));
-    assert!(statuses.contains(&"done"));
-    assert!(statuses.contains(&"merged"));
+    assert!(statuses.contains(&"review"));
+    assert!(statuses.contains(&"completed"));
 }

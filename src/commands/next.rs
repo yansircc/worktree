@@ -60,17 +60,17 @@ fn classify_tasks<'a>(
             continue;
         }
 
-        let unmerged_deps: Vec<String> = task
+        let incomplete_deps: Vec<String> = task
             .depends()
             .iter()
-            .filter(|dep_name| store.get_status(dep_name) != TaskStatus::Merged)
+            .filter(|dep_name| store.get_status(dep_name) != TaskStatus::Completed)
             .cloned()
             .collect();
 
-        if unmerged_deps.is_empty() {
+        if incomplete_deps.is_empty() {
             ready.push(*task);
         } else {
-            blocked.push((*task, unmerged_deps));
+            blocked.push((*task, incomplete_deps));
         }
     }
 

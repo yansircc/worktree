@@ -15,7 +15,7 @@ pub fn display_status(json: bool) -> Result<()> {
 
     let mut metrics_list = Vec::new();
     let mut running_count = 0;
-    let mut done_count = 0;
+    let mut review_count = 0;
     let mut total_additions = 0;
     let mut total_deletions = 0;
     let mut status_changed = false;
@@ -31,15 +31,15 @@ pub fn display_status(json: bool) -> Result<()> {
         .collect();
 
     for task_name in &task_names {
-        // Auto-mark as Done if Running but tmux window is closed
-        if store.auto_mark_done_if_needed(task_name)? {
+        // Auto-mark for Review if Running but tmux window is closed
+        if store.auto_mark_review_if_needed(task_name)? {
             status_changed = true;
         }
 
         let status = store.get_status(task_name);
 
-        // Only show Running and Done tasks
-        if status != TaskStatus::Running && status != TaskStatus::Done {
+        // Only show Running and Review tasks
+        if status != TaskStatus::Running && status != TaskStatus::Review {
             continue;
         }
 
@@ -58,7 +58,7 @@ pub fn display_status(json: bool) -> Result<()> {
         if final_status == TaskStatus::Running {
             running_count += 1;
         } else {
-            done_count += 1;
+            review_count += 1;
         }
 
         let instance = store.get_instance(task_name);
@@ -135,7 +135,7 @@ pub fn display_status(json: bool) -> Result<()> {
         });
     }
 
-    // Save status if any task was auto-marked as Done
+    // Save status if any task was auto-marked for Review
     if status_changed {
         store.save_status()?;
     }
@@ -144,7 +144,7 @@ pub fn display_status(json: bool) -> Result<()> {
         tasks: metrics_list,
         summary: StatusSummary {
             running: running_count,
-            done: done_count,
+            review: review_count,
             total_additions,
             total_deletions,
         },
@@ -161,7 +161,7 @@ pub fn display_status(json: bool) -> Result<()> {
 
 fn print_human_readable(output: &StatusOutput) {
     if output.tasks.is_empty() {
-        println!("No running or done tasks.");
+        println!("No running or review tasks.");
         return;
     }
 
@@ -213,9 +213,9 @@ fn print_human_readable(output: &StatusOutput) {
 
     println!("---");
     println!(
-        "Summary: {} running, {} done | +{} -{}",
+        "Summary: {} running, {} review | +{} -{}",
         output.summary.running,
-        output.summary.done,
+        output.summary.review,
         output.summary.total_additions,
         output.summary.total_deletions
     );

@@ -30,8 +30,8 @@ fn test_status_with_running_task() {
 }
 
 #[test]
-fn test_status_with_done_task() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "done")]);
+fn test_status_with_review_task() {
+    let dir = setup_repo_with_tasks(&[("task1", &[], "review")]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["status", "--json"]);
 
@@ -39,7 +39,7 @@ fn test_status_with_done_task() {
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let tasks = json.get("tasks").unwrap().as_array().unwrap();
     assert_eq!(tasks.len(), 1);
-    assert_eq!(tasks[0].get("status").unwrap().as_str().unwrap(), "done");
+    assert_eq!(tasks[0].get("status").unwrap().as_str().unwrap(), "review");
 }
 
 #[test]
@@ -55,15 +55,15 @@ fn test_status_ignores_pending_tasks() {
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let tasks = json.get("tasks").unwrap().as_array().unwrap();
     // Only task2 should be shown (running), task1 (pending) is ignored
-    // Note: task2 will be auto-marked as done since tmux window doesn't exist
+    // Note: task2 will be auto-marked as review since tmux window doesn't exist
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].get("name").unwrap().as_str().unwrap(), "task2");
 }
 
 #[test]
-fn test_status_ignores_merged_tasks() {
+fn test_status_ignores_completed_tasks() {
     let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "merged"),
+        ("task1", &[], "completed"),
         ("task2", &[], "running"),
     ]);
 
@@ -72,7 +72,7 @@ fn test_status_ignores_merged_tasks() {
     assert!(ok);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let tasks = json.get("tasks").unwrap().as_array().unwrap();
-    // Only task2 should be shown, task1 (merged) is ignored
+    // Only task2 should be shown, task1 (completed) is ignored
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].get("name").unwrap().as_str().unwrap(), "task2");
 }
@@ -95,10 +95,10 @@ fn test_status_json_output() {
 
 #[test]
 fn test_status_json_structure() {
-    // Note: "running" tasks without a real tmux window get auto-marked as "done"
+    // Note: "running" tasks without a real tmux window get auto-marked as "review"
     let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "done"),
-        ("task2", &[], "done"),
+        ("task1", &[], "review"),
+        ("task2", &[], "review"),
     ]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["status", "--json"]);
@@ -113,15 +113,15 @@ fn test_status_json_structure() {
     // Check summary
     let summary = json.get("summary").unwrap();
     assert_eq!(summary.get("running").unwrap().as_i64().unwrap(), 0);
-    assert_eq!(summary.get("done").unwrap().as_i64().unwrap(), 2);
+    assert_eq!(summary.get("review").unwrap().as_i64().unwrap(), 2);
 }
 
 #[test]
 fn test_status_summary_line() {
-    // Note: "running" tasks without a real tmux window get auto-marked as "done"
+    // Note: "running" tasks without a real tmux window get auto-marked as "review"
     let dir = setup_repo_with_tasks(&[
-        ("task1", &[], "done"),
-        ("task2", &[], "done"),
+        ("task1", &[], "review"),
+        ("task2", &[], "review"),
     ]);
 
     let (ok, stdout, _stderr) = run_wt(dir.path(), &["status", "--json"]);
@@ -130,11 +130,11 @@ fn test_status_summary_line() {
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let summary = json.get("summary").unwrap();
     assert_eq!(summary.get("running").unwrap().as_i64().unwrap(), 0);
-    assert_eq!(summary.get("done").unwrap().as_i64().unwrap(), 2);
+    assert_eq!(summary.get("review").unwrap().as_i64().unwrap(), 2);
 }
 
 #[test]
-fn test_status_auto_marks_done_when_tmux_window_closed() {
+fn test_status_auto_marks_review_when_tmux_window_closed() {
     let dir = setup_test_repo();
 
     // Create task file
@@ -159,12 +159,12 @@ fn test_status_auto_marks_done_when_tmux_window_closed() {
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let tasks = json.get("tasks").unwrap().as_array().unwrap();
     let task = &tasks[0];
-    // Task should be auto-marked as done when tmux window is closed
-    assert_eq!(task.get("status").unwrap().as_str().unwrap(), "done");
+    // Task should be auto-marked as review when tmux window is closed
+    assert_eq!(task.get("status").unwrap().as_str().unwrap(), "review");
 }
 
 #[test]
-fn test_status_json_auto_marks_done_when_tmux_closed() {
+fn test_status_json_auto_marks_review_when_tmux_closed() {
     let dir = setup_test_repo();
 
     // Create task file
@@ -190,7 +190,7 @@ fn test_status_json_auto_marks_done_when_tmux_closed() {
     let tasks = json.get("tasks").unwrap().as_array().unwrap();
     let task = &tasks[0];
 
-    // Task should be auto-marked as done, tmux_alive is not included for done tasks
-    assert_eq!(task.get("status").unwrap().as_str().unwrap(), "done");
-    assert!(task.get("tmux_alive").is_none(), "tmux_alive should not be included for done tasks");
+    // Task should be auto-marked as review, tmux_alive is not included for review tasks
+    assert_eq!(task.get("status").unwrap().as_str().unwrap(), "review");
+    assert!(task.get("tmux_alive").is_none(), "tmux_alive should not be included for review tasks");
 }

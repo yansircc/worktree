@@ -31,27 +31,20 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         .iter()
         .filter(|t| t.status == TaskStatus::Running)
         .count();
-    let done = app
+    let review = app
         .tasks
         .iter()
-        .filter(|t| t.status == TaskStatus::Done)
-        .count();
-    let merged = app
-        .tasks
-        .iter()
-        .filter(|t| t.status == TaskStatus::Merged)
+        .filter(|t| t.status == TaskStatus::Review)
         .count();
 
     let mut spans = vec![
         Span::styled(" wt status", Style::default().fg(Color::Cyan).bold()),
         Span::raw("                              "),
         Span::styled(format!("{} running", running), Style::default().fg(Color::Green)),
-        Span::raw(" · "),
-        Span::styled(format!("{} done", done), Style::default().fg(Color::Blue)),
     ];
-    if merged > 0 {
+    if review > 0 {
         spans.push(Span::raw(" · "));
-        spans.push(Span::styled(format!("{} merged", merged), Style::default().fg(Color::Magenta)));
+        spans.push(Span::styled(format!("{} review", review), Style::default().fg(Color::Yellow)));
     }
     let text = Line::from(spans);
 
@@ -205,9 +198,8 @@ fn format_tool_name(tool: &str) -> String {
 
 fn get_status_icon(task: &TaskDisplay) -> (&'static str, Color) {
     match task.status {
-        TaskStatus::Done => ("✓", Color::Green),
-        TaskStatus::Merged => ("✓✓", Color::Magenta),
-        TaskStatus::Archived => ("☑", Color::DarkGray),
+        TaskStatus::Review => ("?", Color::Yellow),
+        TaskStatus::Completed => ("✓", Color::Magenta),
         TaskStatus::Running => {
             if !task.mux_alive {
                 ("⚠", Color::Yellow)
@@ -243,24 +235,22 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
 
         // Context-sensitive actions based on selected task
         if let Some(task) = app.selected_task() {
-            // t (tail) available for Running and Done
-            if task.status == TaskStatus::Running || task.status == TaskStatus::Done {
+            // t (tail) available for Running and Review
+            if task.status == TaskStatus::Running || task.status == TaskStatus::Review {
                 spans.push(Span::styled("t", Style::default().fg(Color::Yellow)));
                 spans.push(Span::raw(" tail  "));
             }
 
             if task.status == TaskStatus::Running {
-                // Running: d (done)
-                spans.push(Span::styled("d", Style::default().fg(Color::Yellow)));
-                spans.push(Span::raw(" done  "));
-            } else if task.status == TaskStatus::Done {
-                // Done: m (merged)
-                spans.push(Span::styled("m", Style::default().fg(Color::Yellow)));
-                spans.push(Span::raw(" merged  "));
-            } else if task.status == TaskStatus::Merged {
-                // Merged: a (archive)
-                spans.push(Span::styled("a", Style::default().fg(Color::Yellow)));
-                spans.push(Span::raw(" archive  "));
+                // Running: r (review)
+                spans.push(Span::styled("r", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" review  "));
+            } else if task.status == TaskStatus::Review {
+                // Review: u (resume) and c (complete)
+                spans.push(Span::styled("u", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" resume  "));
+                spans.push(Span::styled("c", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" complete  "));
             }
         }
 

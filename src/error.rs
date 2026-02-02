@@ -23,8 +23,11 @@ pub enum WtError {
     #[error("Dependency '{0}' not found")]
     DependencyNotFound(String),
 
-    #[error("Cannot start task '{task}': dependency '{dep}' is not merged")]
-    DependencyNotMerged { task: String, dep: String },
+    #[error("Cannot start task '{task}': dependency '{dep}' is not completed")]
+    DependencyNotCompleted { task: String, dep: String },
+
+    #[error("Review script failed for task '{0}'")]
+    ReviewScriptFailed(String),
 
     #[error("Git command failed: {0}")]
     Git(String),

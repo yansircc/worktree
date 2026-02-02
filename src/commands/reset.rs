@@ -30,7 +30,7 @@ pub fn execute(task_ref: String) -> Result<()> {
     if !is_scratch && current_status != TaskStatus::Pending {
         let dependents: Vec<_> = dependency::find_non_pending_dependents(&store, &name)
             .into_iter()
-            .filter(|(_, status)| *status != TaskStatus::Archived)
+            .filter(|(_, status)| *status != TaskStatus::Completed)
             .collect();
         if let Some((dep_name, dep_status)) = dependents.first() {
             return Err(WtError::HasDependents {

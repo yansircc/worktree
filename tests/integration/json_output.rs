@@ -29,12 +29,12 @@ fn test_task_status_serializes_to_lowercase() {
         "\"running\""
     );
     assert_eq!(
-        serde_json::to_string(&TaskStatus::Done).unwrap(),
-        "\"done\""
+        serde_json::to_string(&TaskStatus::Review).unwrap(),
+        "\"review\""
     );
     assert_eq!(
-        serde_json::to_string(&TaskStatus::Merged).unwrap(),
-        "\"merged\""
+        serde_json::to_string(&TaskStatus::Completed).unwrap(),
+        "\"completed\""
     );
 }
 
@@ -49,12 +49,12 @@ fn test_task_status_deserializes_from_lowercase() {
         TaskStatus::Running
     );
     assert_eq!(
-        serde_json::from_str::<TaskStatus>("\"done\"").unwrap(),
-        TaskStatus::Done
+        serde_json::from_str::<TaskStatus>("\"review\"").unwrap(),
+        TaskStatus::Review
     );
     assert_eq!(
-        serde_json::from_str::<TaskStatus>("\"merged\"").unwrap(),
-        TaskStatus::Merged
+        serde_json::from_str::<TaskStatus>("\"completed\"").unwrap(),
+        TaskStatus::Completed
     );
 }
 

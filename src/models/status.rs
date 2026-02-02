@@ -200,7 +200,7 @@ mod tests {
     fn test_status_store_serialize() {
         let mut store = StatusStore::default();
         store.set_status("task1", TaskStatus::Running);
-        store.set_status("task2", TaskStatus::Done);
+        store.set_status("task2", TaskStatus::Review);
 
         let json = serde_json::to_string(&store).unwrap();
         assert!(json.contains("task1"));

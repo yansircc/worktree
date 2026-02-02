@@ -198,10 +198,10 @@ impl TaskStore {
         self.status.save()
     }
 
-    /// Check if a task should be auto-marked as Done.
+    /// Check if a task should be auto-marked for Review.
     /// Condition: status is Running but tmux window is closed.
     /// Returns: whether auto-mark was performed.
-    pub fn auto_mark_done_if_needed(&mut self, task_name: &str) -> Result<bool> {
+    pub fn auto_mark_review_if_needed(&mut self, task_name: &str) -> Result<bool> {
         let status = self.get_status(task_name);
         if status != TaskStatus::Running {
             return Ok(false);
@@ -223,8 +223,8 @@ impl TaskStore {
             return Ok(false);
         }
 
-        // Window closed, auto-mark as Done
-        self.set_status(task_name, TaskStatus::Done);
+        // Window closed, auto-mark for Review
+        self.set_status(task_name, TaskStatus::Review);
         Ok(true)
     }
 
@@ -779,20 +779,20 @@ mod tests {
         let mut store = TaskStore::default();
         store.set_status("test", TaskStatus::Running);
 
-        let result = store.validate_transition("test", TaskStatus::Done);
+        let result = store.validate_transition("test", TaskStatus::Review);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_validate_transition_invalid() {
         let store = TaskStore::default();
-        // Default is Pending, cannot transition to Done directly
+        // Default is Pending, cannot transition to Review directly
 
-        let result = store.validate_transition("test", TaskStatus::Done);
+        let result = store.validate_transition("test", TaskStatus::Review);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("pending"));
-        assert!(err.contains("done"));
+        assert!(err.contains("review"));
     }
 
     // ==================== resolve_task_ref Tests ====================
