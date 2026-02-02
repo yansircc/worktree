@@ -1,9 +1,7 @@
-use std::path::Path;
-use std::process::Command;
-
+use crate::constants::BACKUPS_DIR;
 use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::multiplexer::create_multiplexer;
+use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
@@ -22,6 +20,7 @@ pub fn execute(task_ref: String) -> Result<()> {
 
     // Check task exists and validate transition
     store.ensure_exists(&name)?;
+    let prev_status = store.get_status(&name);
     store.validate_transition(&name, TaskStatus::Review)?;
 
     // Close multiplexer window if still alive
@@ -35,31 +34,33 @@ pub fn execute(task_ref: String) -> Result<()> {
         }
     }
 
-    // Run review script if configured
-    if let Some(ref script) = config.review_script {
-        if let Some(instance) = store.get_instance(&name) {
-            let worktree_path = &instance.worktree_path;
-            if Path::new(worktree_path).exists() {
-                println!("Running review script...");
-                let status = Command::new("sh")
-                    .arg("-c")
-                    .arg(script)
-                    .current_dir(worktree_path)
-                    .status()
-                    .map_err(|e| WtError::Script {
-                        script: "review_script".to_string(),
-                        message: e.to_string(),
-                    })?;
+    // Get repo root and build hook context
+    let repo_root = git::get_repo_root()?;
+    let hooks = HooksEngine::new(&config);
 
-                if !status.success() {
-                    return Err(WtError::ReviewScriptFailed(name.clone()));
-                }
-            }
-        }
-    }
+    let context = if let Some(instance) = store.get_instance(&name) {
+        HookContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
+            .with_session(&instance.session_name)
+            .with_window(&instance.window_name)
+            .with_status("review")
+            .with_prev_status(prev_status.display_name())
+            .with_backup_dir(BACKUPS_DIR)
+    } else {
+        // Minimal context for tasks without instance (shouldn't happen in normal flow)
+        HookContext::new(&name, "", "", &repo_root)
+            .with_status("review")
+            .with_prev_status(prev_status.display_name())
+    };
 
+    // Run before_review hook (lint, format checks, etc.)
+    hooks.before_review(&context)?;
+
+    // Update status
     store.set_status(&name, TaskStatus::Review);
     store.save_status()?;
+
+    // Run after_review hook
+    hooks.after_review(&context)?;
 
     println!("Task '{}' marked for review.", name);
     println!("To merge into main, run: wt merge {}", name);

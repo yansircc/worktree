@@ -6,10 +6,8 @@ use chrono::Utc;
 
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{
-    dependency, git, multiplexer::create_multiplexer, workspace::WorkspaceInitializer,
-};
+use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::services::{dependency, git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
@@ -50,16 +48,19 @@ pub fn execute(task_ref: String) -> Result<()> {
     if let Some(instance) = store.get_instance(&name).cloned() {
         let worktree_path = Path::new(&instance.worktree_path);
 
-        // Run archive_script to slim down before backup (skip for scratch)
+        // Build hook context and run before_reset hook
+        let hooks = HooksEngine::new(&config);
+        let context =
+            HookContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
+                .with_session(&instance.session_name)
+                .with_window(&instance.window_name)
+                .with_status("pending")
+                .with_prev_status(current_status.display_name())
+                .with_backup_dir(BACKUPS_DIR);
+
+        // Run before_reset hook (cleanup scripts, slim down before backup)
         if worktree_path.exists() {
-            if let Some(ref script) = config.archive_script {
-                println!("Running archive script...");
-                let source_dir = Path::new(".");
-                let initializer = WorkspaceInitializer::new(&instance.worktree_path, source_dir);
-                if let Err(e) = initializer.run_init_script(script) {
-                    eprintln!("  Warning: Archive script failed: {}", e);
-                }
-            }
+            hooks.before_reset(&context)?;
 
             // Skip backup for scratch environments
             if !is_scratch {

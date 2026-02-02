@@ -6,6 +6,7 @@ use crate::error::{Result, WtError};
 use crate::services::multiplexer::{create_multiplexer, Multiplexer, MultiplexerType};
 
 /// Hook names for task lifecycle events
+#[allow(dead_code)] // Some variants used by future commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookName {
     OnCreate,

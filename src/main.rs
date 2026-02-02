@@ -18,7 +18,9 @@ fn main() {
         Commands::Create { json } => commands::create::execute(json),
         Commands::Validate { name } => commands::validate::execute(name),
         Commands::List { tree, json } => commands::list::execute(tree, json),
-        Commands::Start { name, all } => commands::start::execute(name, all),
+        Commands::Run { task, all } | Commands::Start { name: task, all } => {
+            commands::run::execute(task, all)
+        }
         Commands::Review { name } => commands::review::execute(name),
         Commands::Resume { name } => commands::resume::execute(name),
         Commands::Merge { name, agent } => commands::merge::execute(name, agent),

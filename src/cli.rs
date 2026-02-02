@@ -39,7 +39,18 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Start a task (creates worktree and tmux window)
+    /// Run a task (creates worktree if needed, starts Claude)
+    Run {
+        /// Task name or index (required unless --all is used)
+        task: Option<String>,
+
+        /// Start all tasks that are ready (no unmerged dependencies)
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Start a task (alias for 'run', kept for backward compatibility)
+    #[command(hide = true)]
     Start {
         /// Task name to start (required unless --all is used)
         name: Option<String>,

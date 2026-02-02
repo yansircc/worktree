@@ -11,7 +11,7 @@ pub mod next;
 pub mod reset;
 pub mod resume;
 pub mod review;
-pub mod start;
+pub mod run;
 pub mod status;
 pub mod tail;
 pub mod validate;

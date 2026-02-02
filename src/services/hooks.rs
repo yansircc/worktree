@@ -83,19 +83,23 @@ impl<'a> HooksEngine<'a> {
 
     // =========================================================================
     // Convenience methods for each hook
+    // Some methods are for future commands (run, complete, delete)
     // =========================================================================
 
     /// Run the on_create hook (after worktree is created).
+    #[allow(dead_code)]
     pub fn on_create(&self, context: &HookContext) -> Result<()> {
         self.run_hook(HookName::OnCreate, context)
     }
 
     /// Run the before_run hook (before starting the task).
+    #[allow(dead_code)]
     pub fn before_run(&self, context: &HookContext) -> Result<()> {
         self.run_hook(HookName::BeforeRun, context)
     }
 
     /// Run the after_run hook (after task starts running).
+    #[allow(dead_code)]
     pub fn after_run(&self, context: &HookContext) -> Result<()> {
         self.run_hook(HookName::AfterRun, context)
     }
@@ -116,16 +120,19 @@ impl<'a> HooksEngine<'a> {
     }
 
     /// Run the before_complete hook (before completing/merging).
+    #[allow(dead_code)]
     pub fn before_complete(&self, context: &HookContext) -> Result<()> {
         self.run_hook(HookName::BeforeComplete, context)
     }
 
     /// Run the after_complete hook (after task is completed).
+    #[allow(dead_code)]
     pub fn after_complete(&self, context: &HookContext) -> Result<()> {
         self.run_hook(HookName::AfterComplete, context)
     }
 
     /// Run the before_delete hook (before deleting worktree).
+    #[allow(dead_code)]
     pub fn before_delete(&self, context: &HookContext) -> Result<()> {
         self.run_hook(HookName::BeforeDelete, context)
     }

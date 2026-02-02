@@ -60,6 +60,7 @@ impl HookContext {
     }
 
     /// Set timestamp
+    #[allow(dead_code)] // Used by future commands
     pub fn with_timestamp(mut self, timestamp: &str) -> Self {
         self.timestamp = timestamp.to_string();
         self

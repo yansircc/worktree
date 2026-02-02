@@ -4,9 +4,10 @@ use uuid::Uuid;
 
 use crate::constants::branch_name;
 use crate::error::{Result, WtError};
-use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
+use crate::models::{HookContext, Instance, TaskStatus, TaskStore, WtConfig};
 use crate::services::{
-    dependency, git, multiplexer::check_multiplexer_installed, workspace::WorkspaceInitializer,
+    dependency, git, hooks::HooksEngine, multiplexer::check_multiplexer_installed,
+    workspace::WorkspaceInitializer,
 };
 
 pub fn execute(task_ref: Option<String>, all: bool) -> Result<()> {
@@ -89,12 +90,16 @@ fn execute_all() -> Result<()> {
 fn execute_single(name: String) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
+    let hooks = HooksEngine::new(&config);
 
     // Check multiplexer is installed first (fail fast)
     check_multiplexer_installed(config.multiplexer_type())?;
 
     // Check task exists
     store.ensure_exists(&name)?;
+
+    // Check if this is the first run (no worktree yet)
+    let is_first_run = store.get_instance(&name).is_none();
 
     // Check status from StatusStore
     if store.get_status(&name) == TaskStatus::Running {
@@ -107,27 +112,43 @@ fn execute_single(name: String) -> Result<()> {
     let session_id = Uuid::new_v4().to_string();
     let branch = branch_name(&name, &session_id);
     let cwd = env::current_dir().map_err(|e| WtError::Git(e.to_string()))?;
+    let repo_root = cwd.to_string_lossy().to_string();
     let worktree_path = cwd
         .join(&config.worktree_dir)
         .join(&name)
         .to_string_lossy()
         .to_string();
 
-    // Check if branch already exists (e.g., from a previous failed cleanup)
-    if git::branch_exists(&branch) {
-        return Err(WtError::BranchExists(branch));
+    // Build hook context
+    let context = HookContext::new(&name, &branch, &worktree_path, &repo_root)
+        .with_session(&config.session_name)
+        .with_window(&name)
+        .with_status("running")
+        .with_prev_status("pending");
+
+    if is_first_run {
+        // Check if branch already exists (e.g., from a previous failed cleanup)
+        if git::branch_exists(&branch) {
+            return Err(WtError::BranchExists(branch));
+        }
+
+        git::create_worktree(&branch, &worktree_path)?;
+
+        // Initialize workspace
+        let initializer = WorkspaceInitializer::new(&worktree_path, &cwd);
+
+        // Copy files from main project to worktree
+        let copied = initializer.copy_files(&config.copy_files)?;
+        for file in &copied {
+            println!("  Copied: {}", file);
+        }
+
+        // Execute on_create hook (after worktree is created)
+        hooks.on_create(&context)?;
     }
 
-    git::create_worktree(&branch, &worktree_path)?;
-
-    // Initialize workspace
-    let initializer = WorkspaceInitializer::new(&worktree_path, &cwd);
-
-    // Copy files from main project to worktree
-    let copied = initializer.copy_files(&config.copy_files)?;
-    for file in &copied {
-        println!("  Copied: {}", file);
-    }
+    // Execute before_run hook
+    hooks.before_run(&context)?;
 
     // Create multiplexer session if needed
     let mux = config.create_multiplexer();
@@ -174,6 +195,9 @@ fn execute_single(name: String) -> Result<()> {
         }),
     );
     store.save_status()?;
+
+    // Execute after_run hook
+    hooks.after_run(&context)?;
 
     let relative_path = format!("{}/{}", config.worktree_dir, name);
 

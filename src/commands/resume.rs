@@ -1,8 +1,9 @@
 use std::path::Path;
 
+use crate::constants::BACKUPS_DIR;
 use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::multiplexer::create_multiplexer;
+use crate::models::{HookContext, TaskStatus, TaskStore, WtConfig};
+use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
 
 pub fn execute(task_ref: String) -> Result<()> {
     let config = WtConfig::load()?;
@@ -42,6 +43,20 @@ pub fn execute(task_ref: String) -> Result<()> {
     if !Path::new(worktree_path).exists() {
         return Err(WtError::WorktreeNotFound(name.clone()));
     }
+
+    // Get repo root and build hook context
+    let repo_root = git::get_repo_root()?;
+    let hooks = HooksEngine::new(&config);
+
+    let context = HookContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
+        .with_session(&instance.session_name)
+        .with_window(&instance.window_name)
+        .with_status("running")
+        .with_prev_status("review")
+        .with_backup_dir(BACKUPS_DIR);
+
+    // Run before_resume hook
+    hooks.before_resume(&context)?;
 
     // Restart multiplexer window if closed
     let session_name = &instance.session_name;
