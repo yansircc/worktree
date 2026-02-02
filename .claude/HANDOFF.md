@@ -1,59 +1,97 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 24 完成的工作 (2026-02-03)
+## Session 25 完成的工作 (2026-02-03)
 
-### 1. 完全迁移完成 - v2 后缀清除
+### 1. 术语统一 - Running/Review → Active/Idle
 
-本次 session 完成了从 v1 到 v2 的**完全迁移**：
+全面统一代码中的术语：
 
-#### 文件重命名
-- `src/models/config_v2.rs` → `src/models/config.rs`
-- `src/models/status_v2.rs` → `src/models/status.rs`
-- `src/services/hooks_v2/` → `src/services/hooks/`
+| 类别 | 旧名称 | 新名称 |
+|------|--------|--------|
+| 错误类型 | `AlreadyRunning` | `AlreadyActive` |
+| 方法名 | `mark_review` | `mark_idle` |
+| 方法名 | `can_mark_review` | `can_mark_idle` |
+| 方法名 | `auto_mark_review_if_needed` | `auto_mark_idle_if_needed` |
+| 显示文本 | "Running" | "Active" |
+| 显示文本 | "Review" | "Idle" |
+| 变量名 | `running` | `active` |
+| 变量名 | `review` | `idle` |
 
-#### 类型重命名
-- `ConfigV2` → `WtConfig`
-- `StatusStoreV2` → `StatusStore`
-- `TaskStatusV2` → `TaskStatus`
-- `TaskStateV2` → `TaskState`
-- `HooksEngineV2` → `HooksEngine`
+涉及文件：list.rs, ui.rs, app.rs, mod.rs, store.rs, error.rs, delete.rs, status/display.rs, status/actions.rs
 
-#### 状态值更新
-- `Running` → `Active`
-- `Review` → `Idle`
+### 2. Agent Step 参数扩展
 
-### 2. 命令层统一使用新 Hooks API
+根据 Claude CLI 官方文档，扩展了 agent step 支持的参数：
 
-所有命令现在使用统一的 `hooks.execute("hook_name", context)` API：
+```jsonc
+{
+  "type": "agent",
 
-| 命令 | Hook 名称 |
-|------|-----------|
-| `wt run` | `"run"` |
-| `wt review` | `"review"` |
-| `wt resume` | `"resume"` |
-| `wt complete` | `"complete"` |
-| `wt delete` | `"delete"` |
-| `wt reset` | `"reset"` |
+  // 基础
+  "interactive": false,
+  "model": "sonnet",
+  "prompt": "...",
 
-#### 删除的旧 API
-从 `HooksEngine` 中删除了向后兼容方法：
-- `on_create()`, `before_run()`, `after_run()`
-- `before_review()`, `after_review()`
-- `before_resume()`, `before_complete()`, `after_complete()`
-- `before_delete()`, `before_reset()`
+  // System Prompt (新增)
+  "system_prompt": "...",
+  "system_prompt_file": ".wt/prompts/merge.md",
+  "append_system_prompt": "...",
+  "append_system_prompt_file": ".wt/prompts/code-review.md",
 
-### 3. 新增 `--verbose` 选项
+  // Tools
+  "tools": ["Read", "Edit"],
+  "allowed_tools": ["Bash(git *)"],
+  "disallowed_tools": ["Write"],  // 新增
 
-`wt status --verbose` 现在显示详细状态信息：
-- Phase (developing/reviewing/merging)
-- IdleReason (done/human_review/error/conflict/timeout/manual)
-- Active since (时间戳)
+  // Permissions
+  "skip_permissions": false,
+  "permission_mode": "plan",  // 新增
 
-### 4. 删除的文件和代码
-- `.wt/CONTEXT.md` (旧上下文文档)
-- 旧的 `src/models/config.rs`, `status.rs`, `hook_context.rs`
-- 旧的 `src/services/hooks.rs`
-- HooksEngine 中的向后兼容方法
+  // Limits (新增)
+  "max_turns": 20,
+  "max_budget_usd": 5.0,
+
+  // Session (新增)
+  "continue": false,
+  "resume": "session-id",
+
+  // I/O
+  "output_format": "text",
+  "input_format": "stream-json",  // 新增
+
+  // Other (新增)
+  "add_dir": ["../lib"],
+  "mcp_config": "./mcp.json",
+  "verbose": true
+}
+```
+
+### 3. 示例 Prompts 文件
+
+创建了 `.wt/prompts/` 目录和示例文件：
+
+- `merge.md` - Git merge assistant，指导 agent 执行 rebase + squash merge
+- `code-review.md` - Code review guidelines，指导 agent 做代码审核
+
+### 4. 工作流设计确定
+
+```
+wt run      → agent 开发 (interactive)
+wt review   → lint + build + AI code review (append_system_prompt_file)
+wt complete → agent 执行 rebase + merge (append_system_prompt_file)
+```
+
+关键点：
+- merge 在 `wt complete` 阶段执行
+- 使用 agent 处理 rebase 和冲突解决
+- 通过 `append_system_prompt_file` 加载指导 prompt
+
+### 5. Demo 项目更新
+
+更新了 `/Users/yansir/code/nextjs-project/try-wt/` 配置：
+- 清空旧配置，重新 `wt init`
+- 配置使用 bun 作为包管理器
+- 配置 review 和 complete hooks 使用 system prompt files
 
 ### 测试状态
 
@@ -62,6 +100,13 @@ cargo test --lib: 162 passed
 cargo test --test cli: 121 passed
 cargo test --test integration: 46 passed
 Total: 所有测试通过
+```
+
+### 提交记录
+
+```
+8031f63 feat: extend Agent step with full Claude CLI parameters
+24fb83a refactor: unify terminology Running/Review to Active/Idle
 ```
 
 ---
@@ -81,45 +126,38 @@ src/
 │   ├── hooks/        # Hooks 引擎
 │   │   ├── mod.rs    # HooksEngine
 │   │   ├── context.rs # ExecutionContext
-│   │   ├── step.rs   # StepExecutor
+│   │   ├── step.rs   # StepExecutor (支持完整 Claude CLI 参数)
 │   │   └── pipeline.rs # PipelineExecutor
 │   ├── multiplexer/  # tmux/zellij 抽象
 │   └── git.rs        # Git 操作
 └── commands/         # CLI 命令
 ```
 
-### Hooks 系统
+### Agent Step 完整参数列表
 
-配置格式 (`.wt/config.jsonc`):
-```jsonc
-{
-  "multiplexer": "tmux",
-  "session_name": "my-project",
-  "hooks": {
-    "run": [
-      { "type": "script", "run": "npm install" },
-      { "type": "agent", "interactive": true, "prompt": "..." }
-    ],
-    "review": [
-      { "type": "script", "run": "npm run lint" }
-    ],
-    "complete": [
-      { "type": "internal", "run": "branch:merge" }
-    ]
-  }
-}
-```
-
-### 状态模型
-
-```
-Status:
-○ Pending  →  ● Active  ⇄  ◐ Idle  →  ✓ Completed
-  (未创建)    (有进程)    (无进程)    (已完成)
-
-Phase:
-(none) → developing → reviewing → merging → (done)
-```
+| 类别 | 参数 | CLI Flag |
+|------|------|----------|
+| 基础 | `interactive` | `-p` (false) |
+| | `model` | `--model` |
+| | `prompt` | positional |
+| System Prompt | `system_prompt` | `--system-prompt` |
+| | `system_prompt_file` | `--system-prompt-file` |
+| | `append_system_prompt` | `--append-system-prompt` |
+| | `append_system_prompt_file` | `--append-system-prompt-file` |
+| Tools | `tools` | `--tools` |
+| | `allowed_tools` | `--allowedTools` |
+| | `disallowed_tools` | `--disallowedTools` |
+| Permissions | `skip_permissions` | `--dangerously-skip-permissions` |
+| | `permission_mode` | `--permission-mode` |
+| Limits | `max_turns` | `--max-turns` |
+| | `max_budget_usd` | `--max-budget-usd` |
+| Session | `continue` | `--continue` |
+| | `resume` | `--resume` |
+| I/O | `output_format` | `--output-format` |
+| | `input_format` | `--input-format` |
+| Other | `add_dir` | `--add-dir` |
+| | `mcp_config` | `--mcp-config` |
+| | `verbose` | `--verbose` |
 
 ### 规格完成度
 
@@ -132,6 +170,7 @@ Phase:
 | active_since 字段 | ✅ |
 | script step | ✅ |
 | agent step (交互/非交互) | ✅ |
+| agent step 完整 CLI 参数 | ✅ |
 | internal step | ✅ |
 | condition step | ✅ |
 | Pipeline 执行器 | ✅ |
@@ -139,16 +178,16 @@ Phase:
 | `wt pause <task>` | ✅ |
 | `wt status --verbose` | ✅ |
 | 命令通过新 Hooks API | ✅ |
+| 术语统一 (Active/Idle) | ✅ |
 
 ---
 
 ## 下一步工作
 
-项目功能完整，可选优化：
-
-1. **清理 dead code warnings** - 有一些未使用的辅助方法
-2. **使用 DefaultTransition** - 自动状态管理（目前手动管理）
-3. **internal step 实现** - 目前只是占位符
+1. **实际测试 complete 工作流** - 在 demo 项目中运行完整的 run → review → complete 流程
+2. **internal step 实现完善** - 目前部分 internal 操作是占位符
+3. **清理 dead code warnings** - 有一些未使用的辅助方法
+4. **Pipeline 测试** - 测试多 agent stream-json 串联
 
 ---
 
@@ -156,6 +195,7 @@ Phase:
 
 | Session | 主要工作 |
 |---------|----------|
+| 25 | 术语统一 + Agent step 完整 CLI 参数 + prompts 示例 |
 | 24 | 完全迁移 + 命令层统一使用新 Hooks API + --verbose |
 | 23 | Agent Hooks 系统实现 (Phase 1-4) |
 | 22 | Agent Hooks 系统设计（访谈 + Codex 辩论） |
