@@ -80,6 +80,12 @@ pub fn execute(task_ref: String, agent_mode: bool) -> Result<()> {
     Ok(())
 }
 
+/// Escape a string for safe use in shell commands (single-quoted)
+fn shell_escape(s: &str) -> String {
+    // Replace single quotes with '\'' (end quote, escaped quote, start quote)
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Run Claude in interactive TUI mode within a tmux window
 fn run_claude_interactive(
     config: &WtConfig,
@@ -94,10 +100,10 @@ fn run_claude_interactive(
 
     let window_name = format!("merge-{}", task_name);
 
-    // Build Claude command for interactive mode
+    // Build Claude command for interactive mode with proper escaping
     let claude_cmd = format!(
-        "{} --system-prompt-file {} '{}'",
-        config.claude_command, MERGE_PROMPT_FILE, instruction
+        "{} --system-prompt-file {} {}",
+        config.claude_command, MERGE_PROMPT_FILE, shell_escape(instruction)
     );
 
     tmux::create_window(&config.tmux_session, &window_name, repo_root, &claude_cmd)?;
@@ -116,30 +122,49 @@ fn run_claude_agent_mode(
     task_name: &str,
     instruction: &str,
 ) -> Result<()> {
-    use std::process::Command;
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
 
     println!("Running merge in agent mode for task '{}'...", task_name);
 
-    // Build Claude command with agent mode flags
+    // Build Claude command with agent mode flags and proper escaping
     // Use -p for non-interactive mode with stream-json output
-    // Note: prompt must come last after -p flag
-    let output = Command::new("sh")
+    let cmd_str = format!(
+        "{} --verbose --output-format=stream-json --system-prompt-file {} --allowedTools 'Bash(*)' 'Read(*)' 'Glob(*)' 'Grep(*)' 'Edit(*)' 'Write(*)' -p {}",
+        config.claude_command, MERGE_PROMPT_FILE, shell_escape(instruction)
+    );
+
+    let mut child = Command::new("sh")
         .arg("-c")
-        .arg(format!(
-            "{} --verbose --output-format=stream-json --system-prompt-file {} --allowedTools 'Bash(*)' 'Read(*)' 'Glob(*)' 'Grep(*)' 'Edit(*)' 'Write(*)' -p '{}'",
-            config.claude_command, MERGE_PROMPT_FILE, instruction
-        ))
+        .arg(&cmd_str)
         .current_dir(repo_root)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| WtError::Script {
             script: "claude".to_string(),
             message: e.to_string(),
         })?;
 
-    if !output.status.success() {
+    // Stream stdout in real-time
+    if let Some(stdout) = child.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("{}", line);
+            }
+        }
+    }
+
+    let status = child.wait().map_err(|e| WtError::Script {
+        script: "claude".to_string(),
+        message: e.to_string(),
+    })?;
+
+    if !status.success() {
         return Err(WtError::ScriptFailed {
             script: "claude merge".to_string(),
-            exit_code: output.status.code(),
+            exit_code: status.code(),
         });
     }
 

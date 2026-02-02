@@ -10,6 +10,30 @@ fn test_merge_nonexistent() {
 }
 
 #[test]
+fn test_merge_scratch_environment_fails() {
+    let dir = setup_test_repo();
+    // Create a scratch environment in status.json
+    set_scratch_status(dir.path(), "s1", "done");
+
+    let (ok, _, stderr) = run_wt(dir.path(), &["merge", "s1"]);
+
+    assert!(!ok);
+    assert!(stderr.contains("Scratch environment") || stderr.contains("cannot be merged"));
+}
+
+#[test]
+fn test_merge_by_index() {
+    let dir = setup_repo_with_tasks(&[("task", &[], "pending")]);
+
+    // Merge by index should work (but fail because task is pending)
+    let (ok, _, stderr) = run_wt(dir.path(), &["merge", "1"]);
+
+    assert!(!ok);
+    // Should resolve index to task name and give proper error
+    assert!(stderr.contains("pending") || stderr.contains("expected done"));
+}
+
+#[test]
 fn test_merge_pending_task_fails() {
     let dir = setup_repo_with_tasks(&[("task", &[], "pending")]);
 
