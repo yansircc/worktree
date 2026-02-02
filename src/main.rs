@@ -23,6 +23,7 @@ fn main() {
         }
         Commands::Review { name } => commands::review::execute(name),
         Commands::Resume { name } => commands::resume::execute(name),
+        Commands::Complete { name } => commands::complete::execute(name),
         Commands::Merge { name, agent } => commands::merge::execute(name, agent),
         Commands::Delete { name, force } => commands::delete::execute(name, force),
         Commands::Archive { name } => commands::archive::execute(name),

@@ -72,12 +72,19 @@ pub enum Commands {
         name: String,
     },
 
-    /// Execute merge via Claude (rebase + squash merge + cleanup)
+    /// Complete a task (merge to main and cleanup)
+    Complete {
+        /// Task name to complete
+        name: String,
+    },
+
+    /// [DEPRECATED] Use 'complete' instead. Execute merge via Claude.
+    #[command(hide = true)]
     Merge {
         /// Task name to merge
         name: String,
 
-        /// Run in agent mode (non-interactive, for automation)
+        /// Run in agent mode (ignored, kept for backward compatibility)
         #[arg(long)]
         agent: bool,
     },

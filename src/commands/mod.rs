@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod complete;
 pub mod completions;
 pub mod create;
 pub mod delete;

@@ -208,6 +208,21 @@ impl WtConfig {
             _ => None,
         }
     }
+
+    /// Check if a custom complete hook is defined that handles the merge flow.
+    ///
+    /// If before_complete hook contains git commands (merge, rebase, etc.),
+    /// we assume the user wants to handle the merge flow themselves.
+    pub fn has_custom_complete_hook(&self) -> bool {
+        if let Some(script) = self.get_hook(HookName::BeforeComplete) {
+            // Check if the script contains git merge-related commands
+            // This indicates the user wants to handle the merge flow themselves
+            let git_commands = ["git merge", "git rebase", "wt::git::"];
+            git_commands.iter().any(|cmd| script.contains(cmd))
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -548,5 +563,73 @@ init_script: legacy-init
         assert_eq!(HookName::AfterComplete.as_str(), "after_complete");
         assert_eq!(HookName::BeforeDelete.as_str(), "before_delete");
         assert_eq!(HookName::BeforeReset.as_str(), "before_reset");
+    }
+
+    #[test]
+    fn test_has_custom_complete_hook_no_hook() {
+        let yaml = "session_name: test\n";
+        let config = WtConfig::from_str(yaml).unwrap();
+        assert!(!config.has_custom_complete_hook());
+    }
+
+    #[test]
+    fn test_has_custom_complete_hook_simple_script() {
+        let yaml = r#"
+hooks:
+  before_complete: cargo test
+"#;
+        let config = WtConfig::from_str(yaml).unwrap();
+        // No git commands, so we should use default merge flow
+        assert!(!config.has_custom_complete_hook());
+    }
+
+    #[test]
+    fn test_has_custom_complete_hook_with_git_merge() {
+        let yaml = r#"
+hooks:
+  before_complete: |
+    cargo test
+    git merge --squash ${branch}
+"#;
+        let config = WtConfig::from_str(yaml).unwrap();
+        // Has git merge, so user handles merge themselves
+        assert!(config.has_custom_complete_hook());
+    }
+
+    #[test]
+    fn test_has_custom_complete_hook_with_git_rebase() {
+        let yaml = r#"
+hooks:
+  before_complete: |
+    git rebase origin/main
+    git merge --squash ${branch}
+"#;
+        let config = WtConfig::from_str(yaml).unwrap();
+        assert!(config.has_custom_complete_hook());
+    }
+
+    #[test]
+    fn test_has_custom_complete_hook_with_wt_atomic() {
+        let yaml = r#"
+hooks:
+  before_complete: |
+    wt::git::rebase ${branch} origin/main
+    wt::git::squash_merge ${branch}
+"#;
+        let config = WtConfig::from_str(yaml).unwrap();
+        // Uses wt:: atomic operations
+        assert!(config.has_custom_complete_hook());
+    }
+
+    #[test]
+    fn test_has_custom_complete_hook_legacy_merge_script() {
+        let yaml = r#"
+merge_script: |
+  git rebase origin/main
+  git merge --squash
+"#;
+        let config = WtConfig::from_str(yaml).unwrap();
+        // Legacy merge_script with git commands
+        assert!(config.has_custom_complete_hook());
     }
 }
