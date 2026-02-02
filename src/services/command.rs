@@ -1,7 +1,7 @@
 //! Command execution utilities for git and tmux operations.
 
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use crate::error::{Result, WtError};
 
@@ -10,6 +10,8 @@ pub struct CommandRunner {
     program: &'static str,
     error_mapper: fn(String) -> WtError,
     cwd: Option<String>,
+    /// Whether to redirect stdin from null (prevents blocking on interactive prompts)
+    null_stdin: bool,
 }
 
 impl CommandRunner {
@@ -19,6 +21,7 @@ impl CommandRunner {
             program,
             error_mapper: WtError::Git,
             cwd: None,
+            null_stdin: false,
         }
     }
 
@@ -28,6 +31,7 @@ impl CommandRunner {
             program: "git",
             error_mapper: WtError::Git,
             cwd: None,
+            null_stdin: false,
         }
     }
 
@@ -37,15 +41,18 @@ impl CommandRunner {
             program: "tmux",
             error_mapper: WtError::Tmux,
             cwd: None,
+            null_stdin: false,
         }
     }
 
     /// Create a runner for zellij commands.
+    /// Note: zellij action commands can block waiting for stdin, so we redirect from null.
     pub fn zellij() -> Self {
         Self {
             program: "zellij",
             error_mapper: WtError::Zellij,
             cwd: None,
+            null_stdin: true,
         }
     }
 
@@ -92,6 +99,9 @@ impl CommandRunner {
         cmd.args(args);
         if let Some(ref cwd) = self.cwd {
             cmd.current_dir(Path::new(cwd));
+        }
+        if self.null_stdin {
+            cmd.stdin(Stdio::null());
         }
         cmd
     }

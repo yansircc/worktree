@@ -46,7 +46,7 @@ pub fn display_status(json: bool) -> Result<()> {
         let instance = store.get_instance(task_name);
 
         // Check if multiplexer window is alive
-        let tmux_alive = instance
+        let mux_alive = instance
             .map(|i| {
                 let mux = create_multiplexer(i.multiplexer_type());
                 mux.window_exists(&i.session_name, &i.window_name)
@@ -95,9 +95,9 @@ pub fn display_status(json: bool) -> Result<()> {
             total_deletions += m.deletions;
         }
 
-        // tmux_alive for JSON output (only meaningful for running tasks)
-        let tmux_alive_for_output = if final_status == TaskStatus::Running {
-            Some(tmux_alive)
+        // mux_alive for JSON output (only meaningful for running tasks)
+        let mux_alive_for_output = if final_status == TaskStatus::Running {
+            Some(mux_alive)
         } else {
             None
         };
@@ -129,7 +129,7 @@ pub fn display_status(json: bool) -> Result<()> {
             git: git_metrics,
             idle_secs,
             active,
-            tmux_alive: tmux_alive_for_output,
+            mux_alive: mux_alive_for_output,
             session_id,
             transcript_exists,
         });
@@ -171,10 +171,10 @@ fn print_human_readable(output: &StatusOutput) {
     for task in &output.tasks {
         // For Running status, use running_icon for consistent display with TUI
         let (icon_str, status_suffix) = if task.status == TaskStatus::Running {
-            let (icon, color) = running_icon(task.tmux_alive, task.active);
+            let (icon, color) = running_icon(task.mux_alive, task.active);
             let colored = format!("{}{}{}", color, icon, RESET);
-            let suffix = match task.tmux_alive {
-                Some(false) => " (tmux closed)",
+            let suffix = match task.mux_alive {
+                Some(false) => " (window closed)",
                 _ => match task.active {
                     Some(true) => "",
                     Some(false) => " (idle)",

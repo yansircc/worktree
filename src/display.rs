@@ -13,16 +13,16 @@ pub fn colored_index(idx: usize) -> String {
     format!("{}{}{}", GRAY, idx, RESET)
 }
 
-/// Running status icon with color based on tmux state and activity.
+/// Running status icon with color based on multiplexer state and activity.
 ///
 /// Returns (icon, color_code) tuple for terminal display.
-/// - tmux dead: ⚠ yellow (warning)
+/// - mux dead: ⚠ yellow (warning)
 /// - active: ● green
 /// - idle: ● yellow
 /// - unknown: ● green (default)
-pub fn running_icon(tmux_alive: Option<bool>, active: Option<bool>) -> (&'static str, &'static str) {
-    match tmux_alive {
-        Some(false) => ("⚠", YELLOW), // tmux window closed
+pub fn running_icon(mux_alive: Option<bool>, active: Option<bool>) -> (&'static str, &'static str) {
+    match mux_alive {
+        Some(false) => ("⚠", YELLOW), // multiplexer window closed
         _ => match active {
             Some(true) => ("●", GREEN),  // actively working
             Some(false) => ("●", YELLOW), // idle

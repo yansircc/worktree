@@ -20,7 +20,7 @@ fn success_response(action: &str, task_name: &str, before: TaskStatus, after: Ta
             status: None,
             status_before: Some(before),
             status_after: Some(after),
-            tmux_alive: None,
+            mux_alive: None,
         }),
         available_actions: None,
         unavailable_actions: None,
@@ -29,7 +29,7 @@ fn success_response(action: &str, task_name: &str, before: TaskStatus, after: Ta
 }
 
 /// Build an error response for action failures
-fn error_response(action: &str, error: &str, task_name: &str, status: Option<TaskStatus>, tmux_alive: Option<bool>) -> ActionResponse {
+fn error_response(action: &str, error: &str, task_name: &str, status: Option<TaskStatus>, mux_alive: Option<bool>) -> ActionResponse {
     ActionResponse {
         action: action.to_string(),
         success: false,
@@ -39,7 +39,7 @@ fn error_response(action: &str, error: &str, task_name: &str, status: Option<Tas
             status,
             status_before: None,
             status_after: None,
-            tmux_alive,
+            mux_alive,
         }),
         available_actions: None,
         unavailable_actions: None,
@@ -74,7 +74,7 @@ fn task_not_found_response(action: &str, task_name: &str) -> ActionResponse {
             status: None,
             status_before: None,
             status_after: None,
-            tmux_alive: None,
+            mux_alive: None,
         }),
         available_actions: None,
         unavailable_actions: None,
@@ -141,7 +141,7 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
                 status: None,
                 status_before: None,
                 status_after: None,
-                tmux_alive: None,
+                mux_alive: None,
             }),
             available_actions: None,
             unavailable_actions: None,
@@ -219,7 +219,7 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
             status: Some(task.status.clone()),
             status_before: None,
             status_after: None,
-            tmux_alive: Some(task.mux_alive),
+            mux_alive: Some(task.mux_alive),
         }),
         available_actions: Some(available),
         unavailable_actions: Some(unavailable),
@@ -230,10 +230,10 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
 fn handle_done_action(app: &mut App, task_name: &str) -> ActionResponse {
     let task = app.selected_task().unwrap();
     let status_before = task.status.clone();
-    let tmux_alive = task.mux_alive;
+    let mux_alive = task.mux_alive;
 
     if !app.can_mark_done() {
-        return error_response("done", "Cannot mark as done: task is not running", task_name, Some(status_before), Some(tmux_alive));
+        return error_response("done", "Cannot mark as done: task is not running", task_name, Some(status_before), Some(mux_alive));
     }
 
     if let Err(e) = app.mark_done() {
@@ -299,7 +299,7 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
                 status: None,
                 status_before: None,
                 status_after: None,
-                tmux_alive: None,
+                mux_alive: None,
             }),
             available_actions: None,
             unavailable_actions: None,
@@ -323,7 +323,7 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
                 status: None,
                 status_before: None,
                 status_after: None,
-                tmux_alive: None,
+                mux_alive: None,
             }),
             available_actions: None,
             unavailable_actions: None,
@@ -347,7 +347,7 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
                 status: Some(task.status.clone()),
                 status_before: None,
                 status_after: None,
-                tmux_alive: Some(task.mux_alive),
+                mux_alive: Some(task.mux_alive),
             }),
             available_actions: None,
             unavailable_actions: None,

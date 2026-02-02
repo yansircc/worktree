@@ -19,9 +19,9 @@ start_args: --verbose --output-format=stream-json --input-format=stream-json -p 
 # 示例: ccc, claude --yolo, /path/to/claude
 claude_command: ccc
 
-# tmux session 名称
+# Session 名称 (用于 tmux/zellij)
 # 默认: 项目目录名
-tmux_session: worktree
+session_name: worktree
 
 # Worktree 存放目录
 # 默认: .wt/worktrees

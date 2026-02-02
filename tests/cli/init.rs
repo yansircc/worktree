@@ -147,7 +147,7 @@ fn test_init_uses_directory_name_as_session() {
     let config = fs::read_to_string(dir.path().join(".wt/config.yaml")).unwrap();
 
     // The tempdir has a random name, just check it's not the default "wt"
-    // and that tmux_session field exists with some value
+    // and that session_name field exists with some value
     assert!(config.contains("session_name:"));
 }
 

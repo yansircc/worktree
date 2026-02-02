@@ -26,7 +26,7 @@ pub struct TaskMetrics {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tmux_alive: Option<bool>,
+    pub mux_alive: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,7 +77,7 @@ pub struct TaskInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_after: Option<TaskStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tmux_alive: Option<bool>,
+    pub mux_alive: Option<bool>,
 }
 
 /// Command information for enter action
