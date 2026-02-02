@@ -15,7 +15,7 @@ description: 执行 Session Handoff，为下一个 session 做好交接准备
    - .claude/CLAUDE.md - 更新项目概述、目录结构
    - .claude/skills/ - 更新相关 skill 文档
 
-3. **更新 HANDOFF.md**
+3. **更新 .claude/HANDOFF.md**
    - 记录本次 session 完成的工作
    - 精简之前 session 完成的工作
    - 列出待实现功能（如有）

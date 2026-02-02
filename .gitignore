@@ -32,3 +32,6 @@ mockup-project/
 .wt/worktrees/
 .wt/backups/
 .wt/logs/
+
+# Claude
+.claude/HANDOFF.md
