@@ -203,13 +203,3 @@ copy_files: []
     let config = wt::models::WtConfig::from_str(yaml).unwrap();
     assert!(config.copy_files.is_empty());
 }
-
-#[test]
-fn test_config_null_init_script() {
-    let yaml = r#"
-agent_command: test
-init_script: ~
-"#;
-    let config = wt::models::WtConfig::from_str(yaml).unwrap();
-    assert!(config.init_script.is_none());
-}

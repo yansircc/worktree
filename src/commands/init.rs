@@ -30,7 +30,7 @@ fn generate_config(project_name: &str) -> String {
 # 主要配置
 # ============================================
 
-# wt start 执行的参数
+# wt run 执行的参数
 # 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}
 #
 # 交互模式（默认）- 启动 REPL 带初始 prompt
@@ -58,36 +58,43 @@ session_name: {}
 # 支持相对路径（相对于项目根目录）和绝对路径
 # worktree_dir: .wt/worktrees
 
-# 初始化脚本 (在每个新 worktree 中执行)
-# 例如安装依赖、设置环境等
-# init_script: |
-#   npm install
-
 # 需要复制到 worktree 的文件
 # 这些文件不会被 git checkout 带过去
 # copy_files:
 #   - .env
 #   - .env.local
 
-# 归档/重置前的清理脚本
-# 用于删除大文件（node_modules 等），减少备份体积
-# archive_script: |
-#   rm -rf node_modules/
-#   rm -rf dist/
-#   rm -rf .next/
-#   rm -rf target/
+# ============================================
+# Hooks 配置
+# ============================================
+# 在任务生命周期的各个阶段执行脚本
+# 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}
 
-# 进入 Review 前的检查脚本（可选）
-# 用于确保代码质量，失败则阻止进入 Review
-# review_script: |
-#   npm run lint
-#   npm run test
-
-# Merge 前执行的脚本（可选）
-# 用于最终验证，失败则阻止 merge
-# merge_script: |
-#   npm run build
-#   npm run test
+# hooks:
+#   # 创建 worktree 后执行 (安装依赖等)
+#   on_create: |
+#     npm install
+#
+#   # 进入 review 前检查 (lint, test)
+#   before_review: |
+#     npm run lint
+#     npm run test
+#
+#   # 完成任务前执行 (build, 最终验证)
+#   before_complete: |
+#     npm run build
+#
+#   # 完成任务后执行
+#   after_complete: |
+#     echo "Task ${{task}} completed!"
+#
+#   # 删除/重置前清理 (减少备份体积)
+#   before_delete: |
+#     rm -rf node_modules/
+#     rm -rf dist/
+#
+#   before_reset: |
+#     rm -rf node_modules/
 
 # ============================================
 # 日志配置 (wt logs)
@@ -235,7 +242,7 @@ pub fn execute() -> Result<()> {
     println!(
         "  2. Create tasks: wt create --json '{{\"name\": \"...\", \"description\": \"...\"}}'"
     );
-    println!("  3. Start working: wt start <task>");
+    println!("  3. Start working: wt run <task>");
 
     Ok(())
 }
@@ -273,9 +280,11 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_config_has_archive_script() {
+    fn test_generate_config_has_hooks() {
         let config = generate_config("test");
-        assert!(config.contains("archive_script:"));
+        assert!(config.contains("hooks:"));
+        assert!(config.contains("on_create:"));
+        assert!(config.contains("before_delete:"));
         assert!(config.contains("node_modules"));
     }
 

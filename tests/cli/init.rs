@@ -160,7 +160,7 @@ fn test_init_shows_next_steps() {
     assert!(stdout.contains("Next steps:"));
     assert!(stdout.contains("Edit .wt/config.yaml"));
     assert!(stdout.contains("wt create"));
-    assert!(stdout.contains("wt start"));
+    assert!(stdout.contains("wt run"));
 }
 
 #[test]

@@ -65,12 +65,6 @@ pub enum WtError {
     #[error("Failed to execute script '{script}': {message}")]
     Script { script: String, message: String },
 
-    #[error("Script '{script}' failed with exit code: {exit_code:?}")]
-    ScriptFailed {
-        script: String,
-        exit_code: Option<i32>,
-    },
-
     #[error("Invalid state transition: cannot change task from {from} to {to}")]
     InvalidStateTransition { from: String, to: String },
 

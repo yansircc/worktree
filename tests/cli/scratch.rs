@@ -1,7 +1,7 @@
 //! CLI tests for scratch environment behavior
 //!
 //! Scratch environments (created via `wt new`) have special lifecycle rules:
-//! - Cannot use `wt review` or `wt merge`
+//! - Cannot use `wt review` or `wt complete`
 //! - Can delete directly from Running or Review state
 //! - Delete removes entry from status.json entirely (no Completed state)
 
@@ -43,20 +43,20 @@ fn test_scratch_review_suggests_delete() {
     );
 }
 
-// ==================== Merge Forbidden ====================
+// ==================== Complete Forbidden ====================
 
 #[test]
-fn test_scratch_merge_forbidden() {
+fn test_scratch_complete_forbidden() {
     let dir = setup_test_repo();
 
     // Create scratch in review state
     set_scratch_status(dir.path(), "scratch-env", "review");
 
-    let (ok, _, stderr) = run_wt(dir.path(), &["merge", "scratch-env"]);
+    let (ok, _, stderr) = run_wt(dir.path(), &["complete", "scratch-env"]);
 
     assert!(!ok);
     assert!(
-        stderr.contains("Scratch") || stderr.contains("cannot be merged"),
+        stderr.contains("Scratch") || stderr.contains("cannot be completed"),
         "Expected scratch-specific error, got: {}",
         stderr
     );

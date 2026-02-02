@@ -10,7 +10,7 @@ use crate::models::WtConfig;
 /// - `session_name` - Multiplexer session name
 /// - `multiplexer` - Multiplexer type (tmux/zellij)
 /// - `worktree_dir` - Worktree directory path
-/// - `start_args` - Arguments for wt start
+/// - `start_args` - Arguments for wt run
 pub fn get_config(key: &str) -> Result<String> {
     let config = WtConfig::load()?;
 
@@ -20,12 +20,8 @@ pub fn get_config(key: &str) -> Result<String> {
         "multiplexer" => Ok(config.multiplexer),
         "worktree_dir" => Ok(config.worktree_dir),
         "start_args" => Ok(config.start_args),
-        "init_script" => Ok(config.init_script.unwrap_or_default()),
-        "archive_script" => Ok(config.archive_script.unwrap_or_default()),
-        "review_script" => Ok(config.review_script.unwrap_or_default()),
-        "merge_script" => Ok(config.merge_script.unwrap_or_default()),
         _ => Err(WtError::InvalidInput(format!(
-            "Unknown config key: '{}'. Valid keys: claude_command, session_name, multiplexer, worktree_dir, start_args, init_script, archive_script, review_script, merge_script",
+            "Unknown config key: '{}'. Valid keys: claude_command, session_name, multiplexer, worktree_dir, start_args",
             key
         ))),
     }

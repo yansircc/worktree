@@ -76,13 +76,8 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
         mux.create_session(&config.session_name)?;
     }
 
-    // Create window with just init_script (or empty command for shell)
-    let cmd = match &config.init_script {
-        Some(script) => script.clone(),
-        None => String::new(),
-    };
-
-    mux.create_window(&config.session_name, &name, &worktree_path, &cmd)?;
+    // Create window with empty command (just shell)
+    mux.create_window(&config.session_name, &name, &worktree_path, "")?;
 
     // Update status.json with scratch=true
     store.set_status(&name, TaskStatus::Running);
@@ -106,9 +101,6 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
         // Only output the path for shell integration
         println!("{}", relative_path);
     } else {
-        if config.init_script.is_some() {
-            println!("  Init script will run in {} window", config.multiplexer);
-        }
         println!("Created scratch environment '{}'", name);
         println!("  Worktree: {}", relative_path);
         println!("  Branch:   {}", branch);

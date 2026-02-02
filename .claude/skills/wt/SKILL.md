@@ -32,7 +32,7 @@ wt list
 wt next
 
 # 启动任务
-wt start <name>
+wt run <name>
 
 # 查看状态 (TUI)
 wt status
@@ -40,20 +40,20 @@ wt status
 # 查看状态 (JSON，给 agent 用)
 wt status --json
 
-# 查看任务结果
+# 标记待审核
 wt review <name>
 
-# 标记完成
-wt done <name>
+# 从 review 恢复
+wt resume <name>
 
-# 标记已合并
-wt merged <name>
+# 完成任务 (merge + cleanup)
+wt complete <name>
 
 # 重置任务到 pending
 wt reset <name>
 
-# 清理资源
-wt cleanup [--all]
+# 删除任务资源
+wt delete <name> [--force]
 ```
 
 ## Status TUI 快捷键
@@ -61,17 +61,12 @@ wt cleanup [--all]
 | 按键 | 功能 |
 |------|------|
 | `↑↓` / `jk` | 导航 |
-| `Enter` | 进入 tmux 窗口 |
-| `r` | review (Done 任务) |
-| `d` | 标记 done (agent 已退出) |
-| `m` | 标记 merged |
+| `Enter` | 进入 multiplexer 窗口 |
+| `t` | tail (查看输出) |
+| `r` | 标记 review |
+| `u` | resume (继续开发) |
+| `c` | complete (完成) |
 | `q` | 退出 |
-
-**Enter 行为**：
-- tmux 内 + 窗口存在 → 切换到目标窗口
-- tmux 内 + 窗口已关 → 输出 resume 命令
-- tmux 外 + 窗口存在 → 执行 `tmux attach`
-- tmux 外 + 窗口已关 → 输出 resume 命令
 
 ## JSON 格式
 

@@ -63,7 +63,7 @@ pub fn execute(task_ref: String) -> Result<()> {
     hooks.after_review(&context)?;
 
     println!("Task '{}' marked for review.", name);
-    println!("To merge into main, run: wt merge {}", name);
+    println!("To merge into main, run: wt complete {}", name);
     println!("To resume working, run: wt resume {}", name);
     Ok(())
 }

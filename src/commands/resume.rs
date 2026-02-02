@@ -15,7 +15,7 @@ pub fn execute(task_ref: String) -> Result<()> {
     // Check if scratch environment
     if store.is_scratch(&name) {
         return Err(WtError::InvalidInput(format!(
-            "Scratch environment '{}' cannot be resumed. Use 'wt start {}' instead.",
+            "Scratch environment '{}' cannot be resumed. Use 'wt run {}' instead.",
             name, name
         )));
     }

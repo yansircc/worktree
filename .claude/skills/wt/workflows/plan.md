@@ -5,7 +5,7 @@
 确保项目已初始化 wt：
 
 ```bash
-wt init  # 创建 .wt.yaml 配置和 .wt/tasks/ 目录
+wt init  # 创建 .wt/config.yaml 配置和 .wt/tasks/ 目录
 ```
 
 ## 流程
@@ -106,7 +106,7 @@ database [○]
 2. 依赖关系图
 3. 建议执行顺序
 
-让用户确认后，可以开始 `wt start`。
+让用户确认后，可以开始 `wt run`。
 
 ## 启动后
 
@@ -115,8 +115,8 @@ database [○]
 wt next
 
 # 启动任务
-wt start auth
+wt run auth
 
-# 进入 tmux 查看 agent 工作
-wt enter auth
+# 查看状态
+wt status
 ```

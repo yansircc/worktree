@@ -1,51 +1,38 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 20 完成的工作 (2026-02-02)
+## Session 21 完成的工作 (2026-02-03)
 
-### 1. Phase 3 全部完成
+### cleanup-legacy 任务全部完成
 
-4 个任务开发完成并合并到 main：
+按照 `.claude/specs/cleanup-legacy.md` 执行的清理工作：
 
-| 任务 | 说明 | Commit |
-|------|------|--------|
-| cmd-run | `start` → `run` 改名，集成 hooks | 已合并 |
-| cmd-lifecycle | `review`/`resume`/`reset` 集成 hooks | `d280f1b` |
-| cmd-complete | 新命令替代 `merge` | `5d87504` |
-| cmd-delete | 扩展删除功能 + `--force` | `2bd932b` |
+1. **删除废弃命令**
+   - 删除 `src/commands/archive.rs`, `src/commands/merge.rs`
+   - 从 CLI 中删除 `Start`, `Merge`, `Archive` 枚举变体
 
-### 2. 修复 zellij 合并导致的文件丢失
+2. **删除旧配置字段**
+   - 删除 `init_script`, `archive_script`, `review_script`, `merge_script`
+   - 简化 `get_hook()` 方法，移除 legacy fallback 逻辑
 
-合并 zellij 分支时部分文件被覆盖，已修复：
-- 恢复 `src/services/hooks.rs`
-- 恢复 `src/models/hook_context.rs`
-- 恢复 `src/models/config.rs` 中的 HooksConfig
-- 添加缺失的 `HookFailed` 错误变体
-- 添加 `has_custom_complete_hook()` 方法
+3. **更新用户提示信息**
+   - `wt start` → `wt run` (5 处)
+   - `wt merge` → `wt complete` (2 处)
 
-Commit: `38611d1`
+4. **更新配置模板**
+   - `wt init` 生成新的 `hooks:` 格式配置
 
-### 3. 清理资源
+5. **更新文档和测试**
 
-- 删除 4 个遗留的 tmux merge 窗口
-- 删除 zellij scratch 环境（worktree + 分支）
+### Phase 4 docs 任务完成
 
----
+1. **README.md 大幅更新**
+   - Hooks 系统详细文档
+   - 变量列表
+   - 内部操作 (wt internal) 完整参考
 
-## 待完成工作
-
-### cleanup-legacy (Spec 已创建)
-
-清理遗留代码和更新文档，详见 `.claude/specs/cleanup-legacy.md`：
-
-1. **删除废弃命令**：`archive.rs`, `merge.rs`, CLI 中的 Start/Merge/Archive
-2. **删除旧配置字段**：`init_script`, `archive_script`, `review_script`, `merge_script`
-3. **更新用户提示**：5 处使用旧命令名的地方
-4. **更新配置模板**：`wt init` 生成新的 `hooks:` 格式
-5. **更新文档**：README.md, CLAUDE.md, testing.md, skills 等
-
-### docs (Phase 4)
-
-`.wt/tasks/docs.md` - 依赖已就绪，可以和 cleanup-legacy 一起做
+2. **.claude/CLAUDE.md 更新**
+   - 新的目录结构
+   - 新的配置格式
 
 ---
 
@@ -56,9 +43,11 @@ Commit: `38611d1`
 ```
 Phase 1-2 (基础设施):  5/5 完成
 Phase 3 (命令集成):    4/4 完成
-Phase 4 (文档):        0/1 待开始
-cleanup-legacy:        待开始
+Phase 4 (文档):        1/1 完成
+cleanup-legacy:        ✅ 完成
 ```
+
+**所有计划任务已完成！**
 
 ### Hooks 系统集成状态
 
@@ -85,26 +74,20 @@ cleanup-legacy:        待开始
 ### 命令
 | 文件 | 说明 |
 |------|------|
-| `src/commands/run.rs` | run 命令（原 start） |
-| `src/commands/complete.rs` | complete 命令（原 merge） |
-| `src/commands/delete.rs` | delete 命令（扩展版） |
+| `src/commands/run.rs` | run 命令 |
+| `src/commands/complete.rs` | complete 命令 |
+| `src/commands/delete.rs` | delete 命令 |
 | `src/commands/review.rs` | review 命令 |
 | `src/commands/resume.rs` | resume 命令 |
 | `src/commands/reset.rs` | reset 命令 |
+| `src/commands/internal/` | 内部原子操作 |
 
-### 待删除（cleanup-legacy）
-| 文件 | 说明 |
+### 内部操作
+| 模块 | 说明 |
 |------|------|
-| `src/commands/archive.rs` | 废弃别名 |
-| `src/commands/merge.rs` | 废弃别名 |
-| `.wt/prompts/merge.md` | 过时的 merge prompt |
-
----
-
-## 已知问题
-
-1. **dead_code 警告**：`ScriptFailed` 错误变体未使用
-2. **unused_imports 警告**：`HooksConfig` 未直接使用（通过 WtConfig 间接使用）
+| `internal/git.rs` | Git 原子操作 |
+| `internal/mux.rs` | Multiplexer 原子操作 |
+| `internal/misc.rs` | 文件、状态、任务、配置、通知操作 |
 
 ---
 
@@ -112,6 +95,7 @@ cleanup-legacy:        待开始
 
 | Session | 主要工作 |
 |---------|----------|
+| 21 | cleanup-legacy + Phase 4 docs 全部完成 |
 | 20 | Phase 3 完成、修复 zellij 合并问题、清理资源 |
 | 19 | 补全 atomic-misc CLI 子命令、创建 hooks.rs |
 | 18 | Hooks 系统设计、任务规划、Phase 1-2 服务层 |

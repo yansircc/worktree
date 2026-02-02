@@ -2,7 +2,7 @@ use super::*;
 use std::process::Command;
 
 #[test]
-fn test_start_without_config() {
+fn test_run_without_config() {
     let dir = tempfile::tempdir().unwrap();
 
     Command::new("git")
@@ -13,7 +13,7 @@ fn test_start_without_config() {
 
     create_task_file(dir.path(), "task1", &[]);
 
-    let (ok, _, stderr) = run_wt(dir.path(), &["start", "task1"]);
+    let (ok, _, stderr) = run_wt(dir.path(), &["run", "task1"]);
 
     assert!(!ok);
     assert!(stderr.contains("Config") || stderr.contains(".wt.yaml"));

@@ -18,15 +18,11 @@ fn main() {
         Commands::Create { json } => commands::create::execute(json),
         Commands::Validate { name } => commands::validate::execute(name),
         Commands::List { tree, json } => commands::list::execute(tree, json),
-        Commands::Run { task, all } | Commands::Start { name: task, all } => {
-            commands::run::execute(task, all)
-        }
+        Commands::Run { task, all } => commands::run::execute(task, all),
         Commands::Review { name } => commands::review::execute(name),
         Commands::Resume { name } => commands::resume::execute(name),
         Commands::Complete { name } => commands::complete::execute(name),
-        Commands::Merge { name, agent: _ } => commands::merge::execute(name),
         Commands::Delete { name, force } => commands::delete::execute(name, force),
-        Commands::Archive { name } => commands::archive::execute(name),
         Commands::Next { json } => commands::next::execute(json),
         Commands::Reset { name } => commands::reset::execute(name),
         Commands::Status { json, action, task } => commands::status::execute(json, action, task),

@@ -1,7 +1,6 @@
 //! Workspace initialization utilities for worktree setup.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::error::{Result, WtError};
 
@@ -77,28 +76,6 @@ impl<'a> WorkspaceInitializer<'a> {
 
         Ok(())
     }
-
-    /// Run an initialization script in the worktree directory.
-    pub fn run_init_script(&self, script: &str) -> Result<()> {
-        let status = Command::new("bash")
-            .arg("-c")
-            .arg(script)
-            .current_dir(self.worktree_path)
-            .status()
-            .map_err(|e| WtError::Script {
-                script: script.to_string(),
-                message: e.to_string(),
-            })?;
-
-        if !status.success() {
-            return Err(WtError::Script {
-                script: script.to_string(),
-                message: format!("Script exited with code: {:?}", status.code()),
-            });
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -156,26 +133,4 @@ mod tests {
         assert!(dest_dir.path().join("config/app.json").exists());
     }
 
-    #[test]
-    fn test_run_init_script_success() {
-        let dest_dir = TempDir::new().unwrap();
-        let src_dir = TempDir::new().unwrap();
-
-        let init = WorkspaceInitializer::new(dest_dir.path().to_str().unwrap(), src_dir.path());
-
-        let result = init.run_init_script("echo 'hello' > test.txt");
-        assert!(result.is_ok());
-        assert!(dest_dir.path().join("test.txt").exists());
-    }
-
-    #[test]
-    fn test_run_init_script_failure() {
-        let dest_dir = TempDir::new().unwrap();
-        let src_dir = TempDir::new().unwrap();
-
-        let init = WorkspaceInitializer::new(dest_dir.path().to_str().unwrap(), src_dir.path());
-
-        let result = init.run_init_script("exit 1");
-        assert!(result.is_err());
-    }
 }

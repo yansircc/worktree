@@ -20,19 +20,20 @@ src/
 │   ├── task.rs       # Task, TaskStatus, TaskInput, Instance
 │   ├── status.rs     # StatusStore, TaskState (运行时状态)
 │   ├── store.rs      # TaskStore (加载任务 + 状态)
-│   └── config.rs     # WtConfig (.wt/config.yaml 解析)
+│   ├── config.rs     # WtConfig, HooksConfig (.wt/config.yaml 解析)
+│   └── hook_context.rs # HookContext (hook 变量展开)
 ├── commands/         # 各子命令实现
 │   ├── init.rs
 │   ├── create.rs
 │   ├── validate.rs
 │   ├── list.rs
 │   ├── next.rs
-│   ├── start.rs      # 支持 --all 批量启动
+│   ├── run.rs        # 启动任务，支持 --all 批量启动
 │   ├── review.rs     # 标记待审核
 │   ├── resume.rs     # 从 Review 恢复到 Running
-│   ├── merge.rs      # Claude 自动 merge（rebase + squash + 清理）
-│   ├── delete.rs     # 删除 scratch 环境
-│   ├── reset.rs
+│   ├── complete.rs   # 完成任务（hooks + merge + cleanup）
+│   ├── delete.rs     # 删除任务资源
+│   ├── reset.rs      # 重置任务到 Pending
 │   ├── new.rs        # scratch 环境创建
 │   ├── status/       # 状态命令（已模块化）
 │   │   ├── mod.rs    # 入口
@@ -45,6 +46,7 @@ src/
 ├── services/
 │   ├── command.rs    # 命令执行辅助 (CommandRunner)
 │   ├── git.rs        # git worktree 操作
+│   ├── hooks.rs      # HooksEngine (hook 执行)
 │   ├── multiplexer/  # terminal multiplexer 抽象层
 │   │   ├── mod.rs    # Multiplexer trait + 工厂函数
 │   │   ├── tmux.rs   # TmuxBackend 实现
@@ -72,12 +74,11 @@ session_name: project-name
 # Claude CLI 命令（默认: claude）
 claude_command: claude
 
-# wt start 执行的参数
+# wt run 执行的参数
 start_args: --verbose --output-format=stream-json -p "@.wt/tasks/${task}.md ..."
 
 # 其他可选配置
 worktree_dir: .wt/worktrees
-init_script: npm install
 copy_files:
   - .env
 
@@ -86,18 +87,13 @@ logs:
   exclude_types: [system, progress]
   exclude_fields: [signature, uuid]
 
-# 归档/重置前的清理脚本
-archive_script: |
-  rm -rf node_modules/
-  rm -rf dist/
-
-# 进入 Review 前的检查脚本（可选）
-review_script: |
-  npm run lint
-
-# merge 前执行的脚本（可选）
-merge_script: |
-  npm run build
+# Hooks - 在任务生命周期各阶段执行脚本
+hooks:
+  on_create: npm install           # worktree 创建后
+  before_review: npm run lint      # review 前检查
+  before_complete: npm run build   # 完成前验证
+  before_delete: rm -rf node_modules/  # 删除前清理
+  before_reset: rm -rf node_modules/   # 重置前清理
 ```
 
 ### Task（任务）
@@ -134,25 +130,25 @@ depends:            # 依赖的任务列表
 
 ```
 ○ Pending  →  ● Running  →  ? Review  →  ✓ Completed
-  (wt start)   (wt review)   (wt merge)
+  (wt run)    (wt review)   (wt complete)
                    ↑            │
                    └────────────┘  (wt resume)
 ```
 
-- `wt review` 标记任务待审核，关闭 tmux 窗口
+- `wt review` 标记任务待审核，关闭 multiplexer 窗口
 - `wt resume` 从 Review 恢复到 Running，继续开发
-- `wt merge` 执行 rebase + squash merge + commit，然后自动清理资源
+- `wt complete` 执行 hooks + merge + cleanup
 - `wt reset` 可从任意状态回到 Pending（会备份代码到 `.wt/backups/`）
 
 ### 任务索引
 
 所有命令支持用 1-based 索引代替任务名：
-- `wt start 1` 等同于 `wt start <第一个任务>`
+- `wt run 1` 等同于 `wt run <第一个任务>`
 - 优先级：任务名 > 索引号（若任务名为 "1"，则匹配任务名）
 
 ### 依赖规则
 
-- 任务只能在所有依赖都 `Completed` 后才能 `start`
+- 任务只能在所有依赖都 `Completed` 后才能 `run`
 - `validate` 会检测循环依赖
 - `reset` 会在清理前备份代码到 `.wt/backups/`
 

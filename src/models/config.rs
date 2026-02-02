@@ -108,23 +108,9 @@ pub struct WtConfig {
     pub worktree_dir: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub copy_files: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub init_script: Option<String>,
     #[serde(default)]
     pub logs: LogsConfig,
-    /// Script to run before archiving/reset (optional, for cleanup like rm -rf node_modules/)
-    /// DEPRECATED: Use hooks.before_delete and hooks.before_reset instead
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archive_script: Option<String>,
-    /// Script to run when marking task as review (optional, e.g., run tests)
-    /// DEPRECATED: Use hooks.before_review instead
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub review_script: Option<String>,
-    /// Script to run during merge (optional, e.g., additional build steps)
-    /// DEPRECATED: Use hooks.before_complete instead
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merge_script: Option<String>,
-    /// New hooks configuration
+    /// Hooks configuration for task lifecycle events
     #[serde(default, skip_serializing_if = "HooksConfig::is_empty")]
     pub hooks: HooksConfig,
 }
@@ -184,28 +170,9 @@ impl WtConfig {
         create_multiplexer(self.multiplexer_type())
     }
 
-    /// Get hook script by name, with fallback to legacy fields for backward compatibility
-    ///
-    /// Priority: new hooks format > legacy fields
-    /// Mapping:
-    /// - init_script → on_create
-    /// - review_script → before_review
-    /// - merge_script → before_complete
-    /// - archive_script → before_delete, before_reset
+    /// Get hook script by name
     pub fn get_hook(&self, hook: HookName) -> Option<&String> {
-        // First check new hooks config
-        if let Some(script) = self.hooks.get(hook) {
-            return Some(script);
-        }
-
-        // Fallback to legacy fields
-        match hook {
-            HookName::OnCreate => self.init_script.as_ref(),
-            HookName::BeforeReview => self.review_script.as_ref(),
-            HookName::BeforeComplete => self.merge_script.as_ref(),
-            HookName::BeforeDelete | HookName::BeforeReset => self.archive_script.as_ref(),
-            _ => None,
-        }
+        self.hooks.get(hook)
     }
 
     /// Check if user has defined a custom complete hook that handles merge
@@ -236,7 +203,6 @@ mod tests {
         assert_eq!(config.session_name, "wt"); // default
         assert_eq!(config.worktree_dir, ".wt/worktrees"); // default
         assert!(config.copy_files.is_empty());
-        assert!(config.init_script.is_none());
     }
 
     #[test]
@@ -262,7 +228,8 @@ worktree_dir: /custom/path
 copy_files:
   - .env
   - config.json
-init_script: npm install
+hooks:
+  on_create: npm install
 "#;
         let config = WtConfig::from_str(yaml).unwrap();
 
@@ -272,7 +239,7 @@ init_script: npm install
         assert_eq!(config.session_name, "my-session");
         assert_eq!(config.worktree_dir, "/custom/path");
         assert_eq!(config.copy_files, vec![".env", "config.json"]);
-        assert_eq!(config.init_script, Some("npm install".to_string()));
+        assert_eq!(config.hooks.on_create, Some("npm install".to_string()));
     }
 
     #[test]
@@ -291,17 +258,6 @@ init_script: npm install
     }
 
     #[test]
-    fn test_config_multiline_init_script() {
-        let yaml = r#"
-init_script: |
-  npm install
-  npm run build
-"#;
-        let config = WtConfig::from_str(yaml).unwrap();
-        assert!(config.init_script.unwrap().contains("npm install"));
-    }
-
-    #[test]
     fn test_config_serialize() {
         let config = WtConfig {
             claude_command: "ccc".to_string(),
@@ -310,31 +266,18 @@ init_script: |
             session_name: "wt".to_string(),
             worktree_dir: ".wt/worktrees".to_string(),
             copy_files: vec![".env".to_string()],
-            init_script: Some("npm i".to_string()),
             logs: LogsConfig::default(),
-            archive_script: None,
-            review_script: None,
-            merge_script: None,
-            hooks: HooksConfig::default(),
+            hooks: HooksConfig {
+                on_create: Some("npm i".to_string()),
+                ..Default::default()
+            },
         };
         let yaml = serde_yaml::to_string(&config).unwrap();
 
         assert!(yaml.contains("claude_command: ccc"));
         assert!(yaml.contains("start_args:"));
         assert!(yaml.contains("copy_files:"));
-        assert!(yaml.contains("init_script:"));
-    }
-
-    #[test]
-    fn test_config_with_archive_script() {
-        let yaml = r#"
-archive_script: |
-  rm -rf node_modules/
-  rm -rf dist/
-"#;
-        let config = WtConfig::from_str(yaml).unwrap();
-        assert!(config.archive_script.is_some());
-        assert!(config.archive_script.unwrap().contains("node_modules"));
+        assert!(yaml.contains("hooks:"));
     }
 
     #[test]
@@ -463,76 +406,6 @@ hooks:
             config.get_hook(HookName::BeforeReset),
             Some(&"new-reset".to_string())
         );
-    }
-
-    #[test]
-    fn test_get_hook_legacy_fallback() {
-        let yaml = r#"
-init_script: legacy-init
-review_script: legacy-review
-merge_script: legacy-merge
-archive_script: legacy-archive
-"#;
-        let config = WtConfig::from_str(yaml).unwrap();
-
-        // Legacy fields should map to hooks
-        assert_eq!(
-            config.get_hook(HookName::OnCreate),
-            Some(&"legacy-init".to_string())
-        );
-        assert_eq!(
-            config.get_hook(HookName::BeforeReview),
-            Some(&"legacy-review".to_string())
-        );
-        assert_eq!(
-            config.get_hook(HookName::BeforeComplete),
-            Some(&"legacy-merge".to_string())
-        );
-        assert_eq!(
-            config.get_hook(HookName::BeforeDelete),
-            Some(&"legacy-archive".to_string())
-        );
-        assert_eq!(
-            config.get_hook(HookName::BeforeReset),
-            Some(&"legacy-archive".to_string())
-        );
-    }
-
-    #[test]
-    fn test_get_hook_new_format_takes_priority() {
-        let yaml = r#"
-init_script: legacy-init
-review_script: legacy-review
-hooks:
-  on_create: new-init
-  before_review: new-review
-"#;
-        let config = WtConfig::from_str(yaml).unwrap();
-
-        // New hooks take priority over legacy
-        assert_eq!(
-            config.get_hook(HookName::OnCreate),
-            Some(&"new-init".to_string())
-        );
-        assert_eq!(
-            config.get_hook(HookName::BeforeReview),
-            Some(&"new-review".to_string())
-        );
-    }
-
-    #[test]
-    fn test_get_hook_no_fallback_for_new_hooks() {
-        let yaml = r#"
-init_script: legacy-init
-"#;
-        let config = WtConfig::from_str(yaml).unwrap();
-
-        // Hooks without legacy mapping return None
-        assert!(config.get_hook(HookName::BeforeRun).is_none());
-        assert!(config.get_hook(HookName::AfterRun).is_none());
-        assert!(config.get_hook(HookName::AfterReview).is_none());
-        assert!(config.get_hook(HookName::BeforeResume).is_none());
-        assert!(config.get_hook(HookName::AfterComplete).is_none());
     }
 
     #[test]

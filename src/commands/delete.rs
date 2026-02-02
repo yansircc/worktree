@@ -42,7 +42,7 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
             // Pending tasks have no resources to delete
             (TaskStatus::Pending, _) => {
                 return Err(WtError::InvalidInput(format!(
-                    "Task '{}' is pending, no resources to delete. Use 'wt start {}' to create resources first.",
+                    "Task '{}' is pending, no resources to delete. Use 'wt run {}' to create resources first.",
                     name, name
                 )));
             }
@@ -59,7 +59,7 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
             // Running/Review without force
             (status, false) => {
                 return Err(WtError::InvalidInput(format!(
-                    "Task '{}' is in {} state. Use --force to delete, or complete it first with 'wt merge {}'.",
+                    "Task '{}' is in {} state. Use --force to delete, or complete it first with 'wt complete {}'.",
                     name, status.display_name(), name
                 )));
             }

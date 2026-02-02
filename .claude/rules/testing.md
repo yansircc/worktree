@@ -52,7 +52,7 @@ cd /Users/yansir/code/nextjs-project/try-wt
 ### --action 操作
 
 ```bash
-wt start ui                              # 启动任务
+wt run ui                              # 启动任务
 wt status --action list --task ui        # 预期: available_actions 含 review
 wt status --action enter --task ui       # 预期: command.type = tmux_switch
 wt status --action review --task ui      # 预期: success, tmux 被关闭
@@ -72,7 +72,7 @@ wt status --action unknown --task ui     # 未知操作 → JSON error
 ### 冲突检测
 
 ```bash
-wt start ui
+wt run ui
 
 # 主仓库
 echo "main" >> README.md && git add . && git commit -m "main"

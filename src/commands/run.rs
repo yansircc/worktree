@@ -169,17 +169,7 @@ fn execute_single(name: String) -> Result<()> {
         config.claude_command, expanded_args, session_id
     );
 
-    // Build full command: init_script && agent_cmd (if init_script configured)
-    let full_cmd = match &config.init_script {
-        Some(script) => format!("({}) && {}", script, agent_cmd),
-        None => agent_cmd,
-    };
-
-    mux.create_window(&config.session_name, &name, &worktree_path, &full_cmd)?;
-
-    if config.init_script.is_some() {
-        println!("  Init script will run in {} window", config.multiplexer);
-    }
+    mux.create_window(&config.session_name, &name, &worktree_path, &agent_cmd)?;
 
     // Update status in StatusStore
     store.set_status(&name, TaskStatus::Running);

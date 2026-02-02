@@ -256,21 +256,4 @@ hooks:
         }
     }
 
-    #[test]
-    fn test_legacy_fallback() {
-        // Test that legacy fields work through get_hook
-        let config = test_config(
-            r#"
-init_script: "echo legacy init"
-review_script: "echo legacy review"
-"#,
-        );
-        let engine = HooksEngine::new(&config);
-        let context = test_context();
-
-        // on_create should use init_script fallback
-        assert!(engine.on_create(&context).is_ok());
-        // before_review should use review_script fallback
-        assert!(engine.before_review(&context).is_ok());
-    }
 }

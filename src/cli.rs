@@ -49,17 +49,6 @@ pub enum Commands {
         all: bool,
     },
 
-    /// Start a task (alias for 'run', kept for backward compatibility)
-    #[command(hide = true)]
-    Start {
-        /// Task name to start (required unless --all is used)
-        name: Option<String>,
-
-        /// Start all tasks that are ready (no unmerged dependencies)
-        #[arg(long)]
-        all: bool,
-    },
-
     /// Mark a task for review (ready to be merged)
     Review {
         /// Task name to mark for review
@@ -78,17 +67,6 @@ pub enum Commands {
         name: String,
     },
 
-    /// [DEPRECATED] Use 'complete' instead. Execute merge via Claude.
-    #[command(hide = true)]
-    Merge {
-        /// Task name to merge
-        name: String,
-
-        /// Run in agent mode (ignored, kept for backward compatibility)
-        #[arg(long)]
-        agent: bool,
-    },
-
     /// Delete a task's resources (worktree, branch)
     Delete {
         /// Task name or index
@@ -97,13 +75,6 @@ pub enum Commands {
         /// Force delete (skip confirmation for non-completed tasks)
         #[arg(long, short)]
         force: bool,
-    },
-
-    /// Archive a task (deprecated, use 'delete' instead)
-    #[command(hide = true)]
-    Archive {
-        /// Task name or index
-        name: String,
     },
 
     /// Show tasks that are ready to start (all dependencies merged)

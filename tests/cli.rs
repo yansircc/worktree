@@ -22,8 +22,6 @@ mod init;
 mod list;
 #[path = "cli/logs.rs"]
 mod logs;
-#[path = "cli/merge.rs"]
-mod merge;
 #[path = "cli/next.rs"]
 mod next;
 #[path = "cli/no_config.rs"]
