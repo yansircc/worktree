@@ -236,7 +236,12 @@ git push origin ${branch}
 
     #[test]
     fn test_expand_variables_special_chars_in_value() {
-        let ctx = HookContext::new("task-name", "wt/feature/task-name", "/path/with spaces", "/repo");
+        let ctx = HookContext::new(
+            "task-name",
+            "wt/feature/task-name",
+            "/path/with spaces",
+            "/repo",
+        );
 
         let script = "cd \"${worktree}\" && git checkout ${branch}";
         let result = ctx.expand_variables(script);

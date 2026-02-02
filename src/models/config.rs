@@ -376,13 +376,32 @@ hooks:
         let config = WtConfig::from_str(yaml).unwrap();
 
         assert_eq!(config.hooks.on_create, Some("cargo check".to_string()));
-        assert_eq!(config.hooks.before_run, Some("echo \"starting\"".to_string()));
+        assert_eq!(
+            config.hooks.before_run,
+            Some("echo \"starting\"".to_string())
+        );
         assert_eq!(config.hooks.after_run, Some("echo \"done\"".to_string()));
-        assert!(config.hooks.before_review.as_ref().unwrap().contains("cargo fmt"));
-        assert!(config.hooks.before_review.as_ref().unwrap().contains("cargo clippy"));
+        assert!(config
+            .hooks
+            .before_review
+            .as_ref()
+            .unwrap()
+            .contains("cargo fmt"));
+        assert!(config
+            .hooks
+            .before_review
+            .as_ref()
+            .unwrap()
+            .contains("cargo clippy"));
         assert_eq!(config.hooks.before_complete, Some("cargo test".to_string()));
-        assert_eq!(config.hooks.after_complete, Some("echo \"completed\"".to_string()));
-        assert_eq!(config.hooks.before_delete, Some("rm -rf target/".to_string()));
+        assert_eq!(
+            config.hooks.after_complete,
+            Some("echo \"completed\"".to_string())
+        );
+        assert_eq!(
+            config.hooks.before_delete,
+            Some("rm -rf target/".to_string())
+        );
         assert_eq!(config.hooks.before_reset, Some("cargo clean".to_string()));
     }
 
@@ -412,11 +431,26 @@ hooks:
 "#;
         let config = WtConfig::from_str(yaml).unwrap();
 
-        assert_eq!(config.get_hook(HookName::OnCreate), Some(&"new-script".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeReview), Some(&"new-review".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeComplete), Some(&"new-merge".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeDelete), Some(&"new-delete".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeReset), Some(&"new-reset".to_string()));
+        assert_eq!(
+            config.get_hook(HookName::OnCreate),
+            Some(&"new-script".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeReview),
+            Some(&"new-review".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeComplete),
+            Some(&"new-merge".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeDelete),
+            Some(&"new-delete".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeReset),
+            Some(&"new-reset".to_string())
+        );
     }
 
     #[test]
@@ -430,11 +464,26 @@ archive_script: legacy-archive
         let config = WtConfig::from_str(yaml).unwrap();
 
         // Legacy fields should map to hooks
-        assert_eq!(config.get_hook(HookName::OnCreate), Some(&"legacy-init".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeReview), Some(&"legacy-review".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeComplete), Some(&"legacy-merge".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeDelete), Some(&"legacy-archive".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeReset), Some(&"legacy-archive".to_string()));
+        assert_eq!(
+            config.get_hook(HookName::OnCreate),
+            Some(&"legacy-init".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeReview),
+            Some(&"legacy-review".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeComplete),
+            Some(&"legacy-merge".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeDelete),
+            Some(&"legacy-archive".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeReset),
+            Some(&"legacy-archive".to_string())
+        );
     }
 
     #[test]
@@ -449,8 +498,14 @@ hooks:
         let config = WtConfig::from_str(yaml).unwrap();
 
         // New hooks take priority over legacy
-        assert_eq!(config.get_hook(HookName::OnCreate), Some(&"new-init".to_string()));
-        assert_eq!(config.get_hook(HookName::BeforeReview), Some(&"new-review".to_string()));
+        assert_eq!(
+            config.get_hook(HookName::OnCreate),
+            Some(&"new-init".to_string())
+        );
+        assert_eq!(
+            config.get_hook(HookName::BeforeReview),
+            Some(&"new-review".to_string())
+        );
     }
 
     #[test]
