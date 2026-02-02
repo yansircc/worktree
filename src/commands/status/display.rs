@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::SystemTime;
 
 use crate::constants::IDLE_THRESHOLD_SECS;
@@ -7,6 +8,14 @@ use crate::models::{TaskStatus, TaskStore};
 use crate::services::{git, tmux, transcript};
 
 use super::types::{StatusOutput, StatusSummary, TaskMetrics};
+
+// ANSI color codes
+const GRAY: &str = "\x1b[90m";
+const RESET: &str = "\x1b[0m";
+
+fn colored_index(idx: usize) -> String {
+    format!("{}{}{}", GRAY, idx, RESET)
+}
 
 /// Display status in JSON or human-readable format
 pub fn display_status(json: bool) -> Result<()> {
@@ -21,6 +30,13 @@ pub fn display_status(json: bool) -> Result<()> {
 
     // Collect task names first to avoid borrow conflict
     let task_names: Vec<String> = store.list().iter().map(|t| t.name().to_string()).collect();
+
+    // Build name -> index mapping (1-based)
+    let index_map: HashMap<String, usize> = task_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.clone(), i + 1))
+        .collect();
 
     for task_name in &task_names {
         // Auto-mark as Done if Running but tmux window is closed
@@ -108,6 +124,7 @@ pub fn display_status(json: bool) -> Result<()> {
         };
 
         metrics_list.push(TaskMetrics {
+            index: index_map[task_name],
             name: task_name.to_string(),
             status: final_status,
             duration_secs,
@@ -168,8 +185,9 @@ fn print_human_readable(output: &StatusOutput) {
         };
 
         println!(
-            "{} {} ({}){}",
-            task.status.icon(),
+            "{} {} {} ({}){}",
+            colored_index(task.index),
+            task.status.colored_icon(),
             task.name,
             task.status.display_name(),
             status_indicator

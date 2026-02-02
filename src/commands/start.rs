@@ -7,13 +7,19 @@ use crate::error::{Result, WtError};
 use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
 use crate::services::{dependency, git, tmux, workspace::WorkspaceInitializer};
 
-pub fn execute(name: Option<String>, all: bool) -> Result<()> {
+pub fn execute(task_ref: Option<String>, all: bool) -> Result<()> {
     if all {
         execute_all()
     } else {
-        let name = name.ok_or_else(|| {
-            WtError::InvalidInput("Task name required (or use --all to start all ready tasks)".into())
+        let task_ref = task_ref.ok_or_else(|| {
+            WtError::InvalidInput("Task name or index required (or use --all to start all ready tasks)".into())
         })?;
+
+        // Resolve task reference (name or index) to actual name
+        let store = TaskStore::load()?;
+        let name = store.resolve_task_ref(&task_ref)?;
+        drop(store); // Release store before execute_single loads it again
+
         execute_single(name)
     }
 }

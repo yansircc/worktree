@@ -1,16 +1,17 @@
 use crate::constants::TASKS_DIR;
-use crate::error::{Result, WtError};
+use crate::error::Result;
 use crate::models::TaskStore;
 
-pub fn execute(name: Option<String>) -> Result<()> {
+pub fn execute(task_ref: Option<String>) -> Result<()> {
     let store = TaskStore::load()?;
 
-    // If specific task name is given, check it exists
-    if let Some(ref task_name) = name {
-        if !store.tasks.contains_key(task_name) {
-            return Err(WtError::TaskNotFound(task_name.clone()));
-        }
-    }
+    // Resolve task reference to name if provided
+    let name = match task_ref {
+        Some(ref r) => Some(store.resolve_task_ref(r)?),
+        None => None,
+    };
+
+    // Task existence already checked by resolve_task_ref
 
     if store.tasks.is_empty() {
         println!("No tasks found in {}/", TASKS_DIR);

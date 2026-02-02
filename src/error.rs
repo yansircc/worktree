@@ -14,6 +14,9 @@ pub enum WtError {
     #[error("Task '{0}' not found")]
     TaskNotFound(String),
 
+    #[error("Invalid task index {index}: valid range is 1-{total}")]
+    InvalidTaskIndex { index: usize, total: usize },
+
     #[error("Task '{0}' already exists")]
     TaskExists(String),
 

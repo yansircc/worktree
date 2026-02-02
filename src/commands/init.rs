@@ -201,6 +201,19 @@ pub fn execute() -> Result<()> {
         println!(".gitignore already has wt entries");
     }
 
+    // Install shell completions if not already installed
+    if !super::completions::is_installed() {
+        println!();
+        println!("Installing shell completions...");
+        match super::completions::install() {
+            Ok(()) => {}
+            Err(e) => {
+                println!("  Warning: Failed to install completions: {}", e);
+                println!("  You can install manually with: wt completions install");
+            }
+        }
+    }
+
     // Summary
     println!();
     println!("Initialized wt for project '{}'", project_name);

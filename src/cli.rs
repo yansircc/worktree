@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 #[derive(Parser)]
 #[command(name = "wt")]
@@ -112,4 +113,21 @@ pub enum Commands {
         /// Optional name (defaults to new-YYYYMMDD-HHMMSS)
         name: Option<String>,
     },
+
+    /// Generate or install shell completions
+    Completions {
+        #[command(subcommand)]
+        action: CompletionsAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CompletionsAction {
+    /// Generate completions script to stdout
+    Generate {
+        /// Shell to generate completions for
+        shell: Shell,
+    },
+    /// Install completions to shell config (auto-detects shell)
+    Install,
 }

@@ -4,9 +4,12 @@ use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore, WtConfig};
 use crate::services::{git, tmux, workspace::WorkspaceInitializer};
 
-pub fn execute(name: String, silent: bool) -> Result<()> {
+pub fn execute(task_ref: String, silent: bool) -> Result<()> {
     let config = WtConfig::load()?;
     let mut store = TaskStore::load()?;
+
+    // Resolve task reference (name or index) to actual name
+    let name = store.resolve_task_ref(&task_ref)?;
 
     let is_scratch = store.is_scratch(&name);
     let current_status = store.get_status(&name);

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::models::TaskStatus;
+use crate::models::{TaskStatus, TaskStore};
 use crate::tui::{App, TuiAction};
 
 use super::types::{ActionResponse, CommandInfo, TaskInfo};
@@ -96,10 +96,21 @@ fn respond_and_exit(response: ActionResponse) -> ! {
 // ============================================================================
 
 /// Execute an action via the --action API
-pub fn execute_action(action: &str, task_name: Option<String>) {
-    let task_name = match task_name {
-        Some(name) => name,
+pub fn execute_action(action: &str, task_ref: Option<String>) {
+    let task_ref = match task_ref {
+        Some(r) => r,
         None => respond_and_exit(error_response_no_task(action, "--task is required with --action")),
+    };
+
+    // Resolve task reference (name or index) to actual name
+    let store = match TaskStore::load() {
+        Ok(s) => s,
+        Err(e) => respond_and_exit(error_response_no_task(action, &format!("Failed to load tasks: {}", e))),
+    };
+
+    let task_name = match store.resolve_task_ref(&task_ref) {
+        Ok(name) => name,
+        Err(e) => respond_and_exit(error_response_no_task(action, &e.to_string())),
     };
 
     let mut app = match App::new() {

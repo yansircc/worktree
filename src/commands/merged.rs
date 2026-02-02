@@ -2,8 +2,11 @@ use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, TaskStore};
 use crate::services::tmux;
 
-pub fn execute(name: String, silent: bool) -> Result<()> {
+pub fn execute(task_ref: String, silent: bool) -> Result<()> {
     let mut store = TaskStore::load()?;
+
+    // Resolve task reference (name or index) to actual name
+    let name = store.resolve_task_ref(&task_ref)?;
 
     // Check if scratch environment
     if store.is_scratch(&name) {

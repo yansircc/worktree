@@ -101,6 +101,34 @@ impl TaskStore {
             .ok_or_else(|| WtError::TaskNotFound(name.to_string()))
     }
 
+    /// Resolve a task reference (name or 1-based index) to a task name.
+    /// Priority: exact name match (task file or scratch) > numeric index
+    pub fn resolve_task_ref(&self, task_ref: &str) -> Result<String> {
+        // Priority 1: exact name match in task files
+        if self.tasks.contains_key(task_ref) {
+            return Ok(task_ref.to_string());
+        }
+        // Priority 2: exact name match in status.json (scratch environments)
+        if self.status.tasks.contains_key(task_ref) {
+            return Ok(task_ref.to_string());
+        }
+        // Priority 3: try numeric index (1-based)
+        if let Ok(index) = task_ref.parse::<usize>() {
+            return self.get_name_by_index(index);
+        }
+        Err(WtError::TaskNotFound(task_ref.to_string()))
+    }
+
+    /// Get task name by 1-based index (sorted alphabetically)
+    fn get_name_by_index(&self, index: usize) -> Result<String> {
+        let tasks = self.list();
+        let total = tasks.len();
+        if index == 0 || index > total {
+            return Err(WtError::InvalidTaskIndex { index, total });
+        }
+        Ok(tasks[index - 1].name().to_string())
+    }
+
     /// Validate that status transition is allowed
     pub fn validate_transition(&self, name: &str, target: TaskStatus) -> Result<()> {
         let current = self.get_status(name);
@@ -761,5 +789,95 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("pending"));
         assert!(err.contains("done"));
+    }
+
+    // ==================== resolve_task_ref Tests ====================
+
+    #[test]
+    fn test_resolve_task_ref_by_name() {
+        let mut store = TaskStore::default();
+        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store.tasks.insert("beta".to_string(), create_test_task("beta", vec![]));
+
+        let result = store.resolve_task_ref("alpha");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "alpha");
+    }
+
+    #[test]
+    fn test_resolve_task_ref_by_index() {
+        let mut store = TaskStore::default();
+        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store.tasks.insert("beta".to_string(), create_test_task("beta", vec![]));
+        store.tasks.insert("gamma".to_string(), create_test_task("gamma", vec![]));
+
+        // Tasks are sorted alphabetically: alpha=1, beta=2, gamma=3
+        assert_eq!(store.resolve_task_ref("1").unwrap(), "alpha");
+        assert_eq!(store.resolve_task_ref("2").unwrap(), "beta");
+        assert_eq!(store.resolve_task_ref("3").unwrap(), "gamma");
+    }
+
+    #[test]
+    fn test_resolve_task_ref_name_priority_over_index() {
+        let mut store = TaskStore::default();
+        // Create a task named "2" - name should take priority over index
+        store.tasks.insert("1".to_string(), create_test_task("1", vec![]));
+        store.tasks.insert("2".to_string(), create_test_task("2", vec![]));
+        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+
+        // "2" matches task name, not index 2 (which would be "2" anyway in this case)
+        // But let's verify "1" works - sorted: 1, 2, alpha
+        // Index 1 = "1", Index 2 = "2", Index 3 = "alpha"
+        // Name "1" exists, so it should match name first
+        let result = store.resolve_task_ref("1");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "1");
+    }
+
+    #[test]
+    fn test_resolve_task_ref_index_zero_error() {
+        let mut store = TaskStore::default();
+        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+
+        let result = store.resolve_task_ref("0");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid task index 0"));
+        assert!(err.contains("valid range is 1-1"));
+    }
+
+    #[test]
+    fn test_resolve_task_ref_index_out_of_range() {
+        let mut store = TaskStore::default();
+        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+        store.tasks.insert("beta".to_string(), create_test_task("beta", vec![]));
+
+        let result = store.resolve_task_ref("99");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid task index 99"));
+        assert!(err.contains("valid range is 1-2"));
+    }
+
+    #[test]
+    fn test_resolve_task_ref_not_found() {
+        let mut store = TaskStore::default();
+        store.tasks.insert("alpha".to_string(), create_test_task("alpha", vec![]));
+
+        let result = store.resolve_task_ref("nonexistent");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("nonexistent"));
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn test_resolve_task_ref_empty_store() {
+        let store = TaskStore::default();
+
+        let result = store.resolve_task_ref("1");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("valid range is 1-0"));
     }
 }

@@ -23,6 +23,7 @@ mockup-project/
 # FDD (private)
 .claude/hooks/fdd-*
 .claude/skills/fdd/
+.claude/settings.local.json
 .fdd/
 
 # wt - Worktree Task Manager

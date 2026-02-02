@@ -8,7 +8,7 @@ mod services;
 mod tui;
 
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, CompletionsAction};
 
 fn main() {
     let cli = Cli::parse();
@@ -28,6 +28,10 @@ fn main() {
         Commands::Tail { name, count } => commands::tail::execute(name, count),
         Commands::Logs => commands::logs::execute(),
         Commands::New { name } => commands::new::execute(name),
+        Commands::Completions { action } => match action {
+            CompletionsAction::Generate { shell } => commands::completions::generate_completions(shell),
+            CompletionsAction::Install => commands::completions::install(),
+        },
     };
 
     if let Err(e) = result {

@@ -14,8 +14,11 @@ struct Message {
     content: String,
 }
 
-pub fn execute(name: String, count: usize) -> Result<()> {
+pub fn execute(task_ref: String, count: usize) -> Result<()> {
     let store = TaskStore::load()?;
+
+    // Resolve task reference (name or index) to actual name
+    let name = store.resolve_task_ref(&task_ref)?;
 
     // Check task exists
     store.ensure_exists(&name)?;

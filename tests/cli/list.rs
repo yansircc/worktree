@@ -35,8 +35,7 @@ fn test_list_shows_status_symbols() {
     assert!(ok);
     assert!(stdout.contains("○")); // pending
     assert!(stdout.contains("●")); // running
-    assert!(stdout.contains("◉")); // done
-    assert!(stdout.contains("✓")); // merged
+    assert!(stdout.contains("✓")); // done or merged
 }
 
 #[test]
@@ -52,7 +51,7 @@ fn test_list_shows_grouped_view() {
     // Default view is grouped, should show "Ready" and "Blocked" sections
     assert!(stdout.contains("Ready"));
     assert!(stdout.contains("Blocked"));
-    assert!(stdout.contains("← a○")); // b is blocked by a
+    assert!(stdout.contains("← a")); // b is blocked by a (icon has ANSI colors)
 }
 
 #[test]

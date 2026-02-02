@@ -98,6 +98,13 @@ fn format_task_line(task: &TaskDisplay, selected: bool, _width: usize) -> Line<'
         spans.push(Span::raw("   "));
     }
 
+    // Index (gray color - auxiliary info)
+    spans.push(Span::styled(
+        format!("{:>2}", task.index),
+        Style::default().fg(Color::DarkGray),
+    ));
+    spans.push(Span::raw(" "));
+
     // Status icon with color (conflict overrides normal status)
     let (icon, icon_color) = if task.has_conflict {
         ("⚠", Color::Red)
@@ -198,18 +205,19 @@ fn format_tool_name(tool: &str) -> String {
 
 fn get_status_icon(task: &TaskDisplay) -> (&'static str, Color) {
     match task.status {
-        TaskStatus::Done => ("◉", Color::Blue),
-        TaskStatus::Merged => ("✓", Color::Magenta),
+        TaskStatus::Done => ("✓", Color::Green),
+        TaskStatus::Merged => ("✓✓", Color::Magenta),
+        TaskStatus::Archived => ("☑", Color::DarkGray),
         TaskStatus::Running => {
             if !task.tmux_alive {
                 ("⚠", Color::Yellow)
             } else if task.active {
                 ("●", Color::Green)
             } else {
-                ("○", Color::DarkGray)
+                ("●", Color::Yellow)
             }
         }
-        _ => ("○", Color::DarkGray),
+        _ => ("○", Color::White),
     }
 }
 

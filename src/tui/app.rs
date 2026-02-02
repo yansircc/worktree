@@ -30,6 +30,7 @@ pub enum TuiAction {
 /// Task with computed metrics for display
 #[derive(Debug, Clone)]
 pub struct TaskDisplay {
+    pub index: usize,
     pub name: String,
     pub status: TaskStatus,
     pub duration: Option<String>,
@@ -70,12 +71,21 @@ impl App {
 
     /// Refresh task data from disk
     pub fn refresh(&mut self) -> Result<()> {
+        use std::collections::HashMap;
+
         let mut store = TaskStore::load()?;
         let mut tasks = Vec::new();
         let mut status_changed = false;
 
         // Collect task names first to avoid borrow conflict
         let task_names: Vec<String> = store.list().iter().map(|t| t.name().to_string()).collect();
+
+        // Build name -> index mapping (1-based)
+        let index_map: HashMap<&str, usize> = task_names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (name.as_str(), i + 1))
+            .collect();
 
         for task_name in &task_names {
             // Auto-mark as Done if Running but tmux window is closed
@@ -166,6 +176,7 @@ impl App {
                 .unwrap_or((None, None, None));
 
             tasks.push(TaskDisplay {
+                index: index_map[task_name.as_str()],
                 name: task.name().to_string(),
                 status: final_status,
                 duration,

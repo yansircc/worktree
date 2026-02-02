@@ -91,7 +91,12 @@ fn test_next_diamond_dependency() {
     assert!(ok);
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let ready: Vec<&str> = json["ready"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    let ready: Vec<&str> = json["ready"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["name"].as_str().unwrap())
+        .collect();
 
     assert!(ready.contains(&"b"));
     assert!(ready.contains(&"c"));
@@ -121,7 +126,8 @@ fn test_next_json_ready() {
     assert!(ok);
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(json["ready"], serde_json::json!(["auth"]));
+    assert_eq!(json["ready"][0]["name"], "auth");
+    assert_eq!(json["ready"][0]["index"], 1);
 }
 
 #[test]

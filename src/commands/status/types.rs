@@ -8,6 +8,7 @@ use crate::services::git::GitMetrics;
 /// Task metrics for status output
 #[derive(Serialize)]
 pub struct TaskMetrics {
+    pub index: usize,
     pub name: String,
     pub status: TaskStatus,
     #[serde(skip_serializing_if = "Option::is_none")]

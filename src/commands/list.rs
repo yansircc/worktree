@@ -6,8 +6,17 @@ use crate::constants::TASKS_DIR;
 use crate::error::Result;
 use crate::models::{Task, TaskStatus, TaskStore};
 
+// ANSI color codes
+const GRAY: &str = "\x1b[90m";
+const RESET: &str = "\x1b[0m";
+
+fn colored_index(idx: usize) -> String {
+    format!("{}{}{}", GRAY, idx, RESET)
+}
+
 #[derive(Serialize)]
 struct TaskJson {
+    index: usize,
     name: String,
     status: TaskStatus,
     depends: Vec<String>,
@@ -37,7 +46,9 @@ fn print_json(tasks: &[&Task], store: &TaskStore) {
     let output = ListOutput {
         tasks: tasks
             .iter()
-            .map(|t| TaskJson {
+            .enumerate()
+            .map(|(i, t)| TaskJson {
+                index: i + 1,
                 name: t.name().to_string(),
                 status: store.get_status(t.name()),
                 depends: t.depends().to_vec(),
@@ -53,21 +64,29 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
         return;
     }
 
-    // Group tasks by status
-    let mut archived: Vec<&Task> = Vec::new();
-    let mut merged: Vec<&Task> = Vec::new();
-    let mut ready: Vec<&Task> = Vec::new();
-    let mut blocked: Vec<(&Task, Vec<&str>)> = Vec::new();
-    let mut running: Vec<&Task> = Vec::new();
-    let mut done: Vec<&Task> = Vec::new();
+    // Build name -> index mapping (1-based)
+    let index_map: HashMap<&str, usize> = tasks
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.name(), i + 1))
+        .collect();
+
+    // Group tasks by status (with index)
+    let mut archived: Vec<(usize, &Task)> = Vec::new();
+    let mut merged: Vec<(usize, &Task)> = Vec::new();
+    let mut ready: Vec<(usize, &Task)> = Vec::new();
+    let mut blocked: Vec<(usize, &Task, Vec<&str>)> = Vec::new();
+    let mut running: Vec<(usize, &Task)> = Vec::new();
+    let mut done: Vec<(usize, &Task)> = Vec::new();
 
     for task in tasks {
+        let idx = index_map[task.name()];
         let status = store.get_status(task.name());
         match status {
-            TaskStatus::Archived => archived.push(task),
-            TaskStatus::Merged => merged.push(task),
-            TaskStatus::Running => running.push(task),
-            TaskStatus::Done => done.push(task),
+            TaskStatus::Archived => archived.push((idx, task)),
+            TaskStatus::Merged => merged.push((idx, task)),
+            TaskStatus::Running => running.push((idx, task)),
+            TaskStatus::Done => done.push((idx, task)),
             TaskStatus::Pending => {
                 // Check if all dependencies are merged or archived
                 let unmerged_deps: Vec<&str> = task
@@ -81,9 +100,9 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
                     .collect();
 
                 if unmerged_deps.is_empty() {
-                    ready.push(task);
+                    ready.push((idx, task));
                 } else {
-                    blocked.push((task, unmerged_deps));
+                    blocked.push((idx, task, unmerged_deps));
                 }
             }
         }
@@ -92,8 +111,8 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     // Print Archived
     if !archived.is_empty() {
         println!("Archived ({}):", archived.len());
-        for task in &archived {
-            println!("  {} {}", TaskStatus::Archived.icon(), task.name());
+        for (idx, task) in &archived {
+            println!("  {} {} {}", colored_index(*idx), TaskStatus::Archived.colored_icon(), task.name());
         }
         println!();
     }
@@ -101,8 +120,8 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     // Print Merged
     if !merged.is_empty() {
         println!("Merged ({}):", merged.len());
-        for task in &merged {
-            println!("  {} {}", TaskStatus::Merged.icon(), task.name());
+        for (idx, task) in &merged {
+            println!("  {} {} {}", colored_index(*idx), TaskStatus::Merged.colored_icon(), task.name());
         }
         println!();
     }
@@ -110,8 +129,8 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     // Print Running
     if !running.is_empty() {
         println!("Running ({}):", running.len());
-        for task in &running {
-            print_task_with_deps(task, store);
+        for (idx, task) in &running {
+            print_task_with_deps_indexed(*idx, task, store, &index_map);
         }
         println!();
     }
@@ -119,8 +138,8 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     // Print Done
     if !done.is_empty() {
         println!("Done ({}):", done.len());
-        for task in &done {
-            print_task_with_deps(task, store);
+        for (idx, task) in &done {
+            print_task_with_deps_indexed(*idx, task, store, &index_map);
         }
         println!();
     }
@@ -128,8 +147,8 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     // Print Ready
     if !ready.is_empty() {
         println!("Ready ({}):", ready.len());
-        for task in &ready {
-            print_task_with_deps(task, store);
+        for (idx, task) in &ready {
+            print_task_with_deps_indexed(*idx, task, store, &index_map);
         }
         println!();
     }
@@ -137,8 +156,8 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     // Print Blocked
     if !blocked.is_empty() {
         println!("Blocked ({}):", blocked.len());
-        for (task, waiting_for) in &blocked {
-            print!("  {} {}", TaskStatus::Pending.icon(), task.name());
+        for (idx, task, waiting_for) in &blocked {
+            print!("  {} {} {}", colored_index(*idx), TaskStatus::Pending.colored_icon(), task.name());
             if !task.depends().is_empty() {
                 print!(" ←");
                 for (i, dep) in task.depends().iter().enumerate() {
@@ -146,9 +165,9 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
                         print!(",");
                     }
                     let icon = if waiting_for.contains(&dep.as_str()) {
-                        TaskStatus::Pending.icon()
+                        TaskStatus::Pending.colored_icon()
                     } else {
-                        TaskStatus::Merged.icon()
+                        TaskStatus::Merged.colored_icon()
                     };
                     print!(" {}{}", dep, icon);
                 }
@@ -158,16 +177,16 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
     }
 }
 
-fn print_task_with_deps(task: &Task, store: &TaskStore) {
+fn print_task_with_deps_indexed(idx: usize, task: &Task, store: &TaskStore, _index_map: &HashMap<&str, usize>) {
     let status = store.get_status(task.name());
-    print!("  {} {}", status.icon(), task.name());
+    print!("  {} {} {}", colored_index(idx), status.colored_icon(), task.name());
     if !task.depends().is_empty() {
         print!(" ←");
         for (i, dep) in task.depends().iter().enumerate() {
             if i > 0 {
                 print!(",");
             }
-            let dep_icon = store.get_status(dep).icon();
+            let dep_icon = store.get_status(dep).colored_icon();
             print!(" {}{}", dep, dep_icon);
         }
     }
@@ -255,7 +274,7 @@ fn print_tree_node<'a>(
         prefix,
         connector,
         task.name(),
-        status.icon(),
+        status.colored_icon(),
         other_deps_str
     );
 
