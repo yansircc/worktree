@@ -1,24 +1,41 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 13 完成的工作 (2026-02-02)
+## Session 14 完成的工作 (2026-02-02)
 
-### PR Review & Merge
+### Shell Function 修复
 
-评审并合并 PR #1 (by frankie0736)：**task index 支持和 shell completions**
+修复 `wt archive/reset` 后无法自动 cd 回主仓库的问题：
 
-**新功能**：
-- 任务索引：所有命令支持用索引代替任务名（`wt start 1`）
-- Shell 补全：`wt completions generate/install`，支持 zsh/bash/fish
-- 彩色状态图标：Running/Done/Merged 等状态有颜色区分
-- `wt init` 自动安装 shell 补全
+1. **使用 git-common-dir 代替 show-toplevel**
+   - `git rev-parse --show-toplevel` 在 worktree 中返回 worktree 路径
+   - `git rev-parse --path-format=absolute --git-common-dir` 返回主仓库的 `.git` 路径
+   - Shell function 去掉 `/.git` 后缀得到主仓库路径
 
-**代码改进**（review 反馈后修复）：
-- 保留 `icon()` 方法保持向后兼容
-- 颜色常量集中到 `src/display.rs`
-- 添加 `running_icon()` 保持 TUI/CLI 图标一致性
-- 依赖显示索引号：`auth ← database[1]✓✓`
+2. **archive 顺序修复**
+   - 在删除 worktree 前保存 status.json（scratch 环境有 symlink）
+   - 从主仓库目录执行 `git branch -D`（worktree 删除后 cwd 不存在）
 
-**涉及文件**：30 个文件，+609/-96 行
+3. **新增 git 辅助函数**
+   - `git::get_repo_root()` - 获取主仓库路径
+   - `git::delete_branch_in(branch, cwd)` - 在指定目录执行删除
+
+**涉及文件**：
+- `src/commands/completions.rs` - shell function 更新
+- `src/commands/archive.rs` - 保存顺序 + 使用 delete_branch_in
+- `src/commands/reset.rs` - 使用 delete_branch_in
+- `src/services/git.rs` - 新增 get_repo_root, delete_branch_in
+
+### PR #2 Review & 关闭
+
+- Review 发现 PR 的 shell function 会覆盖我们的修复
+- 确认 PR 内容已通过 PR #1 合并
+- 关闭 PR #2 并说明原因
+
+### 清理工作
+
+- 清空 `.wt/status.json`
+- 删除 7 个遗留的 wt/* 分支
+- Squash 4 个修复提交为 1 个
 
 ---
 
@@ -26,6 +43,7 @@
 
 | Session | 主要工作 |
 |---------|----------|
+| 14 | Shell function 修复（cd 回主仓库）、PR #2 关闭 |
 | 13 | PR Review：task index 支持、shell completions |
 | 12 | 测试模块优化：新增 62 个测试 |
 | 11 | 实现 `wt new` 命令（scratch 环境） |
@@ -50,21 +68,19 @@
 
 ## 相关文件
 
+### Shell 集成
+| 文件 | 说明 |
+|------|------|
+| `src/commands/completions.rs` | shell function (wt new/archive/reset 的 cd 行为) |
+
 ### 核心命令
 | 文件 | 说明 |
 |------|------|
-| `src/commands/start.rs` | 启动任务，支持 --all 和索引 |
-| `src/commands/completions.rs` | shell 补全生成/安装 |
-| `src/commands/new.rs` | 创建 scratch 环境 |
+| `src/commands/archive.rs` | 归档，使用 get_repo_root + delete_branch_in |
+| `src/commands/reset.rs` | 重置，使用 get_repo_root + delete_branch_in |
+| `src/commands/new.rs` | 创建 scratch 环境，支持 --print-path |
 
-### 数据模型
+### Git 服务
 | 文件 | 说明 |
 |------|------|
-| `src/models/store.rs` | TaskStore，含 resolve_task_ref() |
-| `src/display.rs` | 颜色常量、colored_index、running_icon |
-
-### 测试
-| 文件 | 说明 |
-|------|------|
-| `tests/cli/completions.rs` | completions 命令测试 |
-| `tests/cli/scratch.rs` | scratch 环境完整测试 |
+| `src/services/git.rs` | get_repo_root(), delete_branch_in() |
