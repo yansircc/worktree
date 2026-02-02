@@ -76,7 +76,7 @@ fn test_logs_processes_done_tasks() {
     set_task_status_with_instance(
         dir.path(),
         "task1",
-        "done",
+        "review",
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
@@ -102,7 +102,7 @@ fn test_logs_processes_done_tasks() {
 fn test_logs_skips_tasks_without_instance() {
     let dir = setup_repo_with_tasks(&[
         ("task1", &[], "running"),  // No instance
-        ("task2", &[], "done"),     // No instance
+        ("task2", &[], "review"),   // No instance
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
@@ -117,24 +117,23 @@ fn test_logs_skips_tasks_without_instance() {
 }
 
 #[test]
-fn test_logs_ignores_archived_tasks() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "archived")]);
+fn test_logs_ignores_completed_tasks() {
+    let dir = setup_repo_with_tasks(&[("task1", &[], "completed")]);
 
-    let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
+    let (ok, _stdout, _) = run_wt(dir.path(), &["logs"]);
 
     assert!(ok);
-    // Archived tasks should not cause errors
-    // They may or may not be processed depending on implementation
+    // Completed tasks should not cause errors
 }
 
 #[test]
-fn test_logs_ignores_merged_tasks_without_instance() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "merged")]);
+fn test_logs_ignores_completed_tasks_without_instance() {
+    let dir = setup_repo_with_tasks(&[("task1", &[], "completed")]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);
 
     assert!(ok);
-    // Merged tasks without instance should be skipped gracefully
+    // Completed tasks without instance should be skipped gracefully
     assert!(
         stdout.contains("Skipped") || stdout.contains("Generated"),
         "Expected summary output, got: {}",
@@ -163,7 +162,7 @@ fn test_logs_multiple_tasks_summary() {
     let dir = setup_repo_with_tasks(&[
         ("task1", &[], "pending"),
         ("task2", &[], "running"),
-        ("task3", &[], "done"),
+        ("task3", &[], "review"),
     ]);
 
     let (ok, stdout, _) = run_wt(dir.path(), &["logs"]);

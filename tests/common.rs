@@ -233,33 +233,3 @@ pub fn get_task_from_status(dir: &Path, name: &str) -> Option<serde_json::Value>
 pub fn task_exists_in_status(dir: &Path, name: &str) -> bool {
     get_task_from_status(dir, name).is_some()
 }
-
-/// Assert wt command succeeds with expected stdout content
-pub fn assert_wt_success(dir: &Path, args: &[&str], expected_stdout: &str) {
-    let (ok, stdout, stderr) = run_wt(dir, args);
-    assert!(
-        ok,
-        "Expected success but got failure.\nstdout: {}\nstderr: {}",
-        stdout, stderr
-    );
-    assert!(
-        stdout.contains(expected_stdout),
-        "Expected stdout to contain '{}' but got:\n{}",
-        expected_stdout, stdout
-    );
-}
-
-/// Assert wt command fails with expected stderr content
-pub fn assert_wt_error(dir: &Path, args: &[&str], expected_stderr: &str) {
-    let (ok, stdout, stderr) = run_wt(dir, args);
-    assert!(
-        !ok,
-        "Expected failure but got success.\nstdout: {}\nstderr: {}",
-        stdout, stderr
-    );
-    assert!(
-        stderr.contains(expected_stderr),
-        "Expected stderr to contain '{}' but got:\n{}",
-        expected_stderr, stderr
-    );
-}

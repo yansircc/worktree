@@ -1,4 +1,8 @@
 //! Zellij backend implementation.
+//!
+//! Note: Due to zellij limitations (blocking commands without tty), this backend
+//! uses a simplified model where each task gets its own session. The `kill_window`
+//! method actually deletes the entire session.
 
 use std::fs;
 use std::process::{Command, Stdio};
@@ -7,9 +11,24 @@ use std::time::Duration;
 use crate::error::{Result, WtError};
 use crate::services::command::CommandRunner;
 
-use super::{Multiplexer, MultiplexerType};
+use super::Multiplexer;
+
+/// Time to wait for session creation with layout
+const SESSION_CREATE_WAIT_MS: u64 = 500;
+/// Time to wait for simple session creation
+const SESSION_ATTACH_WAIT_MS: u64 = 300;
+/// Time to wait for session deletion
+const SESSION_DELETE_WAIT_MS: u64 = 200;
 
 /// Zellij multiplexer backend
+///
+/// Due to zellij's design, some operations that work well with tmux are problematic:
+/// - `go-to-tab-name` and `write-chars` block without a tty
+/// - Cannot easily create a new tab in an existing session from a script
+///
+/// Therefore, this backend uses a "one session per task" model:
+/// - `create_window` creates a new session with the tab and command via layout file
+/// - `kill_window` deletes the entire session (not just a tab)
 pub struct ZellijBackend;
 
 impl ZellijBackend {
@@ -19,6 +38,16 @@ impl ZellijBackend {
 
     fn runner(&self) -> CommandRunner {
         CommandRunner::zellij()
+    }
+
+    /// Generate a unique layout file path
+    fn layout_path() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        format!("/tmp/wt-zellij-{}-{}.kdl", std::process::id(), timestamp)
     }
 
     /// Create a session with a layout file that includes the command
@@ -43,21 +72,26 @@ impl ZellijBackend {
 }}"#
         );
 
-        // Write to temp file
-        let layout_path = format!("/tmp/wt-zellij-{}.kdl", std::process::id());
+        // Write to temp file with unique name
+        let layout_path = Self::layout_path();
         fs::write(&layout_path, &layout).map_err(|e| {
             WtError::Zellij(format!("Failed to write layout file: {}", e))
         })?;
 
         // Create session with layout
-        let _ = Command::new("zellij")
+        let spawn_result = Command::new("zellij")
             .args(["--session", session, "--new-session-with-layout", &layout_path])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn();
 
-        std::thread::sleep(Duration::from_millis(500));
+        if let Err(e) = spawn_result {
+            let _ = fs::remove_file(&layout_path);
+            return Err(WtError::Zellij(format!("Failed to spawn zellij: {}", e)));
+        }
+
+        std::thread::sleep(Duration::from_millis(SESSION_CREATE_WAIT_MS));
 
         // Clean up layout file
         let _ = fs::remove_file(&layout_path);
@@ -80,10 +114,6 @@ impl Default for ZellijBackend {
 }
 
 impl Multiplexer for ZellijBackend {
-    fn multiplexer_type(&self) -> MultiplexerType {
-        MultiplexerType::Zellij
-    }
-
     fn is_available(&self) -> bool {
         Command::new("zellij")
             .arg("--version")
@@ -95,7 +125,6 @@ impl Multiplexer for ZellijBackend {
     }
 
     fn session_exists(&self, session: &str) -> bool {
-        // zellij list-sessions -s | grep -q <session>
         self.runner()
             .output(&["list-sessions", "-s"])
             .map(|out| out.lines().any(|line| line.trim() == session))
@@ -103,15 +132,18 @@ impl Multiplexer for ZellijBackend {
     }
 
     fn create_session(&self, session: &str) -> Result<()> {
-        // Use attach -b -c to create a detached session
-        let _ = Command::new("zellij")
+        let status = Command::new("zellij")
             .args(["attach", session, "-b", "-c"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
 
-        std::thread::sleep(Duration::from_millis(300));
+        if let Err(e) = status {
+            return Err(WtError::Zellij(format!("Failed to run zellij: {}", e)));
+        }
+
+        std::thread::sleep(Duration::from_millis(SESSION_ATTACH_WAIT_MS));
 
         if self.session_exists(session) {
             Ok(())
@@ -127,71 +159,54 @@ impl Multiplexer for ZellijBackend {
         // Strategy: Always use layout file to create session with tab and command.
         // This avoids the blocking issue with go-to-tab-name and write-chars.
         //
-        // If session exists, delete it first (wt typically uses one session per task).
+        // If session exists, delete it first (wt uses one session per task).
 
         if self.session_exists(session) {
-            // Delete existing session to start fresh
             let _ = Command::new("zellij")
                 .args(["delete-session", session, "--force"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
-            std::thread::sleep(Duration::from_millis(200));
+            std::thread::sleep(Duration::from_millis(SESSION_DELETE_WAIT_MS));
         }
 
-        if !command.is_empty() {
-            // Create session with layout that includes the command
-            self.create_session_with_layout(session, window, cwd, command)
+        let cmd = if command.is_empty() {
+            "exec $SHELL"
         } else {
-            // No command - create simple session with tab
-            self.create_session_with_layout(session, window, cwd, "exec $SHELL")
-        }
+            command
+        };
+        self.create_session_with_layout(session, window, cwd, cmd)
     }
 
     fn window_exists(&self, session: &str, window: &str) -> bool {
-        // zellij -s <session> action query-tab-names | grep -q <window>
         self.runner()
             .output(&["-s", session, "action", "query-tab-names"])
             .map(|out| out.lines().any(|line| line.trim() == window))
             .unwrap_or(false)
     }
 
+    /// Kill a window (actually deletes the entire session).
+    ///
+    /// Note: Due to zellij limitations, we cannot close a specific tab without a tty.
+    /// Since wt uses one session per task, deleting the session is the expected behavior.
     fn kill_window(&self, session: &str, _window: &str) -> Result<()> {
-        // Note: zellij's go-to-tab-name blocks without a tty, so we can't switch to
-        // a specific tab to close it. Instead, we delete the entire session.
-        // This works because wt typically uses one session per task.
-        //
-        // zellij delete-session <session> --force
-        Command::new("zellij")
+        let _ = Command::new("zellij")
             .args(["delete-session", session, "--force"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
-            .ok();
+            .status();
 
         Ok(())
     }
 
     fn kill_window_if_exists(&self, session: &str, window: &str) -> Result<bool> {
         if self.window_exists(session, window) {
-            // Silently ignore errors when closing (tab might have closed between check and close)
             let _ = self.kill_window(session, window);
             Ok(true)
         } else {
             Ok(false)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_zellij_backend_type() {
-        let backend = ZellijBackend::new();
-        assert_eq!(backend.multiplexer_type(), MultiplexerType::Zellij);
     }
 }

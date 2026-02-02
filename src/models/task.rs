@@ -6,9 +6,7 @@ pub enum TaskStatus {
     #[default]
     Pending,
     Running,
-    #[serde(alias = "done")]
     Review,
-    #[serde(alias = "merged", alias = "archived")]
     Completed,
 }
 
@@ -213,23 +211,6 @@ mod tests {
         );
         assert_eq!(
             serde_yaml::from_str::<TaskStatus>("completed").unwrap(),
-            TaskStatus::Completed
-        );
-    }
-
-    #[test]
-    fn test_task_status_deserialize_aliases() {
-        // Old status names should map to new statuses
-        assert_eq!(
-            serde_yaml::from_str::<TaskStatus>("done").unwrap(),
-            TaskStatus::Review
-        );
-        assert_eq!(
-            serde_yaml::from_str::<TaskStatus>("merged").unwrap(),
-            TaskStatus::Completed
-        );
-        assert_eq!(
-            serde_yaml::from_str::<TaskStatus>("archived").unwrap(),
             TaskStatus::Completed
         );
     }

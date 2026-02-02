@@ -69,14 +69,14 @@ fn test_tail_running_task_without_transcript() {
 }
 
 #[test]
-fn test_tail_done_task_without_transcript() {
+fn test_tail_review_task_without_transcript() {
     let dir = setup_test_repo();
 
     create_task_file(dir.path(), "task1", &[]);
     set_task_status_with_instance(
         dir.path(),
         "task1",
-        "done",
+        "review",
         Some(json!({
             "branch": "wt/task1",
             "worktree_path": "/tmp/nonexistent-worktree",
@@ -147,9 +147,9 @@ fn test_tail_default_count_is_one() {
 
 #[test]
 fn test_tail_task_without_instance() {
-    let dir = setup_repo_with_tasks(&[("task1", &[], "done")]);
+    let dir = setup_repo_with_tasks(&[("task1", &[], "review")]);
 
-    // Task is done but has no instance info
+    // Task is in review but has no instance info
     let (ok, _, stderr) = run_wt(dir.path(), &["tail", "task1"]);
 
     assert!(!ok);

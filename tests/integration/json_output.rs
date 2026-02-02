@@ -114,7 +114,7 @@ fn test_list_json_schema_with_tasks() {
 
         // Status must be one of the valid values
         let status = task["status"].as_str().unwrap();
-        assert!(["pending", "running", "done", "merged"].contains(&status));
+        assert!(["pending", "running", "review", "completed"].contains(&status));
     }
 }
 

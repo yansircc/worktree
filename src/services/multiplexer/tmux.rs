@@ -3,7 +3,7 @@
 use crate::error::Result;
 use crate::services::command::CommandRunner;
 
-use super::{Multiplexer, MultiplexerType};
+use super::Multiplexer;
 
 /// Tmux multiplexer backend
 pub struct TmuxBackend;
@@ -25,10 +25,6 @@ impl Default for TmuxBackend {
 }
 
 impl Multiplexer for TmuxBackend {
-    fn multiplexer_type(&self) -> MultiplexerType {
-        MultiplexerType::Tmux
-    }
-
     fn is_available(&self) -> bool {
         self.runner().success(&["--version"])
     }
@@ -72,13 +68,3 @@ impl Multiplexer for TmuxBackend {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tmux_backend_type() {
-        let backend = TmuxBackend::new();
-        assert_eq!(backend.multiplexer_type(), MultiplexerType::Tmux);
-    }
-}

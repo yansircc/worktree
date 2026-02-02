@@ -55,9 +55,6 @@ impl std::fmt::Display for MultiplexerType {
 /// This trait abstracts the operations needed by wt to manage parallel
 /// agent processes across different multiplexer implementations.
 pub trait Multiplexer: Send + Sync {
-    /// Get the multiplexer type
-    fn multiplexer_type(&self) -> MultiplexerType;
-
     /// Check if the multiplexer binary is installed and available
     fn is_available(&self) -> bool;
 
@@ -129,14 +126,5 @@ mod tests {
     fn test_multiplexer_type_display() {
         assert_eq!(format!("{}", MultiplexerType::Tmux), "tmux");
         assert_eq!(format!("{}", MultiplexerType::Zellij), "zellij");
-    }
-
-    #[test]
-    fn test_create_multiplexer() {
-        let tmux = create_multiplexer(MultiplexerType::Tmux);
-        assert_eq!(tmux.multiplexer_type(), MultiplexerType::Tmux);
-
-        let zellij = create_multiplexer(MultiplexerType::Zellij);
-        assert_eq!(zellij.multiplexer_type(), MultiplexerType::Zellij);
     }
 }

@@ -264,11 +264,10 @@ fn test_corrupted_config_yaml() {
     )
     .unwrap();
 
-    let (ok, stdout, stderr) = run_wt(dir.path(), &["list"]);
+    let (ok, _stdout, stderr) = run_wt(dir.path(), &["list"]);
 
     // Current behavior: serde_yaml may be lenient or strict
     // Document actual behavior
-    let output = format!("{}{}", stdout, stderr);
     if !ok {
         assert!(
             stderr.contains("config") || stderr.contains("YAML") || stderr.contains("parse") || stderr.contains("Invalid"),

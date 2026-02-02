@@ -56,12 +56,6 @@ impl CommandRunner {
         }
     }
 
-    /// Set a custom error mapper.
-    pub fn with_error_mapper(mut self, mapper: fn(String) -> WtError) -> Self {
-        self.error_mapper = mapper;
-        self
-    }
-
     /// Set the working directory for the command.
     pub fn current_dir(mut self, dir: &str) -> Self {
         self.cwd = Some(dir.to_string());
