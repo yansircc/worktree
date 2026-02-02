@@ -101,13 +101,6 @@ pub enum WtError {
 
     #[error("JSON serialization failed: {0}")]
     JsonSerialize(#[from] serde_json::Error),
-
-    #[error("Hook '{hook}' failed: {message}")]
-    HookFailed {
-        hook: String,
-        message: String,
-        exit_code: Option<i32>,
-    },
 }
 
 pub type Result<T> = std::result::Result<T, WtError>;

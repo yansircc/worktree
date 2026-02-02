@@ -1,8 +1,11 @@
 //! Zellij backend implementation.
 //!
-//! Note: Due to zellij limitations (blocking commands without tty), this backend
-//! uses a simplified model where each task gets its own session. The `kill_window`
-//! method actually deletes the entire session.
+//! Uses a two-step process for creating windows to support parallel task creation:
+//! 1. `zellij attach -b -c` creates a detached session in background
+//! 2. `zellij action new-tab --layout` adds tab without attaching
+//!
+//! This avoids the blocking behavior of `--new-session-with-layout` which attaches
+//! to the session and prevents parallel task startup.
 
 use std::fs;
 use std::process::{Command, Stdio};
@@ -13,22 +16,19 @@ use crate::services::command::CommandRunner;
 
 use super::Multiplexer;
 
-/// Time to wait for session creation with layout
+/// Time to wait for tab creation with layout
 const SESSION_CREATE_WAIT_MS: u64 = 500;
-/// Time to wait for simple session creation
+/// Time to wait for session creation
 const SESSION_ATTACH_WAIT_MS: u64 = 300;
-/// Time to wait for session deletion
-const SESSION_DELETE_WAIT_MS: u64 = 200;
 
 /// Zellij multiplexer backend
 ///
-/// Due to zellij's design, some operations that work well with tmux are problematic:
-/// - `go-to-tab-name` and `write-chars` block without a tty
-/// - Cannot easily create a new tab in an existing session from a script
+/// Supports parallel task creation by using non-blocking operations:
+/// - `create_window` creates session in background, then adds tab via action
+/// - Multiple tasks can be created concurrently without blocking
 ///
-/// Therefore, this backend uses a "one session per task" model:
-/// - `create_window` creates a new session with the tab and command via layout file
-/// - `kill_window` deletes the entire session (not just a tab)
+/// Note: Some zellij operations still require a tty (`go-to-tab-name`, `write-chars`),
+/// so `focus_window` and `send_keys` return errors.
 pub struct ZellijBackend;
 
 impl ZellijBackend {
@@ -50,7 +50,11 @@ impl ZellijBackend {
         format!("/tmp/wt-zellij-{}-{}.kdl", std::process::id(), timestamp)
     }
 
-    /// Create a session with a layout file that includes the command
+    /// Create a session in background and add a tab with command via layout.
+    ///
+    /// Uses two-step process to avoid blocking:
+    /// 1. `zellij attach -b -c` creates detached session in background
+    /// 2. `zellij action new-tab --layout` adds tab without attaching
     fn create_session_with_layout(
         &self,
         session: &str,
@@ -58,10 +62,34 @@ impl ZellijBackend {
         cwd: &str,
         command: &str,
     ) -> Result<()> {
+        // Step 1: Create detached session in background if it doesn't exist
+        if !self.session_exists(session) {
+            let status = Command::new("zellij")
+                .args(["attach", session, "-b", "-c"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            if let Err(e) = status {
+                return Err(WtError::Zellij(format!("Failed to run zellij: {}", e)));
+            }
+
+            std::thread::sleep(Duration::from_millis(SESSION_ATTACH_WAIT_MS));
+
+            if !self.session_exists(session) {
+                return Err(WtError::Zellij(format!(
+                    "Failed to create session '{}'",
+                    session
+                )));
+            }
+        }
+
+        // Step 2: Add tab with command via layout file
         // Escape command for KDL format (escape backslashes and quotes)
         let escaped_cmd = command.replace('\\', "\\\\").replace('"', "\\\"");
 
-        // Create layout content
+        // Create layout content (for action new-tab, we still use full layout format)
         let layout = format!(
             r#"layout {{
     tab name="{window}" cwd="{cwd}" {{
@@ -77,37 +105,27 @@ impl ZellijBackend {
         fs::write(&layout_path, &layout)
             .map_err(|e| WtError::Zellij(format!("Failed to write layout file: {}", e)))?;
 
-        // Create session with layout
-        let spawn_result = Command::new("zellij")
-            .args([
-                "--session",
-                session,
-                "--new-session-with-layout",
-                &layout_path,
-            ])
+        // Add tab to session via action (non-blocking, doesn't attach)
+        let status = Command::new("zellij")
+            .args(["-s", session, "action", "new-tab", "--layout", &layout_path])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn();
-
-        if let Err(e) = spawn_result {
-            let _ = fs::remove_file(&layout_path);
-            return Err(WtError::Zellij(format!("Failed to spawn zellij: {}", e)));
-        }
-
-        std::thread::sleep(Duration::from_millis(SESSION_CREATE_WAIT_MS));
+            .status();
 
         // Clean up layout file
         let _ = fs::remove_file(&layout_path);
 
-        if self.session_exists(session) {
-            Ok(())
-        } else {
-            Err(WtError::Zellij(format!(
-                "Failed to create session '{}' with layout",
-                session
-            )))
+        if let Err(e) = status {
+            return Err(WtError::Zellij(format!(
+                "Failed to create tab '{}': {}",
+                window, e
+            )));
         }
+
+        std::thread::sleep(Duration::from_millis(SESSION_CREATE_WAIT_MS));
+
+        Ok(())
     }
 }
 
@@ -160,20 +178,8 @@ impl Multiplexer for ZellijBackend {
     }
 
     fn create_window(&self, session: &str, window: &str, cwd: &str, command: &str) -> Result<()> {
-        // Strategy: Always use layout file to create session with tab and command.
-        // This avoids the blocking issue with go-to-tab-name and write-chars.
-        //
-        // If session exists, delete it first (wt uses one session per task).
-
-        if self.session_exists(session) {
-            let _ = Command::new("zellij")
-                .args(["delete-session", session, "--force"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            std::thread::sleep(Duration::from_millis(SESSION_DELETE_WAIT_MS));
-        }
+        // Strategy: Create session in background if needed, then add tab via action.
+        // This is fully non-blocking and supports parallel task creation.
 
         let cmd = if command.is_empty() {
             "exec $SHELL"
