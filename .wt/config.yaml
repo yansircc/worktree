@@ -7,7 +7,12 @@
 
 # wt start 执行的参数
 # 支持模板变量: ${task}, ${branch}, ${worktree}
-start_args: --verbose --output-format=stream-json --input-format=stream-json -p "先阅读 @REFACTOR_CONTEXT.md 了解整体背景，然后完成 @.wt/tasks/${task}.md 中的任务。完成后请 commit 你的改动。"
+#
+# 交互模式（默认）- 启动 REPL 带初始 prompt
+start_args: '"先阅读 @.wt/CONTEXT.md 了解整体背景，然后完成 @.wt/tasks/${task}.md 中的任务。完成后请 commit 你的改动。"'
+#
+# 非交互模式 - 执行完自动退出，适合 CI/自动化
+# start_args: --verbose --output-format=stream-json --input-format=stream-json -p "先阅读 @.wt/CONTEXT.md 了解整体背景，然后完成 @.wt/tasks/${task}.md 中的任务。完成后请 commit 你的改动。"
 
 # ============================================
 # 可选配置
@@ -18,6 +23,9 @@ start_args: --verbose --output-format=stream-json --input-format=stream-json -p 
 # 如果你使用别名或想添加全局 flags，在这里配置
 # 示例: ccc, claude --yolo, /path/to/claude
 claude_command: ccc
+
+# Terminal multiplexer: tmux (默认) 或 zellij
+multiplexer: zellij
 
 # Session 名称 (用于 tmux/zellij)
 # 默认: 项目目录名
@@ -41,6 +49,14 @@ init_script: cargo check
 # 归档/重置前的清理脚本
 # Rust 项目：删除 target/ 减少备份体积
 archive_script: rm -rf target/
+
+# 进入 Review 前的检查脚本（可选）
+# 用于确保代码质量，失败则阻止进入 Review
+review_script: cargo fmt --check && cargo clippy -- -D warnings
+
+# Merge 前执行的脚本（可选）
+# 用于最终验证，失败则阻止 merge
+merge_script: cargo test
 
 # ============================================
 # 日志配置 (wt logs)

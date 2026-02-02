@@ -77,6 +77,18 @@ session_name: {}
 #   rm -rf .next/
 #   rm -rf target/
 
+# 进入 Review 前的检查脚本（可选）
+# 用于确保代码质量，失败则阻止进入 Review
+# review_script: |
+#   npm run lint
+#   npm run test
+
+# Merge 前执行的脚本（可选）
+# 用于最终验证，失败则阻止 merge
+# merge_script: |
+#   npm run build
+#   npm run test
+
 # ============================================
 # 日志配置 (wt logs)
 # ============================================
