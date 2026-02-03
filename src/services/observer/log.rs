@@ -12,42 +12,6 @@ use serde::{Deserialize, Serialize};
 use crate::models::step::{StepResult, StepState};
 use crate::models::workflow::WorkflowState;
 
-/// Log entry for a step execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StepLogEntry {
-    /// Step index (0-based)
-    pub step_index: usize,
-    /// Step ID (if named)
-    pub step_id: Option<String>,
-    /// Step name/description
-    pub step_name: String,
-    /// Final state
-    pub state: StepState,
-    /// Exit code (for scripts)
-    pub exit_code: Option<i32>,
-    /// Message (error/blocked reason)
-    pub message: Option<String>,
-    /// Duration in milliseconds
-    pub duration_ms: u64,
-    /// Timestamp
-    pub timestamp: DateTime<Utc>,
-}
-
-impl From<&StepResult> for StepLogEntry {
-    fn from(result: &StepResult) -> Self {
-        Self {
-            step_index: 0, // Set by caller
-            step_id: result.step_id.clone(),
-            step_name: result.step_id.clone().unwrap_or_else(|| "unnamed".to_string()),
-            state: result.state.clone(),
-            exit_code: result.exit_code,
-            message: result.message.clone(),
-            duration_ms: result.duration_ms,
-            timestamp: Utc::now(),
-        }
-    }
-}
-
 /// Log entry for a workflow execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowLogEntry {
@@ -158,28 +122,6 @@ impl LogObserver {
         Ok(())
     }
 
-    /// Write output to current step log.
-    pub fn write(&mut self, data: &[u8]) -> io::Result<()> {
-        if let Some(ref mut writer) = self.writer {
-            writer.write_all(data)?;
-            if self.stream {
-                writer.flush()?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Write a line to current step log.
-    pub fn writeln(&mut self, line: &str) -> io::Result<()> {
-        if let Some(ref mut writer) = self.writer {
-            writeln!(writer, "{}", line)?;
-            if self.stream {
-                writer.flush()?;
-            }
-        }
-        Ok(())
-    }
-
     /// Called when a step completes.
     pub fn on_step_complete(&mut self, result: &StepResult) -> io::Result<()> {
         if let Some(ref mut writer) = self.writer {
@@ -205,41 +147,6 @@ impl LogObserver {
         let json = serde_json::to_string_pretty(entry)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         fs::write(path, json)
-    }
-
-    /// Load workflow context.
-    pub fn load_workflow_context(&self) -> io::Result<Option<WorkflowLogEntry>> {
-        let path = self.context_path();
-        if !path.exists() {
-            return Ok(None);
-        }
-        let json = fs::read_to_string(path)?;
-        let entry: WorkflowLogEntry = serde_json::from_str(&json)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        Ok(Some(entry))
-    }
-
-    /// Read step log content.
-    pub fn read_step_log(&self, step_index: usize, step_id: Option<&str>) -> io::Result<String> {
-        let path = self.step_log_path(step_index, step_id);
-        fs::read_to_string(path)
-    }
-
-    /// List all step logs in current phase.
-    pub fn list_step_logs(&self) -> io::Result<Vec<PathBuf>> {
-        let dir = self.phase_log_dir();
-        if !dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut logs: Vec<PathBuf> = fs::read_dir(dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().map(|e| e == "log").unwrap_or(false))
-            .collect();
-
-        logs.sort();
-        Ok(logs)
     }
 }
 
@@ -273,7 +180,6 @@ pub fn create_workflow_log_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_log_observer_paths() {
@@ -292,49 +198,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_log_observer_write() {
-        let dir = TempDir::new().unwrap();
-        let mut observer = LogObserver::new(dir.path(), "auth", "developing");
-
-        observer.init().unwrap();
-        observer.on_step_start(0, Some("test")).unwrap();
-        observer.writeln("Hello, world!").unwrap();
-        observer.on_step_complete(&StepResult {
-            step_id: Some("test".to_string()),
-            state: StepState::Success,
-            duration_ms: 100,
-            ..Default::default()
-        }).unwrap();
-
-        let content = observer.read_step_log(0, Some("test")).unwrap();
-        assert!(content.contains("Hello, world!"));
-        assert!(content.contains("State: Success"));
-    }
-
-    #[test]
-    fn test_workflow_context() {
-        let dir = TempDir::new().unwrap();
-        let observer = LogObserver::new(dir.path(), "auth", "developing");
-
-        let entry = WorkflowLogEntry {
-            workflow_id: Some("test".to_string()),
-            workflow_name: "test workflow".to_string(),
-            state: WorkflowState::Success,
-            step_count: 3,
-            steps_succeeded: 2,
-            steps_failed: 1,
-            steps_skipped: 0,
-            duration_ms: 1000,
-            started_at: Utc::now(),
-            ended_at: Utc::now(),
-        };
-
-        fs::create_dir_all(observer.phase_log_dir()).unwrap();
-        observer.save_workflow_context(&entry).unwrap();
-
-        let loaded = observer.load_workflow_context().unwrap().unwrap();
-        assert_eq!(loaded.workflow_name, "test workflow");
-        assert_eq!(loaded.step_count, 3);
-    }
 }

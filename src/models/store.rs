@@ -94,18 +94,6 @@ impl TaskStore {
         Ok(tasks[index - 1].name().to_string())
     }
 
-    /// Validate that status transition is allowed
-    pub fn validate_transition(&self, name: &str, target: TaskStatus) -> Result<()> {
-        let current = self.get_status(name);
-        if !current.can_transition_to(&target) {
-            return Err(WtError::InvalidStateTransition {
-                from: current.display_name().to_string(),
-                to: target.display_name().to_string(),
-            });
-        }
-        Ok(())
-    }
-
     /// List all tasks sorted by name
     pub fn list(&self) -> Vec<&Task> {
         let mut tasks: Vec<_> = self.tasks.values().collect();
@@ -609,29 +597,6 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("nonexistent"));
         assert!(err.contains("not found"));
-    }
-
-    // ==================== validate_transition Tests ====================
-
-    #[test]
-    fn test_validate_transition_valid() {
-        let mut store = TaskStore::default();
-        store.set_status("test", TaskStatus::Active);
-
-        let result = store.validate_transition("test", TaskStatus::Idle);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_transition_invalid() {
-        let store = TaskStore::default();
-        // Default is Pending, cannot transition to Idle directly
-
-        let result = store.validate_transition("test", TaskStatus::Idle);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("pending"));
-        assert!(err.contains("idle"));
     }
 
     // ==================== resolve_task_ref Tests ====================

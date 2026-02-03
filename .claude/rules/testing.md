@@ -6,6 +6,7 @@
 cargo test                    # 全部
 cargo test --lib              # 单元测试
 cargo test --test cli         # CLI E2E
+cargo test --test integration # 集成测试
 cargo test --test cli init    # 单个命令
 ```
 
@@ -49,15 +50,37 @@ fn test_command_scenario() {
 cd /Users/yansir/code/nextjs-project/try-wt
 ```
 
+### 阶段推进测试
+
+```bash
+wt create ui                   # 创建任务
+wt next ui                     # pending → developing (创建 worktree + 启动 agent)
+wt status --json               # 预期: status=active, phase=developing
+wt stop ui                     # 停止进程
+wt status --json               # 预期: status=idle, phase=developing
+wt next ui                     # developing → reviewing
+wt prev ui                     # reviewing → developing
+wt reset ui                    # 重置到 pending
+```
+
+### step 命令测试
+
+```bash
+# 在 worktree 中执行 (模拟 agent)
+cd .wt/worktrees/ui
+wt step done                   # 标记成功
+wt step block "需要确认设计"    # 标记阻塞
+wt step fail "无法完成"        # 标记失败
+```
+
 ### --action 操作
 
 ```bash
-wt run ui                              # 启动任务
-wt status --action list --task ui        # 预期: available_actions 含 review
+wt next ui                               # 启动任务
+wt status --action list --task ui        # 预期: available_actions 含 next/prev/stop
 wt status --action enter --task ui       # 预期: command.type = tmux_switch
-wt status --action review --task ui      # 预期: success, tmux 被关闭
-wt status --action resume --task ui      # 预期: success, 回到 running
-wt status --action complete --task ui    # 预期: success
+wt status --action next --task ui        # 预期: success, 推进阶段
+wt status --action stop --task ui        # 预期: success, 停止进程
 wt reset ui                              # 重置
 ```
 
@@ -67,12 +90,14 @@ wt reset ui                              # 重置
 wt status --action list                  # 缺 --task → JSON error
 wt status --action list --task xxx       # 不存在 → JSON error
 wt status --action unknown --task ui     # 未知操作 → JSON error
+wt prev ui                               # pending 状态 → 错误
+wt next ui && wt next ui && wt next ui   # completed 状态再 next → 错误
 ```
 
 ### 冲突检测
 
 ```bash
-wt run ui
+wt next ui
 
 # 主仓库
 echo "main" >> README.md && git add . && git commit -m "main"

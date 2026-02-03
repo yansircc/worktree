@@ -169,18 +169,6 @@ fn test_validate_name_edge_cases() {
     assert!(wt::models::task_parser::validate_name("MyTask").is_ok());
 }
 
-// ==================== Status Transitions ====================
-// Note: Status is now stored separately in status.json, not in task files
-
-#[test]
-fn test_task_status_transitions() {
-    use wt::models::TaskStatus;
-    // Valid transitions
-    assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Active));
-    assert!(TaskStatus::Active.can_transition_to(&TaskStatus::Idle));
-    assert!(TaskStatus::Idle.can_transition_to(&TaskStatus::Completed));
-}
-
 // ==================== Config Edge Cases ====================
 
 #[test]

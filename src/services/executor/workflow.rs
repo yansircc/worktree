@@ -27,6 +27,7 @@ pub struct WorkflowResult {
     /// Results from each step
     pub step_results: Vec<StepResult>,
     /// Total duration in milliseconds
+    #[allow(dead_code)] // Populated but not always read
     pub duration_ms: u64,
 }
 

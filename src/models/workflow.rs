@@ -55,16 +55,6 @@ impl WorkflowState {
         }
     }
 
-    /// Check if this is a terminal state
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, WorkflowState::Success | WorkflowState::Failed | WorkflowState::Blocked)
-    }
-
-    /// Check if workflow completed successfully
-    pub fn is_success(&self) -> bool {
-        matches!(self, WorkflowState::Success)
-    }
-
     /// Get display icon
     pub fn icon(&self) -> &'static str {
         match self {
@@ -261,15 +251,8 @@ impl Default for Workflow {
 }
 
 impl Workflow {
-    /// Create a new workflow with steps
-    pub fn new(steps: Vec<Step>) -> Self {
-        Self {
-            steps,
-            ..Default::default()
-        }
-    }
-
-    /// Create a simple sequential workflow from scripts
+    // Test helper: Create a simple sequential workflow from scripts
+    #[cfg(test)]
     pub fn from_scripts(commands: &[&str]) -> Self {
         Self {
             steps: commands.iter().map(|cmd| Step::script(*cmd)).collect(),
@@ -288,22 +271,6 @@ impl Workflow {
     /// Check if workflow is empty
     pub fn is_empty(&self) -> bool {
         self.steps.is_empty()
-    }
-
-    /// Get number of steps
-    pub fn len(&self) -> usize {
-        self.steps.len()
-    }
-
-    /// Get workflow display name
-    pub fn display_name(&self) -> String {
-        if let Some(name) = &self.name {
-            name.clone()
-        } else if let Some(id) = &self.id {
-            id.clone()
-        } else {
-            format!("{} steps", self.steps.len())
-        }
     }
 
     /// Build execution order based on mode
@@ -452,8 +419,7 @@ mod tests {
     #[test]
     fn test_workflow_from_scripts() {
         let workflow = Workflow::from_scripts(&["npm install", "npm test"]);
-        assert_eq!(workflow.len(), 2);
-        assert!(workflow.steps[0].is_script());
+        assert_eq!(workflow.steps.len(), 2);
     }
 
     #[test]
@@ -480,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_workflow_execution_order_dag() {
-        let mut workflow = Workflow {
+        let workflow = Workflow {
             steps: vec![
                 Step {
                     id: Some("install".to_string()),
@@ -530,6 +496,6 @@ mod tests {
         assert!(json.contains("npm test"));
 
         let parsed: Workflow = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed.steps.len(), 1);
     }
 }

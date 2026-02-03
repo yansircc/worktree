@@ -1,18 +1,13 @@
 //! Terminal observer for Phases v2.
 //!
-//! Handles terminal output and multiplexer window management.
+//! Handles terminal output for workflow progress display.
 
 use crate::models::step::StepState;
 use crate::models::workflow::WorkflowState;
-use crate::services::multiplexer::Multiplexer;
 
 /// Terminal observation settings
 #[derive(Debug, Clone, Default)]
 pub struct TerminalSettings {
-    /// Window name for the task
-    pub window: Option<String>,
-    /// Whether to focus the window
-    pub focus: bool,
     /// Whether to show progress
     pub show_progress: bool,
 }
@@ -20,22 +15,12 @@ pub struct TerminalSettings {
 /// Terminal observer for step/workflow execution
 pub struct TerminalObserver {
     settings: TerminalSettings,
-    multiplexer: Option<Box<dyn Multiplexer>>,
 }
 
 impl TerminalObserver {
     /// Create a new terminal observer.
     pub fn new(settings: TerminalSettings) -> Self {
-        Self {
-            settings,
-            multiplexer: None,
-        }
-    }
-
-    /// Set the multiplexer backend.
-    pub fn with_multiplexer(mut self, mux: Box<dyn Multiplexer>) -> Self {
-        self.multiplexer = Some(mux);
-        self
+        Self { settings }
     }
 
     /// Called when a step starts.
@@ -67,36 +52,6 @@ impl TerminalObserver {
             let duration_str = format_duration(duration_ms);
             eprintln!("{} Workflow {} completed: {:?} ({})", icon, workflow_name, state, duration_str);
         }
-    }
-
-    /// Called when a phase transition occurs.
-    pub fn on_phase_enter(&self, phase_id: &str) {
-        if self.settings.show_progress {
-            eprintln!("→ Entering phase: {}", phase_id);
-        }
-    }
-
-    /// Called when a phase exits.
-    pub fn on_phase_exit(&self, phase_id: &str, reason: &str) {
-        if self.settings.show_progress {
-            eprintln!("← Exiting phase: {} ({})", phase_id, reason);
-        }
-    }
-
-    /// Focus the task window (if multiplexer is available).
-    pub fn focus_window(&self, session: &str, window: &str) -> crate::error::Result<()> {
-        if let Some(ref mux) = self.multiplexer {
-            mux.focus_window(session, window)?;
-        }
-        Ok(())
-    }
-
-    /// Send keys to the task window.
-    pub fn send_keys(&self, session: &str, window: &str, keys: &str) -> crate::error::Result<()> {
-        if let Some(ref mux) = self.multiplexer {
-            mux.send_keys(session, window, keys)?;
-        }
-        Ok(())
     }
 }
 
@@ -132,8 +87,6 @@ mod tests {
     #[test]
     fn test_terminal_observer_creation() {
         let settings = TerminalSettings {
-            window: Some("test".to_string()),
-            focus: true,
             show_progress: true,
         };
         let observer = TerminalObserver::new(settings);

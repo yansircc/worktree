@@ -404,7 +404,8 @@ mod tests {
     #[test]
     fn test_evaluate_condition_equality() {
         let config = test_config();
-        let context = test_context().with_prev_state("success");
+        let mut context = test_context();
+        context.prev_state = Some("success".to_string());
         let executor = StepExecutor::new(&config, context);
 
         assert!(executor.evaluate_condition("'success' == 'success'"));

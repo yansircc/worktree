@@ -18,6 +18,7 @@ use crate::services::executor::workflow::{WorkflowExecutor, WorkflowResult};
 
 /// Result of phase transition
 #[derive(Debug)]
+#[allow(dead_code)] // Fields are populated but callers may not read all of them
 pub struct PhaseTransitionResult {
     /// New phase ID
     pub phase_id: String,
@@ -272,7 +273,6 @@ mod tests {
     use super::*;
     use crate::models::phase::Phase;
     use crate::models::workflow::Workflow;
-    use crate::models::step::Step;
 
     fn test_config() -> WtConfig {
         WtConfig::default()

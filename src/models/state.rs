@@ -31,15 +31,6 @@ impl TaskRuntimeState {
         Self::default()
     }
 
-    /// Create state for a completed task
-    pub fn completed() -> Self {
-        Self {
-            phase_id: Some("completed".to_string()),
-            workflow_state: WorkflowState::Success,
-            ..Default::default()
-        }
-    }
-
     /// Transition to a new phase
     pub fn transition_to(&mut self, phase_id: impl Into<String>) {
         self.phase_id = Some(phase_id.into());
@@ -67,13 +58,6 @@ mod tests {
         let state = TaskRuntimeState::pending();
         assert!(state.phase_id.is_none());
         assert_eq!(state.workflow_state, WorkflowState::Pending);
-    }
-
-    #[test]
-    fn test_task_runtime_state_completed() {
-        let state = TaskRuntimeState::completed();
-        assert_eq!(state.phase_id, Some("completed".to_string()));
-        assert_eq!(state.workflow_state, WorkflowState::Success);
     }
 
     #[test]

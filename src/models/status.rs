@@ -37,25 +37,6 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
-    /// Check if transition to target status is valid
-    pub fn can_transition_to(&self, target: &TaskStatus) -> bool {
-        matches!(
-            (self, target),
-            // Pending → Active (wt next)
-            (TaskStatus::Pending, TaskStatus::Active)
-            // Active → Idle (process ends)
-            | (TaskStatus::Active, TaskStatus::Idle)
-            // Idle → Active (wt resume, wt review, etc.)
-            | (TaskStatus::Idle, TaskStatus::Active)
-            // Active → Completed (wt complete succeeds)
-            | (TaskStatus::Active, TaskStatus::Completed)
-            // Idle → Completed (direct completion without running process)
-            | (TaskStatus::Idle, TaskStatus::Completed)
-            // Any → Pending (wt reset)
-            | (_, TaskStatus::Pending)
-        )
-    }
-
     /// Get display name
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -358,27 +339,6 @@ mod tests {
     fn test_status_default() {
         let status: TaskStatus = Default::default();
         assert_eq!(status, TaskStatus::Pending);
-    }
-
-    #[test]
-    fn test_status_transitions() {
-        // Valid transitions
-        assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Active));
-        assert!(TaskStatus::Active.can_transition_to(&TaskStatus::Idle));
-        assert!(TaskStatus::Idle.can_transition_to(&TaskStatus::Active));
-        assert!(TaskStatus::Active.can_transition_to(&TaskStatus::Completed));
-        assert!(TaskStatus::Idle.can_transition_to(&TaskStatus::Completed));
-
-        // Reset transitions (any → Pending)
-        assert!(TaskStatus::Active.can_transition_to(&TaskStatus::Pending));
-        assert!(TaskStatus::Idle.can_transition_to(&TaskStatus::Pending));
-        assert!(TaskStatus::Completed.can_transition_to(&TaskStatus::Pending));
-
-        // Invalid transitions
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Idle));
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Completed));
-        assert!(!TaskStatus::Completed.can_transition_to(&TaskStatus::Active));
-        assert!(!TaskStatus::Completed.can_transition_to(&TaskStatus::Idle));
     }
 
     #[test]

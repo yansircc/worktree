@@ -40,19 +40,6 @@ pub enum StepState {
 }
 
 impl StepState {
-    /// Check if this is a terminal state
-    pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            StepState::Success | StepState::Failed | StepState::Blocked | StepState::Timeout | StepState::Skipped
-        )
-    }
-
-    /// Check if this represents a successful outcome
-    pub fn is_success(&self) -> bool {
-        matches!(self, StepState::Success | StepState::Skipped)
-    }
-
     /// Get display icon
     pub fn icon(&self) -> &'static str {
         match self {
@@ -214,29 +201,6 @@ pub struct StepObserve {
 // Step Verify
 // ============================================================================
 
-/// Verification type
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum VerifyType {
-    /// Agent self-marks via `wt step done/block/fail`
-    #[serde(rename = "self")]
-    SelfMark,
-    /// Run a script to verify
-    Script,
-    /// Use an agent to verify
-    Agent,
-    /// Require human verification
-    Human,
-    /// Validate output against JSON schema
-    Schema,
-}
-
-impl Default for VerifyType {
-    fn default() -> Self {
-        VerifyType::SelfMark
-    }
-}
-
 /// Action on verification result
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -250,6 +214,12 @@ pub enum VerifyAction {
     Blocked,
     /// Retry the step
     Retry,
+}
+
+impl VerifyAction {
+    fn failed_default() -> Self {
+        VerifyAction::Failed
+    }
 }
 
 /// Verification configuration for a step
@@ -296,12 +266,6 @@ impl Default for StepVerify {
     }
 }
 
-impl VerifyAction {
-    fn failed_default() -> Self {
-        VerifyAction::Failed
-    }
-}
-
 // ============================================================================
 // Step Retry
 // ============================================================================
@@ -328,26 +292,6 @@ impl Default for StepRetry {
             delay: None,
         }
     }
-}
-
-// ============================================================================
-// Step Execute
-// ============================================================================
-
-/// Step executor - either a script or an agent
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum StepExecute {
-    /// Run a shell script
-    Script {
-        /// Shell command to run
-        run: String,
-    },
-    /// Run a Claude agent
-    Agent {
-        /// Agent configuration
-        agent: AgentStep,
-    },
 }
 
 // ============================================================================
@@ -413,7 +357,8 @@ pub struct Step {
 }
 
 impl Step {
-    /// Create a simple script step
+    // Test helper: Create a simple script step
+    #[cfg(test)]
     pub fn script(command: impl Into<String>) -> Self {
         Self {
             id: None,
@@ -430,101 +375,11 @@ impl Step {
             depends: Vec::new(),
         }
     }
-
-    /// Create an agent step
-    pub fn agent(agent_config: AgentStep) -> Self {
-        Self {
-            id: None,
-            name: None,
-            run: None,
-            agent: Some(agent_config),
-            input: None,
-            output: None,
-            observe: None,
-            verify: None,
-            condition: None,
-            timeout: None,
-            retry: None,
-            depends: Vec::new(),
-        }
-    }
-
-    /// Check if this is a script step
-    pub fn is_script(&self) -> bool {
-        self.run.is_some()
-    }
-
-    /// Check if this is an agent step
-    pub fn is_agent(&self) -> bool {
-        self.agent.is_some()
-    }
-
-    /// Get step display name
-    pub fn display_name(&self) -> String {
-        if let Some(name) = &self.name {
-            name.clone()
-        } else if let Some(id) = &self.id {
-            id.clone()
-        } else if let Some(run) = &self.run {
-            // Truncate long commands
-            if run.len() > 30 {
-                format!("{}...", &run[..27])
-            } else {
-                run.clone()
-            }
-        } else if self.agent.is_some() {
-            "agent".to_string()
-        } else {
-            "step".to_string()
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_step_state_is_terminal() {
-        assert!(!StepState::Pending.is_terminal());
-        assert!(!StepState::Running.is_terminal());
-        assert!(StepState::Success.is_terminal());
-        assert!(StepState::Failed.is_terminal());
-        assert!(StepState::Blocked.is_terminal());
-        assert!(StepState::Timeout.is_terminal());
-        assert!(StepState::Skipped.is_terminal());
-    }
-
-    #[test]
-    fn test_step_state_is_success() {
-        assert!(!StepState::Pending.is_success());
-        assert!(!StepState::Running.is_success());
-        assert!(StepState::Success.is_success());
-        assert!(!StepState::Failed.is_success());
-        assert!(!StepState::Blocked.is_success());
-        assert!(StepState::Skipped.is_success());
-    }
-
-    #[test]
-    fn test_step_script_creation() {
-        let step = Step::script("npm test");
-        assert!(step.is_script());
-        assert!(!step.is_agent());
-        assert_eq!(step.run, Some("npm test".to_string()));
-    }
-
-    #[test]
-    fn test_step_display_name() {
-        let mut step = Step::script("npm test");
-        assert_eq!(step.display_name(), "npm test");
-
-        step.name = Some("Run tests".to_string());
-        assert_eq!(step.display_name(), "Run tests");
-
-        step.name = None;
-        step.id = Some("test".to_string());
-        assert_eq!(step.display_name(), "test");
-    }
 
     #[test]
     fn test_step_serialize_deserialize() {
@@ -540,15 +395,4 @@ mod tests {
         assert!(step.condition.is_some());
     }
 
-    #[test]
-    fn test_verify_serialize() {
-        let verify = StepVerify::Script {
-            run: "npm test".to_string(),
-            on_pass: VerifyAction::Success,
-            on_fail: VerifyAction::Failed,
-        };
-        let json = serde_json::to_string(&verify).unwrap();
-        assert!(json.contains("script"));
-        assert!(json.contains("npm test"));
-    }
 }

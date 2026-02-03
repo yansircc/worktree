@@ -42,27 +42,6 @@ impl PhaseState {
             WorkflowState::Blocked => PhaseState::Blocked,
         }
     }
-
-    /// Check if this is a terminal state
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, PhaseState::Success | PhaseState::Failed | PhaseState::Blocked)
-    }
-
-    /// Check if phase completed successfully
-    pub fn is_success(&self) -> bool {
-        matches!(self, PhaseState::Success)
-    }
-
-    /// Get display icon
-    pub fn icon(&self) -> &'static str {
-        match self {
-            PhaseState::Pending => "○",
-            PhaseState::Running => "●",
-            PhaseState::Success => "✓",
-            PhaseState::Failed => "✗",
-            PhaseState::Blocked => "⊘",
-        }
-    }
 }
 
 // ============================================================================
@@ -80,22 +59,6 @@ pub enum PhaseResources {
     Full,
 }
 
-impl PhaseResources {
-    /// Check if worktree is required
-    pub fn needs_worktree(&self) -> bool {
-        matches!(self, PhaseResources::Full)
-    }
-
-    /// Check if branch is required
-    pub fn needs_branch(&self) -> bool {
-        matches!(self, PhaseResources::Full)
-    }
-
-    /// Check if multiplexer window is required
-    pub fn needs_window(&self) -> bool {
-        matches!(self, PhaseResources::Full)
-    }
-}
 
 // ============================================================================
 // Prerequisites
@@ -297,23 +260,14 @@ impl Phase {
         }
     }
 
-    /// Get phase display name
-    pub fn display_name(&self) -> &str {
-        self.name.as_deref().unwrap_or(&self.id)
-    }
-
-    /// Check if resources are required
-    pub fn needs_resources(&self) -> bool {
-        self.resources.needs_worktree()
-    }
-
-    /// Set on_enter workflow
+    // Test helper methods
+    #[cfg(test)]
     pub fn with_on_enter(mut self, workflow: Workflow) -> Self {
         self.on_enter = Some(workflow);
         self
     }
 
-    /// Set on_exit workflow
+    #[cfg(test)]
     pub fn with_on_exit(mut self, workflow: Workflow) -> Self {
         self.on_exit = Some(workflow);
         self
@@ -326,16 +280,6 @@ impl Phase {
 
 /// Standard phase sequence for most projects
 pub const DEFAULT_PHASE_SEQUENCE: &[&str] = &["pending", "developing", "reviewing", "completed"];
-
-/// Create default phase definitions
-pub fn default_phases() -> Vec<Phase> {
-    vec![
-        Phase::new("pending"),
-        Phase::with_resources("developing"),
-        Phase::with_resources("reviewing"),
-        Phase::new("completed"),
-    ]
-}
 
 #[cfg(test)]
 mod tests {
@@ -351,19 +295,6 @@ mod tests {
     }
 
     #[test]
-    fn test_phase_resources() {
-        let none = PhaseResources::None;
-        assert!(!none.needs_worktree());
-        assert!(!none.needs_branch());
-        assert!(!none.needs_window());
-
-        let full = PhaseResources::Full;
-        assert!(full.needs_worktree());
-        assert!(full.needs_branch());
-        assert!(full.needs_window());
-    }
-
-    #[test]
     fn test_phase_creation() {
         let phase = Phase::new("developing");
         assert_eq!(phase.id, "developing");
@@ -372,16 +303,6 @@ mod tests {
         let phase = Phase::with_resources("developing");
         assert_eq!(phase.id, "developing");
         assert_eq!(phase.resources, PhaseResources::Full);
-    }
-
-    #[test]
-    fn test_default_phases() {
-        let phases = default_phases();
-        assert_eq!(phases.len(), 4);
-        assert_eq!(phases[0].id, "pending");
-        assert_eq!(phases[0].resources, PhaseResources::None);
-        assert_eq!(phases[1].id, "developing");
-        assert_eq!(phases[1].resources, PhaseResources::Full);
     }
 
     #[test]

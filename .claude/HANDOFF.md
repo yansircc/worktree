@@ -1,53 +1,49 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 38 完成的工作 (2026-02-03)
+## Session 39 完成的工作 (2026-02-03)
 
-### 1. 清理遗留 Hooks 代码 ✅
+### 1. 更新项目文档 ✅
 
-从 `config.rs` 删除:
-- `Step`, `HookDef`, `HooksConfig`, `PipelinesConfig` 类型
-- `WtConfig.hooks` 和 `WtConfig.pipelines` 字段
-- 相关方法和测试
+**CLAUDE.md 重写**：
+- 添加核心概念层级：Project → Task → Phase → Workflow → Step
+- 添加状态派生链说明
+- 更新命令体系为新的 Agent 标记命令 + Human 强制命令
+- 更新 TUI 快捷键
+- 添加 phases-v2 规格文档引用
 
-更新 `wt init` 生成 phases 配置。
+**testing.md 更新**：
+- 替换旧命令 (run/review/resume/complete) 为新命令 (next/prev/stop/step)
+- 添加阶段推进测试和 step 命令测试
+- 更新错误场景测试
 
-### 2. Dead Code Cleanup (部分完成)
+### 2. Dead Code Cleanup 完成 ✅
 
-**已删除**:
-- `error.rs` - 4 个未使用的错误变体
-- `models/project.rs` - `Project`, `ProjectStatus`, `ResourceConfig` 等 (446 → 114 行)
-- `models/state.rs` - `DerivedTaskStatus` 和派生函数 (330 → 97 行)
-- `models/status.rs`, `store.rs` - v2 桥接方法
-- `services/dependency.rs` - `check_dependencies_completed()` 函数
+**清理范围**：
+- `constants.rs` - 删除 `branch_name()` 函数
+- `models/status.rs` - 删除 `can_transition_to()` 方法
+- `models/store.rs` - 删除 `validate_transition()` 方法
+- `models/phase.rs` - 删除 `is_terminal/is_success/icon`, `needs_worktree/branch/window`, `display_name/needs_resources`, `default_phases()`
+- `models/state.rs` - 删除 `completed()` 方法
+- `models/step.rs` - 删除 `is_terminal/is_success`, `VerifyType`, `StepExecute`, `Step::agent/is_script/is_agent/display_name`
+- `models/workflow.rs` - 删除 `is_terminal/is_success`, `new/len/display_name`
+- `models/agent_step.rs` - 删除 builder 方法（保留测试用）
+- `services/task_context.rs` - 删除 `require_*`, `validate_transition`, `build_hook_context`
+- `services/executor/context.rs` - 删除 builder 方法
+- `services/observer/mod.rs` - 删除未使用的 re-exports
+- `services/observer/log.rs` - 删除 `StepLogEntry`, `write/writeln/load_workflow_context/read_step_log/list_step_logs`
+- `services/observer/terminal.rs` - 删除 `window/focus/multiplexer` 字段和相关方法
 
-**代码精简**: 49716 → 46723 行 (减少约 3000 行)
+**代码精简**: 12,335 行 (不含空行/注释)
 
-**剩余警告**: 27 个 (phase.rs, step.rs, workflow.rs, observer/, task_context.rs)
+**目标达成**: `cargo build` 零 warning ✅
 
 ### 测试结果
 
 ```
 lib: 191 passed ✅
 cli: 106 passed ✅
-integration: 46 passed ✅
+integration: 45 passed ✅
 ```
-
----
-
-## 下一步工作
-
-### 继续 Dead Code Cleanup
-
-**Spec**: `.claude/specs/dead-code-cleanup.md`
-
-剩余清理项:
-- `models/phase.rs` - 未使用的方法 (display_name, needs_resources 等)
-- `models/step.rs` - `VerifyType`, `StepExecute` 枚举
-- `models/workflow.rs` - 未使用的方法
-- `services/task_context.rs` - 未使用的方法
-- `services/observer/` - 未使用的类型和方法
-
-**目标**: `cargo build` 无 warning
 
 ---
 
@@ -92,6 +88,7 @@ wt logs              # 生成日志
 
 | Session | 主要工作 |
 |---------|----------|
+| 39 | 文档更新 + Dead Code Cleanup 完成 |
 | 38 | Hooks 清理 + Dead Code Cleanup (部分) |
 | 37 | TUI v2 增强 - `p` 快捷键, Idle 任务 Enter 行为 |
 | 36 | TUI v2 完成 - 左右分栏布局, 新快捷键 |

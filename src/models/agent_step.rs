@@ -219,54 +219,6 @@ impl AgentStep {
         }
     }
 
-    /// Builder-style setter for model
-    pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model = model.into();
-        self
-    }
-
-    /// Builder-style setter for print mode
-    pub fn with_print(mut self) -> Self {
-        self.print = true;
-        self
-    }
-
-    /// Builder-style setter for max_turns
-    pub fn with_max_turns(mut self, turns: u32) -> Self {
-        self.max_turns = Some(turns);
-        self
-    }
-
-    /// Builder-style setter for tools
-    pub fn with_tools(mut self, tools: Vec<String>) -> Self {
-        self.tools = tools;
-        self
-    }
-
-    /// Builder-style setter for allowed_tools
-    pub fn with_allowed_tools(mut self, tools: Vec<String>) -> Self {
-        self.allowed_tools = tools;
-        self
-    }
-
-    /// Builder-style setter for append_system_prompt
-    pub fn with_append_system_prompt(mut self, prompt: impl Into<String>) -> Self {
-        self.append_system_prompt = Some(prompt.into());
-        self
-    }
-
-    /// Builder-style setter for no_session_persistence
-    pub fn with_no_session_persistence(mut self) -> Self {
-        self.no_session_persistence = true;
-        self
-    }
-
-    /// Builder-style setter for include_partial_messages
-    pub fn with_include_partial_messages(mut self) -> Self {
-        self.include_partial_messages = true;
-        self
-    }
-
     /// Create a default development agent for a task
     pub fn default_develop(task_name: &str) -> Self {
         Self::new(format!(
@@ -275,13 +227,23 @@ impl AgentStep {
         ))
     }
 
-    /// Create a default review agent for a task
-    pub fn default_review(task_name: &str) -> Self {
-        Self::new(format!(
-            "请 review 任务 {} 的代码变更。完成后运行 `wt step done` 标记完成。",
-            task_name
-        ))
-        .with_model("opus")
+    // Test helpers - builder methods for test convenience
+    #[cfg(test)]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_print(mut self) -> Self {
+        self.print = true;
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_max_turns(mut self, turns: u32) -> Self {
+        self.max_turns = Some(turns);
+        self
     }
 }
 
@@ -302,14 +264,12 @@ mod tests {
         let step = AgentStep::new("Review code")
             .with_model("opus")
             .with_print()
-            .with_max_turns(10)
-            .with_tools(vec!["Read".into(), "Edit".into()]);
+            .with_max_turns(10);
 
         assert_eq!(step.prompt, "Review code");
         assert_eq!(step.model, "opus");
         assert!(step.print);
         assert_eq!(step.max_turns, Some(10));
-        assert_eq!(step.tools, vec!["Read", "Edit"]);
     }
 
     #[test]

@@ -111,68 +111,6 @@ impl ExecutionContext {
         self
     }
 
-    /// Set step index.
-    pub fn with_step_index(mut self, index: usize) -> Self {
-        self.step_index = index;
-        self
-    }
-
-    /// Set step ID.
-    pub fn with_step_id(mut self, id: &str) -> Self {
-        self.step_id = Some(id.to_string());
-        self
-    }
-
-    /// Set previous step state.
-    pub fn with_prev_state(mut self, state: &str) -> Self {
-        self.prev_state = Some(state.to_string());
-        self
-    }
-
-    /// Set previous step stdout.
-    pub fn with_prev_stdout(mut self, stdout: &str) -> Self {
-        self.prev_stdout = Some(stdout.to_string());
-        self
-    }
-
-    /// Add step output.
-    pub fn with_step_output(mut self, step_id: &str, output: &str) -> Self {
-        self.step_outputs.insert(step_id.to_string(), output.to_string());
-        self
-    }
-
-    /// Add a custom variable.
-    pub fn with_var(mut self, key: &str, value: &str) -> Self {
-        self.extra.insert(key.to_string(), value.to_string());
-        self
-    }
-
-    // ========== Backward Compatibility ==========
-
-    /// Set status (backward compatibility).
-    pub fn with_status(mut self, status: &str) -> Self {
-        self.extra.insert("status".to_string(), status.to_string());
-        self
-    }
-
-    /// Set previous status (backward compatibility).
-    pub fn with_prev_status(mut self, prev: &str) -> Self {
-        self.extra.insert("prev_status".to_string(), prev.to_string());
-        self
-    }
-
-    /// Set backup directory (backward compatibility).
-    pub fn with_backup_dir(mut self, dir: &str) -> Self {
-        self.extra.insert("backup_dir".to_string(), dir.to_string());
-        self
-    }
-
-    /// Set timestamp (backward compatibility).
-    pub fn with_timestamp(mut self, ts: &str) -> Self {
-        self.extra.insert("timestamp".to_string(), ts.to_string());
-        self
-    }
-
     // ========== Variable Expansion ==========
 
     /// Expand variables in a string.
@@ -326,52 +264,23 @@ mod tests {
     fn test_context_builder() {
         let ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
             .with_session("wt")
-            .with_window("auth")
-            .with_phase("developing")
-            .with_step_index(2)
-            .with_step_id("test")
-            .with_var("custom", "value");
+            .with_phase("developing");
 
         assert_eq!(ctx.session, "wt");
-        assert_eq!(ctx.window, "auth");
         assert_eq!(ctx.phase, "developing");
-        assert_eq!(ctx.step_index, 2);
-        assert_eq!(ctx.step_id, Some("test".to_string()));
-        assert_eq!(ctx.extra.get("custom"), Some(&"value".to_string()));
     }
 
     #[test]
     fn test_expand_basic_variables() {
-        let ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
+        let mut ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
             .with_session("wt")
-            .with_phase("developing")
-            .with_step_index(1);
+            .with_phase("developing");
+        ctx.step_index = 1;
 
         assert_eq!(ctx.expand("task: ${task}"), "task: auth");
         assert_eq!(ctx.expand("@.wt/tasks/${task}.md"), "@.wt/tasks/auth.md");
         assert_eq!(ctx.expand("step ${step_index}"), "step 1");
         assert_eq!(ctx.expand("phase: ${phase}"), "phase: developing");
-    }
-
-    #[test]
-    fn test_expand_prev_variables() {
-        let ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
-            .with_prev_state("success")
-            .with_prev_stdout("output data");
-
-        assert_eq!(ctx.expand("${prev.state}"), "success");
-        assert_eq!(ctx.expand("data: ${prev.stdout}"), "data: output data");
-    }
-
-    #[test]
-    fn test_expand_step_outputs() {
-        let ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
-            .with_step_output("analyze", "analysis result");
-
-        assert_eq!(
-            ctx.expand("${steps.analyze.output}"),
-            "analysis result"
-        );
     }
 
     #[test]
@@ -391,12 +300,11 @@ mod tests {
 
     #[test]
     fn test_to_env_vars() {
-        let ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
+        let mut ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
             .with_session("wt")
-            .with_step_index(3)
-            .with_step_id("build")
-            .with_exit_reason(ExitReason::Success)
-            .with_var("custom", "val");
+            .with_exit_reason(ExitReason::Success);
+        ctx.step_index = 3;
+        ctx.step_id = Some("build".to_string());
 
         let vars = ctx.to_env_vars();
         assert_eq!(vars.get("WT_TASK"), Some(&"auth".to_string()));
@@ -405,7 +313,6 @@ mod tests {
         assert_eq!(vars.get("WT_STEP_INDEX"), Some(&"3".to_string()));
         assert_eq!(vars.get("WT_STEP_ID"), Some(&"build".to_string()));
         assert_eq!(vars.get("WT_EXIT_REASON"), Some(&"success".to_string()));
-        assert_eq!(vars.get("WT_CUSTOM"), Some(&"val".to_string()));
     }
 
     #[test]
@@ -420,8 +327,7 @@ mod tests {
     #[test]
     fn test_next_step() {
         let ctx = ExecutionContext::new("auth", "wt/auth", "/work/auth", "/repo")
-            .with_phase("developing")
-            .with_step_output("step1", "output1");
+            .with_phase("developing");
 
         let next = ctx.next_step(1, Some("step2"));
         assert_eq!(next.task, "auth");
@@ -429,6 +335,5 @@ mod tests {
         assert_eq!(next.step_index, 1);
         assert_eq!(next.step_id, Some("step2".to_string()));
         assert!(next.prev_state.is_none());
-        assert_eq!(next.step_outputs.get("step1"), Some(&"output1".to_string()));
     }
 }

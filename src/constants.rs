@@ -18,13 +18,6 @@ pub const BACKUPS_DIR: &str = ".wt/backups";
 /// Idle threshold in seconds (for status command)
 pub const IDLE_THRESHOLD_SECS: u64 = 120;
 
-/// Generate branch name from task name and session_id
-/// Format: wt/{task_name}-{session_id_prefix}
-pub fn branch_name(task_name: &str, session_id: &str) -> String {
-    let prefix = &session_id[..4.min(session_id.len())];
-    format!("{}{}-{}", BRANCH_PREFIX, task_name, prefix)
-}
-
 /// Generate glob pattern for finding task-related branches
 /// Example: task_name = "auth" → "wt/auth-*"
 pub fn branch_pattern(task_name: &str) -> String {
@@ -34,18 +27,6 @@ pub fn branch_pattern(task_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_branch_name() {
-        assert_eq!(branch_name("auth", "3e20cef2"), "wt/auth-3e20");
-        assert_eq!(branch_name("feature-x", "a1b2c3d4"), "wt/feature-x-a1b2");
-    }
-
-    #[test]
-    fn test_branch_name_short_session_id() {
-        assert_eq!(branch_name("auth", "ab"), "wt/auth-ab");
-        assert_eq!(branch_name("auth", ""), "wt/auth-");
-    }
 
     #[test]
     fn test_branch_pattern() {
