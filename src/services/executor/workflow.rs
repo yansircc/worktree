@@ -189,8 +189,10 @@ impl<'a> WorkflowExecutor<'a> {
             }
 
             // Execute step
-            let executor = StepExecutor::new(self.config, context.clone())
-                .with_log_dir(self.log_dir.clone().unwrap_or_default());
+            let mut executor = StepExecutor::new(self.config, context.clone());
+            if let Some(ref dir) = self.log_dir {
+                executor = executor.with_log_dir(dir.clone());
+            }
             let result = executor.execute(step);
 
             // Notify step complete
@@ -255,8 +257,10 @@ impl<'a> WorkflowExecutor<'a> {
             }
 
             let context = self.context.clone().next_step(index, step.id.as_deref());
-            let executor = StepExecutor::new(self.config, context)
-                .with_log_dir(self.log_dir.clone().unwrap_or_default());
+            let mut executor = StepExecutor::new(self.config, context);
+            if let Some(ref dir) = self.log_dir {
+                executor = executor.with_log_dir(dir.clone());
+            }
             let result = executor.execute(step);
 
             // Notify step complete
@@ -335,8 +339,10 @@ impl<'a> WorkflowExecutor<'a> {
                 }
 
                 let context = self.context.clone().next_step(idx, step.id.as_deref());
-                let executor = StepExecutor::new(self.config, context)
-                    .with_log_dir(self.log_dir.clone().unwrap_or_default());
+                let mut executor = StepExecutor::new(self.config, context);
+                if let Some(ref dir) = self.log_dir {
+                    executor = executor.with_log_dir(dir.clone());
+                }
                 let result = executor.execute(step);
 
                 // Notify step complete
