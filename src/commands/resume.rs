@@ -1,95 +1,62 @@
-use std::path::Path;
-
-use crate::constants::BACKUPS_DIR;
-use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
+use crate::error::Result;
+use crate::models::TaskStatus;
+use crate::services::{hooks::HooksEngine, multiplexer::create_multiplexer, TaskContext};
 
 pub fn execute(task_ref: String) -> Result<()> {
-    let config = WtConfig::load()?;
-    let mut store = TaskStore::load()?;
+    let mut ctx = TaskContext::load(&task_ref)?;
 
-    // Resolve task reference
-    let name = store.resolve_task_ref(&task_ref)?;
+    // Validate (check scratch first to give better error message)
+    ctx.require_not_scratch("resumed")?;
+    ctx.store.ensure_exists(ctx.name())?;
+    ctx.require_status(&[TaskStatus::Idle], "resume")?;
+    ctx.require_worktree()?;
 
-    // Check if scratch environment
-    if store.is_scratch(&name) {
-        return Err(WtError::InvalidInput(format!(
-            "Scratch environment '{}' cannot be resumed. Use 'wt run {}' instead.",
-            name, name
-        )));
-    }
+    let instance = ctx.require_instance()?.clone();
 
-    // Check task exists
-    store.ensure_exists(&name)?;
-
-    // Verify status is Idle
-    let current_status = store.get_status(&name);
-    if current_status != TaskStatus::Idle {
-        return Err(WtError::InvalidInput(format!(
-            "Task '{}' is {} (expected idle). Only idle tasks can be resumed.",
-            name,
-            current_status.display_name()
-        )));
-    }
-
-    // Check instance exists
-    let instance = store
-        .get_instance(&name)
-        .ok_or_else(|| WtError::TaskNotStarted(name.clone()))?;
-
-    // Check worktree exists
-    let worktree_path = &instance.worktree_path;
-    if !Path::new(worktree_path).exists() {
-        return Err(WtError::WorktreeNotFound(name.clone()));
-    }
-
-    // Get repo root and build hook context
-    let repo_root = git::get_repo_root()?;
-    let hooks = HooksEngine::new(&config);
-
-    let context = crate::services::hooks::ExecutionContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
-        .with_session(&instance.session_name)
-        .with_window(&instance.window_name)
+    // Build hook context and execute
+    let hook_ctx = ctx
+        .build_hook_context()?
         .with_status("active")
-        .with_prev_status("idle")
-        .with_backup_dir(BACKUPS_DIR);
+        .with_prev_status("idle");
 
-    // Execute "resume" hook
-    hooks.execute("resume", &context)?;
+    let hooks = HooksEngine::new(&ctx.config);
+    hooks.execute("resume", &hook_ctx)?;
 
     // Restart multiplexer window if closed
-    let session_name = &instance.session_name;
-    let window_name = &instance.window_name;
     let mux = create_multiplexer(instance.multiplexer_type());
 
-    if !mux.window_exists(session_name, window_name) {
+    if !mux.window_exists(&instance.session_name, &instance.window_name) {
         // Ensure session exists
-        if !mux.session_exists(session_name) {
-            mux.create_session(session_name)?;
+        if !mux.session_exists(&instance.session_name) {
+            mux.create_session(&instance.session_name)?;
         }
 
         // Get start_args from config and build command
-        let start_args = config.start_args.replace("${task}", &name);
-        let claude_cmd = format!("{} {}", config.claude_command, start_args);
+        let start_args = ctx.config.start_args.replace("${task}", ctx.name());
+        let claude_cmd = format!("{} {}", ctx.config.claude_command, start_args);
 
         // Create new window
-        mux.create_window(session_name, window_name, worktree_path, &claude_cmd)?;
+        mux.create_window(
+            &instance.session_name,
+            &instance.window_name,
+            &instance.worktree_path,
+            &claude_cmd,
+        )?;
         println!(
             "Restarted {} window {}:{}",
-            config.multiplexer, session_name, window_name
+            ctx.config.multiplexer, instance.session_name, instance.window_name
         );
     } else {
         println!(
             "{} window {}:{} is still alive",
-            config.multiplexer, session_name, window_name
+            ctx.config.multiplexer, instance.session_name, instance.window_name
         );
     }
 
     // Update status to Active
-    store.set_status(&name, TaskStatus::Active);
-    store.save_status()?;
+    ctx.set_status(TaskStatus::Active);
+    ctx.save_status()?;
 
-    println!("Task '{}' resumed.", name);
+    println!("Task '{}' resumed.", ctx.name());
     Ok(())
 }

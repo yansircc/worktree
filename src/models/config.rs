@@ -7,6 +7,7 @@ use std::path::Path;
 
 use crate::constants::DEFAULT_SESSION_NAME;
 use crate::error::{Result, WtError};
+use crate::models::builtin_pipelines;
 use crate::models::AgentStep;
 use crate::services::multiplexer::{create_multiplexer, Multiplexer, MultiplexerType};
 
@@ -277,7 +278,7 @@ impl WtConfig {
         }
 
         // Then check built-in pipelines
-        builtin_pipeline(name)
+        builtin_pipelines::get(name)
     }
 
     /// Resolve a HookDef, expanding pipeline references
@@ -294,74 +295,6 @@ impl WtConfig {
     /// Check if user has defined a custom complete hook (v1 compat)
     pub fn has_custom_complete_hook(&self) -> bool {
         self.hooks.complete.is_some()
-    }
-}
-
-/// Built-in predefined pipelines
-fn builtin_pipeline(name: &str) -> Option<Vec<Step>> {
-    match name {
-        "code-review" => Some(vec![
-            Step::Agent {
-                agent: AgentStep::new("Quick lint check for task ${task}. Report any obvious issues.")
-                    .with_model("haiku")
-                    .with_print()
-                    .with_max_turns(5)
-                    .with_tools(vec!["Read".into(), "Grep".into(), "Glob".into()])
-                    .with_no_session_persistence()
-                    .with_include_partial_messages(),
-            },
-            Step::Agent {
-                agent: AgentStep::new(
-                    "Deep code review for task ${task}. Check for bugs, security issues, and suggest improvements.",
-                )
-                .with_model("sonnet")
-                .with_print()
-                .with_max_turns(10)
-                .with_tools(vec!["Read".into(), "Grep".into(), "Glob".into()])
-                .with_no_session_persistence()
-                .with_include_partial_messages(),
-            },
-        ]),
-        "merge" => Some(vec![Step::Agent {
-            agent: AgentStep::new(
-                "Merge task ${task}. Rebase ${branch} onto main, resolve conflicts if any, then squash merge.",
-            )
-            .with_model("sonnet")
-            .with_print()
-            .with_max_turns(20)
-            .with_tools(vec!["Bash".into(), "Read".into(), "Edit".into()])
-            .with_allowed_tools(vec!["Bash(git *)".into()])
-            .with_append_system_prompt(
-                "You are a git expert. Steps: 1) git fetch origin, 2) git rebase origin/main, 3) resolve conflicts if any, 4) git checkout main, 5) git merge --squash ${branch}, 6) git commit. Report any issues.",
-            )
-            .with_no_session_persistence()
-            .with_include_partial_messages(),
-        }]),
-        "refactor" => Some(vec![
-            Step::Agent {
-                agent: AgentStep::new(
-                    "Analyze code structure for refactoring task ${task}. Identify patterns and issues.",
-                )
-                .with_model("haiku")
-                .with_print()
-                .with_max_turns(5)
-                .with_tools(vec!["Read".into(), "Grep".into(), "Glob".into()])
-                .with_no_session_persistence()
-                .with_include_partial_messages(),
-            },
-            Step::Agent {
-                agent: AgentStep::new(
-                    "Apply refactoring based on the analysis. Make changes incrementally and verify each step.",
-                )
-                .with_model("sonnet")
-                .with_print()
-                .with_max_turns(20)
-                .with_tools(vec!["Read".into(), "Edit".into(), "Bash".into()])
-                .with_no_session_persistence()
-                .with_include_partial_messages(),
-            },
-        ]),
-        _ => None,
     }
 }
 

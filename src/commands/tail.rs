@@ -1,12 +1,10 @@
 //! Tail command - view last assistant messages from task transcript.
 
-use std::path::Path;
-
 use serde::Serialize;
 
 use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, TaskStore};
-use crate::services::transcript;
+use crate::models::TaskStatus;
+use crate::services::{transcript, TaskContext};
 
 #[derive(Serialize)]
 struct Message {
@@ -15,41 +13,33 @@ struct Message {
 }
 
 pub fn execute(task_ref: String, count: usize) -> Result<()> {
-    let store = TaskStore::load()?;
-
-    // Resolve task reference (name or index) to actual name
-    let name = store.resolve_task_ref(&task_ref)?;
-
-    // Check task exists
-    store.ensure_exists(&name)?;
+    let ctx = TaskContext::load_with_task_file(&task_ref)?;
 
     // Check status - only Pending is not allowed
-    let status = store.get_status(&name);
-    if status == TaskStatus::Pending {
-        return Err(WtError::TaskNotStarted(name));
+    if ctx.status() == TaskStatus::Pending {
+        return Err(WtError::TaskNotStarted(ctx.name().to_string()));
     }
 
-    // Get instance info
-    let instance = store
-        .get_instance(&name)
-        .ok_or_else(|| WtError::TaskNotFound(name.clone()))?;
+    // Get instance info (use TaskNotFound for backward compat)
+    let instance = ctx
+        .instance()
+        .ok_or_else(|| WtError::TaskNotFound(ctx.name().to_string()))?;
 
     // Check worktree exists
-    let worktree_path = &instance.worktree_path;
-    if !Path::new(worktree_path).exists() {
-        return Err(WtError::WorktreeNotFound(name));
+    if !std::path::Path::new(&instance.worktree_path).exists() {
+        return Err(WtError::WorktreeNotFound(ctx.name().to_string()));
     }
 
     // Find transcript file
     let transcript_path = transcript::find_transcript_for_instance(instance)
-        .ok_or_else(|| WtError::TranscriptNotFound(name.clone()))?;
+        .ok_or_else(|| WtError::TranscriptNotFound(ctx.name().to_string()))?;
 
     // Get last N messages
     let messages = transcript::get_last_messages(&transcript_path, count)
-        .ok_or_else(|| WtError::TranscriptParseFailed(name.clone()))?;
+        .ok_or_else(|| WtError::TranscriptParseFailed(ctx.name().to_string()))?;
 
     if messages.is_empty() {
-        return Err(WtError::NoAssistantMessages(name));
+        return Err(WtError::NoAssistantMessages(ctx.name().to_string()));
     }
 
     // Always output JSON

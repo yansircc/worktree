@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
+use crate::models::TaskStatus;
+use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer, TaskContext};
 
 /// Execute the delete command.
 ///
@@ -15,14 +15,11 @@ use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer};
 /// - Scratch (Active/Idle): directly delete, remove all records
 /// - Scratch (Pending/Completed): error (invalid state)
 pub fn execute(task_ref: String, force: bool) -> Result<()> {
-    let config = WtConfig::load()?;
-    let mut store = TaskStore::load()?;
+    let mut ctx = TaskContext::load(&task_ref)?;
 
-    // Resolve task reference (name or index) to actual name
-    let name = store.resolve_task_ref(&task_ref)?;
-
-    let is_scratch = store.is_scratch(&name);
-    let current_status = store.get_status(&name);
+    let is_scratch = ctx.is_scratch();
+    let current_status = ctx.status();
+    let name = ctx.name().to_string();
 
     // Check if we can delete based on status
     if is_scratch {
@@ -66,16 +63,18 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
         }
     }
 
-    // Get instance info and repo root before modifying anything
-    let instance = store.get_instance(&name).cloned();
-    let repo_root = git::get_repo_root()?;
+    // Get instance info before modifying anything
+    let instance = ctx.instance().cloned();
+    let repo_root = ctx.repo_root()?.to_string();
 
     // Build hook context
-    let context = build_hook_context(&config, &store, &name, &repo_root)?;
+    let hook_ctx = ctx
+        .build_hook_context()?
+        .with_status(current_status.display_name());
 
     // Execute "delete" hook
-    let hooks = HooksEngine::new(&config);
-    hooks.execute("delete", &context)?;
+    let hooks = HooksEngine::new(&ctx.config);
+    hooks.execute("delete", &hook_ctx)?;
 
     // Close multiplexer window if exists
     if let Some(ref inst) = instance {
@@ -109,69 +108,22 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
     // Update status based on task type
     if is_scratch {
         // Scratch: remove all records
-        store.status.tasks.remove(&name);
-        store.save_status()?;
+        ctx.store.status.tasks.remove(&name);
+        ctx.save_status()?;
         println!("Scratch environment '{}' deleted.", name);
     } else {
         // Clear instance data
-        store.set_instance(&name, None);
+        ctx.store.set_instance(&name, None);
 
         // For non-completed tasks that were force-deleted, reset to Pending
         if current_status != TaskStatus::Completed {
-            store.set_status(&name, TaskStatus::Pending);
+            ctx.set_status(TaskStatus::Pending);
         }
         // For completed tasks, keep the Completed status
 
-        store.save_status()?;
+        ctx.save_status()?;
         println!("Deleted resources for '{}'.", name);
     }
 
     Ok(())
-}
-
-/// Build a HookContext for the delete operation.
-fn build_hook_context(
-    config: &WtConfig,
-    store: &TaskStore,
-    name: &str,
-    repo_root: &str,
-) -> Result<crate::services::hooks::ExecutionContext> {
-    let instance = store.get_instance(name);
-    let status = store.get_status(name);
-
-    let (branch, worktree) = if let Some(inst) = instance {
-        (inst.branch.clone(), inst.worktree_path.clone())
-    } else {
-        (format!("wt/{}", name), String::new())
-    };
-
-    let (session, window) = if let Some(inst) = instance {
-        (inst.session_name.clone(), inst.window_name.clone())
-    } else {
-        (config.session_name.clone(), name.to_string())
-    };
-
-    Ok(crate::services::hooks::ExecutionContext::new(name, &branch, &worktree, repo_root)
-        .with_session(&session)
-        .with_window(&window)
-        .with_status(status.display_name()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_build_hook_context_minimal() {
-        let config = WtConfig::default();
-        let store = TaskStore::default();
-
-        let ctx = build_hook_context(&config, &store, "task1", "/repo").unwrap();
-
-        assert_eq!(ctx.task, "task1");
-        assert_eq!(ctx.branch, "wt/task1");
-        assert_eq!(ctx.repo_root, "/repo");
-        // session uses config default, window is task name
-        assert_eq!(ctx.window, "task1");
-    }
 }

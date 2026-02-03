@@ -6,29 +6,26 @@ use chrono::Utc;
 
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{dependency, git, hooks::HooksEngine, multiplexer::create_multiplexer};
+use crate::models::{TaskStatus, WtConfig};
+use crate::services::{dependency, git, hooks::HooksEngine, multiplexer::create_multiplexer, TaskContext};
 
 pub fn execute(task_ref: String) -> Result<()> {
-    let config = WtConfig::load()?;
-    let mut store = TaskStore::load()?;
+    let mut ctx = TaskContext::load(&task_ref)?;
 
-    // Resolve task reference (name or index) to actual name
-    let name = store.resolve_task_ref(&task_ref)?;
-
-    let is_scratch = store.is_scratch(&name);
+    let is_scratch = ctx.is_scratch();
+    let name = ctx.name().to_string();
 
     // For normal tasks, check task file exists
     if !is_scratch {
-        store.ensure_exists(&name)?;
+        ctx.store.ensure_exists(&name)?;
     }
 
-    let current_status = store.get_status(&name);
+    let current_status = ctx.status();
 
     // For scratch, skip dependent check (no other tasks depend on scratch)
     // For normal tasks, check for non-pending dependents
     if !is_scratch && current_status != TaskStatus::Pending {
-        let dependents: Vec<_> = dependency::find_non_pending_dependents(&store, &name)
+        let dependents: Vec<_> = dependency::find_non_pending_dependents(&ctx.store, &name)
             .into_iter()
             .filter(|(_, status)| *status != TaskStatus::Completed)
             .collect();
@@ -42,25 +39,22 @@ pub fn execute(task_ref: String) -> Result<()> {
     }
 
     // Get repo root before cleanup (needed for git commands after worktree removal)
-    let repo_root = git::get_repo_root()?;
+    let repo_root = ctx.repo_root()?.to_string();
 
     // Backup and cleanup resources if instance exists
-    if let Some(instance) = store.get_instance(&name).cloned() {
+    if let Some(instance) = ctx.instance().cloned() {
         let worktree_path = Path::new(&instance.worktree_path);
 
         // Build hook context and run before_reset hook
-        let hooks = HooksEngine::new(&config);
-        let context =
-            crate::services::hooks::ExecutionContext::new(&name, &instance.branch, &instance.worktree_path, &repo_root)
-                .with_session(&instance.session_name)
-                .with_window(&instance.window_name)
-                .with_status("pending")
-                .with_prev_status(current_status.display_name())
-                .with_backup_dir(BACKUPS_DIR);
+        let hook_ctx = ctx
+            .build_hook_context()?
+            .with_status("pending")
+            .with_prev_status(current_status.display_name());
+        let hooks = HooksEngine::new(&ctx.config);
 
         // Execute "reset" hook (cleanup scripts, slim down before backup)
         if worktree_path.exists() {
-            hooks.execute("reset", &context)?;
+            hooks.execute("reset", &hook_ctx)?;
 
             // Skip backup for scratch environments
             if !is_scratch {
@@ -100,7 +94,7 @@ pub fn execute(task_ref: String) -> Result<()> {
     } else {
         // No instance saved, but there might be orphaned resources from a failed start
         // Try to clean up based on expected paths
-        let cleaned = cleanup_orphaned_resources(&name, &config, &repo_root)?;
+        let cleaned = cleanup_orphaned_resources(&name, &ctx.config, &repo_root)?;
 
         // If already pending and nothing to clean, just report
         if current_status == TaskStatus::Pending && !cleaned {
@@ -112,14 +106,14 @@ pub fn execute(task_ref: String) -> Result<()> {
     // Update status
     if is_scratch {
         // Scratch: remove entry from status.json entirely
-        store.status.tasks.remove(&name);
-        store.save_status()?;
+        ctx.store.status.tasks.remove(&name);
+        ctx.save_status()?;
         println!("Scratch environment '{}' cleaned up.", name);
     } else {
         // Normal task: reset to Pending and clear instance
-        store.set_status(&name, TaskStatus::Pending);
-        store.set_instance(&name, None);
-        store.save_status()?;
+        ctx.set_status(TaskStatus::Pending);
+        ctx.store.set_instance(&name, None);
+        ctx.save_status()?;
         println!("Task '{}' reset to pending.", name);
     }
     Ok(())

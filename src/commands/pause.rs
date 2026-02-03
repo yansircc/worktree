@@ -1,32 +1,16 @@
 //! Pause command - pause a running task (Active -> Idle).
 
-use crate::error::{Result, WtError};
-use crate::models::{
-    WtConfig, IdleReason, StatusStore, TaskStatus, TaskStore,
-};
-use crate::services::multiplexer::create_multiplexer;
+use crate::error::Result;
+use crate::models::{IdleReason, TaskStatus};
+use crate::services::{multiplexer::create_multiplexer, TaskContext};
 
 /// Execute `wt pause <task>`
 pub fn execute(task_ref: String, reason: String) -> Result<()> {
-    let store = TaskStore::load()?;
+    let mut ctx = TaskContext::load(&task_ref)?;
 
-    // Resolve task reference
-    let name = store.resolve_task_ref(&task_ref)?;
-
-    // Check task exists
-    store.ensure_exists(&name)?;
-
-    // Load status
-    let mut status = StatusStore::load()?;
-    let state = status.get(&name);
-
-    // Check if task is Active (can be paused)
-    if state.status != TaskStatus::Active {
-        return Err(WtError::InvalidStateTransition {
-            from: state.status.display_name().to_string(),
-            to: "idle (paused)".to_string(),
-        });
-    }
+    // Validate
+    ctx.store.ensure_exists(ctx.name())?;
+    ctx.require_status(&[TaskStatus::Active], "pause")?;
 
     // Parse reason
     let idle_reason = match reason.as_str() {
@@ -39,29 +23,26 @@ pub fn execute(task_ref: String, reason: String) -> Result<()> {
     };
 
     // Try to close multiplexer window
-    if let Some(instance) = store.get_instance(&name) {
-        let config = WtConfig::load().unwrap_or_default();
+    if let Some(instance) = ctx.instance() {
         let mux = create_multiplexer(instance.multiplexer_type());
-
         if mux.kill_window_if_exists(&instance.session_name, &instance.window_name)? {
             println!(
                 "Closed {} window {}:{}",
-                config.multiplexer, instance.session_name, instance.window_name
+                ctx.config.multiplexer, instance.session_name, instance.window_name
             );
         }
     }
 
     // Update status
-    let state = status.get_mut(&name);
-    state.to_idle(idle_reason.clone());
-    status.save()?;
+    ctx.state_mut().to_idle(idle_reason.clone());
+    ctx.save_status()?;
 
     println!(
         "Task '{}' paused (reason: {}).",
-        name,
+        ctx.name(),
         idle_reason.display_name()
     );
-    println!("To resume, run: wt resume {}", name);
+    println!("To resume, run: wt resume {}", ctx.name());
 
     Ok(())
 }
