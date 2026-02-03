@@ -315,26 +315,26 @@ Phase 5: 清理
 
 ## 迁移检查清单
 
-### Phase 1 完成条件
+### Phase 1 完成条件 ✅ (Session 31)
 
-- [ ] `src/models/step.rs` - Step, StepState, StepResult 定义
-- [ ] `src/models/workflow.rs` - Workflow, WorkflowState 定义
-- [ ] `src/models/phase.rs` - Phase, PhaseState 定义
-- [ ] `src/models/project.rs` - Project, ProjectStatus 定义
-- [ ] `src/models/state.rs` - 状态派生逻辑
-- [ ] 单元测试通过
+- [x] `src/models/step.rs` - Step, StepState, StepResult 定义
+- [x] `src/models/workflow.rs` - Workflow, WorkflowState 定义
+- [x] `src/models/phase.rs` - Phase, PhaseState 定义
+- [x] `src/models/project.rs` - Project, ProjectStatus 定义
+- [x] `src/models/state.rs` - 状态派生逻辑
+- [x] 单元测试通过 (213 passed, +37 新增)
 
-### Phase 2 完成条件
+### Phase 2 完成条件 ✅ (Session 31)
 
-- [ ] `src/services/executor/mod.rs`
-- [ ] `src/services/executor/context.rs`
-- [ ] `src/services/executor/step.rs` - verify/observe 支持
-- [ ] `src/services/executor/workflow.rs` - sequential/parallel/dag
-- [ ] `src/services/executor/phase.rs` - on_enter/on_exit, 资源转换
-- [ ] `src/services/observer/mod.rs`
-- [ ] `src/services/observer/terminal.rs`
-- [ ] `src/services/observer/log.rs`
-- [ ] 单元测试通过
+- [x] `src/services/executor/mod.rs`
+- [x] `src/services/executor/context.rs` - 扩展变量支持 (step_index, exit_reason 等)
+- [x] `src/services/executor/step.rs` - verify/observe 支持
+- [x] `src/services/executor/workflow.rs` - sequential/parallel/dag + 拓扑排序
+- [x] `src/services/executor/phase.rs` - on_enter/on_exit, 资源转换, next_phase/prev_phase
+- [x] `src/services/observer/mod.rs`
+- [x] `src/services/observer/terminal.rs` - 进度显示, multiplexer 集成
+- [x] `src/services/observer/log.rs` - 步骤日志, workflow context
+- [x] 单元测试通过 (249 passed, +36 新增)
 
 ### Phase 3 完成条件
 

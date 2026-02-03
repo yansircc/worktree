@@ -12,4 +12,8 @@ pub mod task_context;
 pub mod transcript;
 pub mod workspace;
 
+// Phases v2 modules
+pub mod executor;
+pub mod observer;
+
 pub use task_context::TaskContext;

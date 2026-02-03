@@ -1,0 +1,387 @@
+//! Phase transition for Phases v2.
+//!
+//! Manages phase lifecycle:
+//! - Resource allocation/deallocation
+//! - on_enter workflow execution
+//! - on_exit workflow execution
+//! - State transitions
+
+use std::path::PathBuf;
+
+use crate::error::{Result, WtError};
+use crate::models::phase::{ExitReason, Phase, PhaseResources, PhaseState};
+use crate::models::state::TaskRuntimeState;
+use crate::models::workflow::WorkflowState;
+use crate::models::WtConfig;
+use crate::services::executor::context::ExecutionContext;
+use crate::services::executor::workflow::{WorkflowExecutor, WorkflowResult};
+
+/// Result of phase transition
+#[derive(Debug)]
+pub struct PhaseTransitionResult {
+    /// New phase ID
+    pub phase_id: String,
+    /// Phase state after transition
+    pub phase_state: PhaseState,
+    /// on_enter workflow result (if any)
+    pub on_enter_result: Option<WorkflowResult>,
+    /// Whether resources were allocated
+    pub resources_allocated: bool,
+}
+
+/// Phase transition manager
+pub struct PhaseTransition<'a> {
+    config: &'a WtConfig,
+    context: ExecutionContext,
+    log_dir: Option<PathBuf>,
+}
+
+impl<'a> PhaseTransition<'a> {
+    /// Create a new phase transition manager.
+    pub fn new(config: &'a WtConfig, context: ExecutionContext) -> Self {
+        Self {
+            config,
+            context,
+            log_dir: None,
+        }
+    }
+
+    /// Set log directory.
+    pub fn with_log_dir(mut self, dir: PathBuf) -> Self {
+        self.log_dir = Some(dir);
+        self
+    }
+
+    /// Enter a new phase.
+    ///
+    /// Steps:
+    /// 1. Validate prerequisites (if any)
+    /// 2. Allocate resources (if needed)
+    /// 3. Execute on_enter workflow (if any)
+    /// 4. Return new phase state
+    pub fn enter(
+        &self,
+        phase: &Phase,
+        runtime_state: &mut TaskRuntimeState,
+    ) -> Result<PhaseTransitionResult> {
+        // Validate prerequisites
+        if let Some(ref prereqs) = phase.prerequisites {
+            // Check allowed source phases
+            if !prereqs.phase.is_empty() {
+                let current_phase = runtime_state.phase_id.as_deref().unwrap_or("pending");
+                if !prereqs.phase.iter().any(|p| p == current_phase) {
+                    return Err(WtError::InvalidInput(format!(
+                        "Cannot transition to {} from {}",
+                        phase.id, current_phase
+                    )));
+                }
+            }
+
+            // Check condition
+            if let Some(ref condition) = prereqs.condition {
+                let expanded = self.context.expand(condition);
+                if !self.evaluate_condition(&expanded) {
+                    return Err(WtError::InvalidInput(format!(
+                        "Prerequisite condition not met: {}",
+                        condition
+                    )));
+                }
+            }
+        }
+
+        // Allocate resources if needed
+        let resources_allocated = self.allocate_resources(&phase.resources)?;
+
+        // Update runtime state
+        runtime_state.transition_to(&phase.id);
+
+        // Update context for this phase
+        let phase_context = self.context.clone().with_phase(&phase.id);
+
+        // Execute on_enter workflow
+        let on_enter_result = if let Some(ref workflow) = phase.on_enter {
+            let executor = WorkflowExecutor::new(self.config, phase_context.clone())
+                .with_log_dir(self.get_phase_log_dir(&phase.id));
+
+            let result = executor.execute(workflow)?;
+
+            // Update runtime state from workflow result
+            runtime_state.step_results = result.step_results.clone();
+            runtime_state.workflow_state = result.state.clone();
+
+            Some(result)
+        } else {
+            // No on_enter workflow - mark as success
+            runtime_state.workflow_state = WorkflowState::Success;
+            None
+        };
+
+        let phase_state = PhaseState::derive(&runtime_state.workflow_state);
+
+        Ok(PhaseTransitionResult {
+            phase_id: phase.id.clone(),
+            phase_state,
+            on_enter_result,
+            resources_allocated,
+        })
+    }
+
+    /// Exit current phase.
+    ///
+    /// Steps:
+    /// 1. Execute on_exit workflow (if any)
+    /// 2. Deallocate resources (if needed for next phase)
+    /// 3. Return exit result
+    pub fn exit(
+        &self,
+        phase: &Phase,
+        exit_reason: ExitReason,
+        runtime_state: &mut TaskRuntimeState,
+    ) -> Result<Option<WorkflowResult>> {
+        // Mark as exiting
+        runtime_state.start_on_exit();
+
+        // Update context with exit reason
+        let exit_context = self.context.clone()
+            .with_phase(&phase.id)
+            .with_exit_reason(exit_reason);
+
+        // Execute on_exit workflow
+        if let Some(ref workflow) = phase.on_exit {
+            let executor = WorkflowExecutor::new(self.config, exit_context)
+                .with_log_dir(self.get_phase_log_dir(&phase.id));
+
+            let result = executor.execute(workflow)?;
+
+            // Update runtime state
+            runtime_state.step_results = result.step_results.clone();
+            runtime_state.workflow_state = result.state.clone();
+
+            Ok(Some(result))
+        } else {
+            runtime_state.workflow_state = WorkflowState::Success;
+            Ok(None)
+        }
+    }
+
+    /// Allocate resources for a phase.
+    fn allocate_resources(&self, resources: &PhaseResources) -> Result<bool> {
+        match resources {
+            PhaseResources::None => Ok(false),
+            PhaseResources::Full => {
+                // TODO: Actually create worktree, branch, window
+                // For now, just indicate resources are needed
+                Ok(true)
+            }
+        }
+    }
+
+    /// Deallocate resources from a phase.
+    #[allow(dead_code)]
+    fn deallocate_resources(&self, resources: &PhaseResources) -> Result<bool> {
+        match resources {
+            PhaseResources::None => Ok(false),
+            PhaseResources::Full => {
+                // TODO: Actually destroy worktree, window
+                Ok(true)
+            }
+        }
+    }
+
+    /// Get log directory for a phase.
+    fn get_phase_log_dir(&self, phase_id: &str) -> PathBuf {
+        self.log_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(".wt/logs"))
+            .join(&self.context.task)
+            .join(phase_id)
+    }
+
+    /// Evaluate a condition.
+    fn evaluate_condition(&self, condition: &str) -> bool {
+        // Simple expression evaluation
+        if condition.contains("==") {
+            let parts: Vec<&str> = condition.split("==").map(|s| s.trim()).collect();
+            if parts.len() == 2 {
+                return parts[0].trim_matches('\'').trim_matches('"')
+                    == parts[1].trim_matches('\'').trim_matches('"');
+            }
+        }
+        if condition.contains("!=") {
+            let parts: Vec<&str> = condition.split("!=").map(|s| s.trim()).collect();
+            if parts.len() == 2 {
+                return parts[0].trim_matches('\'').trim_matches('"')
+                    != parts[1].trim_matches('\'').trim_matches('"');
+            }
+        }
+
+        // Fall back to shell
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(condition)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+}
+
+/// Determine next phase in sequence.
+pub fn next_phase<'a>(
+    current: Option<&str>,
+    sequence: &'a [String],
+) -> Option<&'a str> {
+    match current {
+        None => sequence.first().map(|s| s.as_str()),
+        Some(id) => {
+            let idx = sequence.iter().position(|s| s == id)?;
+            sequence.get(idx + 1).map(|s| s.as_str())
+        }
+    }
+}
+
+/// Determine previous phase in sequence.
+pub fn prev_phase<'a>(
+    current: Option<&str>,
+    sequence: &'a [String],
+) -> Option<&'a str> {
+    match current {
+        None => None,
+        Some(id) => {
+            let idx = sequence.iter().position(|s| s == id)?;
+            if idx == 0 {
+                None
+            } else {
+                sequence.get(idx - 1).map(|s| s.as_str())
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::phase::Phase;
+    use crate::models::workflow::Workflow;
+    use crate::models::step::Step;
+
+    fn test_config() -> WtConfig {
+        WtConfig::default()
+    }
+
+    fn test_context() -> ExecutionContext {
+        let cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+        ExecutionContext::new("auth", "wt/auth", &cwd, &cwd)
+    }
+
+    #[test]
+    fn test_enter_simple_phase() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        let phase = Phase::new("developing");
+        let mut runtime = TaskRuntimeState::pending();
+
+        let result = transition.enter(&phase, &mut runtime).unwrap();
+
+        assert_eq!(result.phase_id, "developing");
+        assert_eq!(result.phase_state, PhaseState::Success);
+        assert!(result.on_enter_result.is_none());
+        assert!(!result.resources_allocated);
+    }
+
+    #[test]
+    fn test_enter_phase_with_resources() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        let phase = Phase::with_resources("developing");
+        let mut runtime = TaskRuntimeState::pending();
+
+        let result = transition.enter(&phase, &mut runtime).unwrap();
+
+        assert!(result.resources_allocated);
+    }
+
+    #[test]
+    fn test_enter_phase_with_on_enter() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        let phase = Phase::new("developing")
+            .with_on_enter(Workflow::from_scripts(&["true"]));
+        let mut runtime = TaskRuntimeState::pending();
+
+        let result = transition.enter(&phase, &mut runtime).unwrap();
+
+        assert!(result.on_enter_result.is_some());
+        assert_eq!(result.phase_state, PhaseState::Success);
+    }
+
+    #[test]
+    fn test_enter_phase_on_enter_fails() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        let phase = Phase::new("developing")
+            .with_on_enter(Workflow::from_scripts(&["exit 1"]));
+        let mut runtime = TaskRuntimeState::pending();
+
+        let result = transition.enter(&phase, &mut runtime).unwrap();
+
+        assert_eq!(result.phase_state, PhaseState::Failed);
+    }
+
+    #[test]
+    fn test_exit_phase() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        let phase = Phase::new("developing")
+            .with_on_exit(Workflow::from_scripts(&["true"]));
+        let mut runtime = TaskRuntimeState::pending();
+        runtime.transition_to("developing");
+
+        let result = transition.exit(&phase, ExitReason::Success, &mut runtime).unwrap();
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().state, WorkflowState::Success);
+    }
+
+    #[test]
+    fn test_next_phase() {
+        let sequence: Vec<String> = vec![
+            "pending".to_string(),
+            "developing".to_string(),
+            "reviewing".to_string(),
+            "completed".to_string(),
+        ];
+
+        assert_eq!(next_phase(None, &sequence), Some("pending"));
+        assert_eq!(next_phase(Some("pending"), &sequence), Some("developing"));
+        assert_eq!(next_phase(Some("developing"), &sequence), Some("reviewing"));
+        assert_eq!(next_phase(Some("completed"), &sequence), None);
+        assert_eq!(next_phase(Some("unknown"), &sequence), None);
+    }
+
+    #[test]
+    fn test_prev_phase() {
+        let sequence: Vec<String> = vec![
+            "pending".to_string(),
+            "developing".to_string(),
+            "reviewing".to_string(),
+            "completed".to_string(),
+        ];
+
+        assert_eq!(prev_phase(None, &sequence), None);
+        assert_eq!(prev_phase(Some("pending"), &sequence), None);
+        assert_eq!(prev_phase(Some("developing"), &sequence), Some("pending"));
+        assert_eq!(prev_phase(Some("completed"), &sequence), Some("reviewing"));
+    }
+}
