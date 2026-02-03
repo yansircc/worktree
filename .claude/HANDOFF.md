@@ -1,37 +1,37 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 29 完成的工作 (2026-02-03)
+## Session 30 完成的工作 (2026-02-03)
 
-### 重构计划完整执行
+### Phases v2 重构规划
 
-完成 `.claude/specs/refactor-extract-task-context.md` 中的全部 3 个 Phase：
+完成了 phases-v2 重构的详细文件清单和模块评估。
 
-#### Phase 1: 提取 TaskContext
+#### 主要产出
 
-新增 `src/services/task_context.rs` (194 行)：
-- 封装 load → resolve → validate → save 模式
-- 重构 7 个命令: complete, delete, pause, reset, resume, review, tail
-- 减少约 200 行重复代码
+1. **新增 `files.md`** - 详细的文件处置清单
+   - 记录 src/ 下 64 个文件的处置方式
+   - 记录 tests/ 下 24 个文件的处置方式
+   - 包含每个阶段的验收检查清单
 
-#### Phase 2: 提取 task_parser
+2. **更新 `migration.md`** - 添加改动统计
+3. **更新 `README.md`** - 添加 files.md 链接
 
-新增 `src/models/task_parser.rs` (266 行)：
-- 从 store.rs 提取 `parse_file`, `parse_markdown`, `validate_name`
-- store.rs: 970 → 740 行 (代码约 320 行，测试约 420 行)
+#### 统计摘要
 
-#### Phase 3: 提取 builtin_pipelines
+| 处置 | src/ (64 → 63) | tests/ (24 → 25) |
+|------|----------------|------------------|
+| ✅ 保留 | 8 | 3 |
+| 🔧 修改 | 30 | 17 |
+| 🔴 重写 | 11 | 2 |
+| ❌ 删除 | 15 | 2 |
+| ➕ 新增 | 14 | 3 |
 
-新增 `src/models/builtin_pipelines.rs` (124 行)：
-- 从 config.rs 提取 code-review, merge, refactor pipeline 定义
-- config.rs: 777 → 710 行 (代码约 305 行，测试约 405 行)
+#### 关键决策
 
-#### 变更统计
-
-```
-净变化: -472 行 (155 added, 627 removed)
-新增文件: 3 个
-修改文件: 12 个
-```
+- **基于当前项目重构**，不是新开项目
+- **继续使用 Rust**，类型系统适合复杂状态派生
+- hooks/ 目录 → executor/ 目录（迁移重构）
+- 旧命令 (run/review/complete/pause/resume) → 新命令 (step/next/prev/stop)
 
 ---
 
@@ -45,28 +45,53 @@ cargo test --test cli: 121 passed
 编译警告: 0
 ```
 
-### 代码统计
+### 规格文档
 
-| 文件 | 总行数 | 代码 | 测试 |
-|------|--------|------|------|
-| store.rs | 740 | ~320 | ~420 |
-| config.rs | 710 | ~305 | ~405 |
-| task_parser.rs | 266 | - | - |
-| task_context.rs | 194 | - | - |
-| builtin_pipelines.rs | 124 | - | - |
-
-### 架构改进
-
-- **TaskContext**: 统一任务操作模式，7 个命令使用
-- **task_parser**: 任务文件解析逻辑独立
-- **builtin_pipelines**: 内置 pipeline 定义独立
+```
+.claude/specs/phases-v2/
+├── README.md        # 概述
+├── prd.md           # 产品需求
+├── stories.md       # 用户故事
+├── architecture.md  # 技术架构
+├── api.md           # CLI 命令
+├── migration.md     # 迁移计划
+├── files.md         # 文件清单 ← 新增
+└── decisions.md     # 设计决策
+```
 
 ---
 
 ## 下一步工作
 
-1. **实际测试 complete 工作流** - run → review → complete 全流程
-2. **功能完善** - 根据实际使用反馈优化
+### 立即开始 Phase 1: 核心模型
+
+按 `files.md` 中的检查清单实施：
+
+1. **新增 `src/models/step.rs`**
+   - Step struct (execute/input/output/observe/verify)
+   - StepState enum
+   - StepResult struct
+
+2. **新增 `src/models/workflow.rs`**
+   - Workflow struct (steps, execution mode)
+   - WorkflowState enum
+
+3. **新增 `src/models/phase.rs`**
+   - Phase struct (on_enter/on_exit/resources)
+   - PhaseState enum
+
+4. **新增 `src/models/project.rs`**
+   - Project struct
+   - ProjectStatus struct
+
+5. **新增 `src/models/state.rs`**
+   - 状态派生链逻辑
+
+### 参考文档
+
+- **架构设计**: `.claude/specs/phases-v2/architecture.md`
+- **数据模型**: `.claude/specs/phases-v2/architecture.md` → "数据模型" 部分
+- **文件清单**: `.claude/specs/phases-v2/files.md`
 
 ---
 
@@ -74,6 +99,7 @@ cargo test --test cli: 121 passed
 
 | Session | 主要工作 |
 |---------|----------|
+| 30 | **Phases v2 文件清单** - 详细评估每个文件的处置方式 |
 | 29 | 重构: TaskContext + task_parser + builtin_pipelines |
 | 28 | Dead code 彻底清理 + 架构分析 + 重构规格 |
 | 27 | AgentStep 重构 + ClaudeCommandBuilder |
