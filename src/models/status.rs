@@ -51,7 +51,7 @@ impl TaskStatus {
     pub fn can_transition_to(&self, target: &TaskStatus) -> bool {
         matches!(
             (self, target),
-            // Pending → Active (wt run)
+            // Pending → Active (wt next)
             (TaskStatus::Pending, TaskStatus::Active)
             // Active → Idle (process ends)
             | (TaskStatus::Active, TaskStatus::Idle)

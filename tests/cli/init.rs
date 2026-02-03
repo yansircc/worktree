@@ -157,7 +157,7 @@ fn test_init_shows_next_steps() {
     assert!(stdout.contains("Next steps:"));
     assert!(stdout.contains("Edit .wt/config.jsonc"));
     assert!(stdout.contains("wt create"));
-    assert!(stdout.contains("wt run"));
+    assert!(stdout.contains("wt next"));
 }
 
 #[test]

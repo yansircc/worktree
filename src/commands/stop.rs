@@ -7,8 +7,13 @@
 //! Behavior:
 //! 1. Sends Ctrl+C to the task's process
 //! 2. Optionally closes the multiplexer window (with --kill-window)
-//! 3. Sets task status to Idle
-//! 4. Keeps worktree and branch intact
+//! 3. Sets task status to Idle with reason "manual"
+//! 4. Keeps worktree and branch intact for resuming
+
+use std::fs::OpenOptions;
+use std::io::Write;
+
+use chrono::Utc;
 
 use crate::error::{Result, WtError};
 use crate::models::{IdleReason, StatusStore, TaskStatus, TaskStore, WtConfig};
@@ -65,6 +70,9 @@ pub fn execute(task_ref: String, kill_window: bool) -> Result<()> {
         }
     }
 
+    // Log stop event
+    log_stop_event(&task_name, &state.phase, kill_window);
+
     // Update state
     let task_state = status_store.get_mut(&task_name);
     task_state.status = TaskStatus::Idle;
@@ -76,9 +84,33 @@ pub fn execute(task_ref: String, kill_window: bool) -> Result<()> {
     status_store.save()?;
 
     println!("Task '{}' stopped.", task_name);
-    println!("Hint: Run 'wt run {}' to resume", task_name);
+    println!(
+        "Hint: Run 'wt next {}' to resume from phase '{}'",
+        task_name,
+        state.phase.display_name()
+    );
 
     Ok(())
+}
+
+/// Log stop event to task log file
+fn log_stop_event(task_name: &str, phase: &crate::models::TaskPhase, kill_window: bool) {
+    let log_dir = format!(".wt/logs/{}", task_name);
+    if std::fs::create_dir_all(&log_dir).is_err() {
+        return;
+    }
+
+    let log_path = format!("{}/stop.log", log_dir);
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+        let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+        let _ = writeln!(
+            file,
+            "[{}] Stopped in phase '{}' (kill_window: {})",
+            timestamp,
+            phase.display_name(),
+            kill_window
+        );
+    }
 }
 
 #[cfg(test)]

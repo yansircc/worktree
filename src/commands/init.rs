@@ -53,7 +53,7 @@ fn generate_config(project_name: &str) -> String {
   // 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}, ${{session}}, ${{window}}
 
   "hooks": {{
-    // wt run: 启动开发
+    // wt next: 启动开发
     "run": [
       // {{ "type": "script", "run": "npm install" }},
       {{
@@ -199,7 +199,7 @@ pub fn execute() -> Result<()> {
     println!(
         "  2. Create tasks: wt create --json '{{\"name\": \"...\", \"description\": \"...\"}}'"
     );
-    println!("  3. Start working: wt run <task>");
+    println!("  3. Start working: wt next <task>");
 
     Ok(())
 }

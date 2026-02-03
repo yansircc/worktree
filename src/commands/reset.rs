@@ -190,7 +190,7 @@ fn update_status_only(
         target_phase.display_name()
     );
     println!(
-        "Hint: Resources (worktree, branch) were kept. Run 'wt run {}' to continue.",
+        "Hint: Resources (worktree, branch) were kept. Run 'wt next {}' to continue.",
         name
     );
 

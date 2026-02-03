@@ -39,7 +39,7 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
             // Pending tasks have no resources to delete
             (TaskStatus::Pending, _) => {
                 return Err(WtError::InvalidInput(format!(
-                    "Task '{}' is pending, no resources to delete. Use 'wt run {}' to create resources first.",
+                    "Task '{}' is pending, no resources to delete. Use 'wt next {}' to create resources first.",
                     name, name
                 )));
             }
