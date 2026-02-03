@@ -8,7 +8,7 @@ mod services;
 mod tui;
 
 use clap::Parser;
-use cli::{Cli, Commands, CompletionsAction};
+use cli::{Cli, Commands, CompletionsAction, StepAction};
 
 fn main() {
     let cli = Cli::parse();
@@ -23,8 +23,8 @@ fn main() {
         Commands::Resume { name } => commands::resume::execute(name),
         Commands::Complete { name } => commands::complete::execute(name),
         Commands::Delete { name, force } => commands::delete::execute(name, force),
-        Commands::Next { json } => commands::next::execute(json),
-        Commands::Reset { name } => commands::reset::execute(name),
+        Commands::Next { task } => commands::next::execute(task),
+        Commands::Reset { name, to } => commands::reset::execute(name, to),
         Commands::Status { json, verbose, action, task } => commands::status::execute(json, verbose, action, task),
         Commands::Tail { name, count } => commands::tail::execute(name, count),
         Commands::Logs => commands::logs::execute(),
@@ -39,6 +39,14 @@ fn main() {
         Commands::Hooks { action } => commands::hooks_cmd::execute(action),
         Commands::Pause { name, reason } => commands::pause::execute(name, reason),
         Commands::Pipeline { action } => commands::pipeline_cmd::execute(action),
+        // Phases v2 commands
+        Commands::Step { action } => match action {
+            StepAction::Done => commands::step::execute("done", None),
+            StepAction::Block { message } => commands::step::execute("block", message),
+            StepAction::Fail { message } => commands::step::execute("fail", message),
+        },
+        Commands::Prev { task } => commands::prev::execute(task),
+        Commands::Stop { task, kill_window } => commands::stop::execute(task, kill_window),
     };
 
     if let Err(e) = result {

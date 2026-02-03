@@ -1,6 +1,27 @@
-//! JSONC configuration parser for Agent Hooks system (v2)
+//! JSONC configuration parser for wt (supports both legacy hooks and phases-v2)
 //!
 //! Parses `.wt/config.jsonc` with support for comments.
+//!
+//! ## Configuration Modes
+//!
+//! **Legacy (hooks):** Commands are defined by hook pipelines
+//! ```jsonc
+//! {
+//!   "hooks": {
+//!     "run": [{ "type": "agent", "prompt": "..." }]
+//!   }
+//! }
+//! ```
+//!
+//! **Phases v2:** Task lifecycle defined by phases with on_enter/on_exit workflows
+//! ```jsonc
+//! {
+//!   "phases": {
+//!     "sequence": ["pending", "developing", "reviewing", "completed"],
+//!     "definitions": { "developing": { "on_enter": [...] } }
+//!   }
+//! }
+//! ```
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -10,6 +31,9 @@ use crate::error::{Result, WtError};
 use crate::models::builtin_pipelines;
 use crate::models::AgentStep;
 use crate::services::multiplexer::{create_multiplexer, Multiplexer, MultiplexerType};
+
+// Re-export from project.rs for phases v2 support
+pub use crate::models::project::{ConcurrencyConfig, PhasesConfig, ProjectObserve};
 
 /// Path to the new JSONC config file
 pub const CONFIG_FILE: &str = ".wt/config.jsonc";
@@ -135,7 +159,10 @@ pub struct LogsConfig {
 /// Predefined pipelines configuration
 pub type PipelinesConfig = std::collections::HashMap<String, Vec<Step>>;
 
-/// Main configuration structure for v2
+/// Main configuration structure for wt
+///
+/// Supports both legacy hooks mode and phases v2 mode.
+/// When both are present, phases takes precedence for task lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WtConfig {
     /// Terminal multiplexer: tmux or zellij
@@ -170,9 +197,26 @@ pub struct WtConfig {
     #[serde(default, skip_serializing_if = "PipelinesConfig::is_empty")]
     pub pipelines: PipelinesConfig,
 
-    /// Hooks configuration
+    /// Hooks configuration (legacy mode)
     #[serde(default, skip_serializing_if = "HooksConfig::is_empty")]
     pub hooks: HooksConfig,
+
+    // ============================================================================
+    // Phases v2 configuration
+    // ============================================================================
+
+    /// Phases configuration (v2 mode)
+    /// When present, task lifecycle is controlled by phases instead of hooks
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phases: Option<PhasesConfig>,
+
+    /// Concurrency configuration (v2 mode)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concurrency: Option<ConcurrencyConfig>,
+
+    /// Observation/notification configuration (v2 mode)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observe: Option<ProjectObserve>,
 }
 
 fn default_multiplexer() -> String {
@@ -207,6 +251,10 @@ impl Default for WtConfig {
             logs: LogsConfig::default(),
             pipelines: PipelinesConfig::new(),
             hooks: HooksConfig::default(),
+            // Phases v2 fields
+            phases: None,
+            concurrency: None,
+            observe: None,
         }
     }
 }
@@ -295,6 +343,51 @@ impl WtConfig {
     /// Check if user has defined a custom complete hook (v1 compat)
     pub fn has_custom_complete_hook(&self) -> bool {
         self.hooks.complete.is_some()
+    }
+
+    // ============================================================================
+    // Phases v2 Methods
+    // ============================================================================
+
+    /// Check if phases v2 mode is enabled
+    pub fn is_phases_v2(&self) -> bool {
+        self.phases.is_some()
+    }
+
+    /// Get phase sequence or default
+    pub fn phase_sequence(&self) -> Vec<String> {
+        self.phases
+            .as_ref()
+            .map(|p| p.sequence_or_default())
+            .unwrap_or_else(|| {
+                crate::models::phase::DEFAULT_PHASE_SEQUENCE
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+    }
+
+    /// Get phase definition by ID
+    pub fn get_phase(&self, phase_id: &str) -> Option<&crate::models::Phase> {
+        self.phases
+            .as_ref()
+            .and_then(|p| p.definitions.get(phase_id))
+    }
+
+    /// Get max active tasks (v2)
+    pub fn max_active_tasks(&self) -> usize {
+        self.concurrency
+            .as_ref()
+            .map(|c| c.max_active_tasks)
+            .unwrap_or(5)
+    }
+
+    /// Get max agents (v2)
+    pub fn max_agents(&self) -> usize {
+        self.concurrency
+            .as_ref()
+            .map(|c| c.max_agents)
+            .unwrap_or(3)
     }
 }
 
@@ -706,5 +799,76 @@ mod tests {
         assert!(pipeline.is_some());
         // User-defined should override builtin (only 1 step vs 2)
         assert_eq!(pipeline.unwrap().len(), 1);
+    }
+
+    // ==================== Phases v2 Tests ====================
+
+    #[test]
+    fn test_config_phases_v2_not_enabled_by_default() {
+        let config = WtConfig::default();
+        assert!(!config.is_phases_v2());
+        assert!(config.phases.is_none());
+    }
+
+    #[test]
+    fn test_config_phases_v2_enabled() {
+        let json = r#"{
+            "phases": {
+                "sequence": ["pending", "developing", "completed"]
+            }
+        }"#;
+        let config = WtConfig::from_str(json).unwrap();
+        assert!(config.is_phases_v2());
+        assert_eq!(
+            config.phase_sequence(),
+            vec!["pending", "developing", "completed"]
+        );
+    }
+
+    #[test]
+    fn test_config_phases_v2_default_sequence() {
+        let json = r#"{ "phases": {} }"#;
+        let config = WtConfig::from_str(json).unwrap();
+        assert!(config.is_phases_v2());
+        assert_eq!(
+            config.phase_sequence(),
+            vec!["pending", "developing", "reviewing", "completed"]
+        );
+    }
+
+    #[test]
+    fn test_config_concurrency() {
+        let json = r#"{
+            "concurrency": {
+                "max_active_tasks": 10,
+                "max_agents": 5
+            }
+        }"#;
+        let config = WtConfig::from_str(json).unwrap();
+        assert_eq!(config.max_active_tasks(), 10);
+        assert_eq!(config.max_agents(), 5);
+    }
+
+    #[test]
+    fn test_config_concurrency_defaults() {
+        let config = WtConfig::default();
+        assert_eq!(config.max_active_tasks(), 5);
+        assert_eq!(config.max_agents(), 3);
+    }
+
+    #[test]
+    fn test_config_phases_and_hooks_coexist() {
+        // Both can exist - phases takes precedence for lifecycle
+        let json = r#"{
+            "phases": {
+                "sequence": ["pending", "developing", "completed"]
+            },
+            "hooks": {
+                "run": [{ "type": "script", "run": "echo hello" }]
+            }
+        }"#;
+        let config = WtConfig::from_str(json).unwrap();
+        assert!(config.is_phases_v2());
+        assert!(config.hooks.run.is_some());
     }
 }

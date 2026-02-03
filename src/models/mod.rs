@@ -21,6 +21,9 @@ pub use status::{IdleReason, StatusStore, TaskPhase, TaskState, TaskStatus};
 pub use store::TaskStore;
 pub use task::{Instance, Task, TaskFrontmatter, TaskInput};
 
+// Phases v2 config exports (from config.rs re-exports)
+pub use config::{ConcurrencyConfig, PhasesConfig, ProjectObserve};
+
 // Phases v2 exports
 pub use phase::{Phase, PhaseResources, PhaseState};
 pub use project::{Project, ProjectStatus};

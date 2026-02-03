@@ -52,10 +52,12 @@ fn test_next_without_config() {
 
     create_task_file(dir.path(), "task1", &[]);
 
-    let (ok, stdout, _) = run_wt(dir.path(), &["next"]);
+    // New next command requires task argument
+    let (ok, stdout, _) = run_wt(dir.path(), &["next", "task1"]);
 
     assert!(ok);
-    assert!(stdout.contains("task1"));
+    // Should advance to developing phase
+    assert!(stdout.contains("developing") || stdout.contains("advanced"));
 }
 
 #[test]

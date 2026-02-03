@@ -32,10 +32,11 @@ fn test_list_help_shows_json() {
 }
 
 #[test]
-fn test_next_help_shows_json() {
+fn test_next_help_shows_task_arg() {
     let dir = tempfile::tempdir().unwrap();
     let (ok, stdout, _) = run_wt(dir.path(), &["next", "--help"]);
 
     assert!(ok);
-    assert!(stdout.contains("--json"));
+    // New next command requires a TASK argument
+    assert!(stdout.contains("TASK") || stdout.contains("task"));
 }

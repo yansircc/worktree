@@ -77,17 +77,27 @@ pub enum Commands {
         force: bool,
     },
 
-    /// Show tasks that are ready to start (all dependencies merged)
+    /// Advance a task to the next phase
+    ///
+    /// Forces the task to move to the next phase in the sequence:
+    /// pending -> developing -> reviewing -> merging -> completed
     Next {
-        /// Output as JSON for programmatic use
-        #[arg(long)]
-        json: bool,
+        /// Task name or index
+        task: String,
     },
 
-    /// Reset a task to pending state (cleanup resources)
+    /// Reset a task to a specific phase
+    ///
+    /// By default, resets to pending (cleans up all resources).
+    /// Use --to to reset to a different phase (keeps resources).
     Reset {
         /// Task name to reset
         name: String,
+
+        /// Target phase (pending, developing, reviewing, merging)
+        /// Default: pending (full cleanup)
+        #[arg(long)]
+        to: Option<String>,
     },
 
     /// Show status of active/idle tasks (TUI by default, --json for programmatic use)
@@ -169,6 +179,41 @@ pub enum Commands {
         #[command(subcommand)]
         action: PipelineAction,
     },
+
+    // ========================================================================
+    // Phases v2 Commands
+    // ========================================================================
+
+    /// Mark current step status (used by Agent)
+    ///
+    /// This command is called by the Agent during execution to mark
+    /// the current step's completion status.
+    Step {
+        #[command(subcommand)]
+        action: StepAction,
+    },
+
+    /// Go back to the previous phase (rollback)
+    ///
+    /// Stops any running process and moves the task to the previous phase.
+    /// Does NOT execute on_enter workflow (rollback mode).
+    Prev {
+        /// Task name or index
+        task: String,
+    },
+
+    /// Stop a running task's process
+    ///
+    /// Sends Ctrl+C to stop the process but keeps the worktree and branch.
+    /// Use this to temporarily pause work without losing state.
+    Stop {
+        /// Task name or index
+        task: String,
+
+        /// Also close the multiplexer window
+        #[arg(long)]
+        kill_window: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -232,5 +277,27 @@ pub enum PipelineAction {
         /// Max age in hours (default: 24)
         #[arg(long, default_value = "24")]
         max_age: u64,
+    },
+}
+
+// ============================================================================
+// Phases v2 Subcommands
+// ============================================================================
+
+#[derive(Subcommand)]
+pub enum StepAction {
+    /// Mark current step as completed successfully
+    Done,
+
+    /// Mark current step as blocked (needs human intervention)
+    Block {
+        /// Reason for blocking (optional)
+        message: Option<String>,
+    },
+
+    /// Mark current step as failed
+    Fail {
+        /// Reason for failure (optional)
+        message: Option<String>,
     },
 }

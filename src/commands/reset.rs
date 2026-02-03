@@ -1,3 +1,16 @@
+//! Reset command - reset a task to a specific phase.
+//!
+//! Usage:
+//! - `wt reset <task>` - Reset to pending (default)
+//! - `wt reset <task> --to developing` - Reset to developing phase
+//!
+//! Behavior:
+//! 1. Validates dependencies (non-pending dependents block reset)
+//! 2. Runs reset hook (cleanup scripts)
+//! 3. Backs up worktree (unless scratch)
+//! 4. Cleans up resources (window, worktree, branch) if resetting to pending
+//! 5. Updates status to target phase
+
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -6,10 +19,35 @@ use chrono::Utc;
 
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
-use crate::models::{TaskStatus, WtConfig};
+use crate::models::{TaskPhase, TaskStatus, WtConfig};
 use crate::services::{dependency, git, hooks::HooksEngine, multiplexer::create_multiplexer, TaskContext};
 
-pub fn execute(task_ref: String) -> Result<()> {
+/// Parse target phase from string
+fn parse_target_phase(s: &str) -> Option<TaskPhase> {
+    match s.to_lowercase().as_str() {
+        "pending" | "none" => Some(TaskPhase::None),
+        "developing" | "dev" => Some(TaskPhase::Developing),
+        "reviewing" | "review" => Some(TaskPhase::Reviewing),
+        "merging" | "merge" => Some(TaskPhase::Merging),
+        _ => None,
+    }
+}
+
+pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
+    // Parse target phase
+    let target_phase = if let Some(phase_str) = &to_phase {
+        parse_target_phase(phase_str).ok_or_else(|| {
+            WtError::InvalidInput(format!(
+                "Invalid phase '{}'. Valid phases: pending, developing, reviewing, merging",
+                phase_str
+            ))
+        })?
+    } else {
+        TaskPhase::None // Default: reset to pending
+    };
+
+    // If target is not pending, we do a "soft reset" (just change phase, keep resources)
+    let full_reset = target_phase == TaskPhase::None;
     let mut ctx = TaskContext::load(&task_ref)?;
 
     let is_scratch = ctx.is_scratch();
@@ -38,10 +76,16 @@ pub fn execute(task_ref: String) -> Result<()> {
         }
     }
 
+    // For soft reset (non-pending target), skip resource cleanup
+    if !full_reset {
+        // Just update the phase
+        return update_status_only(&mut ctx, &name, is_scratch, target_phase);
+    }
+
     // Get repo root before cleanup (needed for git commands after worktree removal)
     let repo_root = ctx.repo_root()?.to_string();
 
-    // Backup and cleanup resources if instance exists
+    // Backup and cleanup resources if instance exists (full reset only)
     if let Some(instance) = ctx.instance().cloned() {
         let worktree_path = Path::new(&instance.worktree_path);
 
@@ -109,13 +153,59 @@ pub fn execute(task_ref: String) -> Result<()> {
         ctx.store.status.tasks.remove(&name);
         ctx.save_status()?;
         println!("Scratch environment '{}' cleaned up.", name);
-    } else {
-        // Normal task: reset to Pending and clear instance
+    } else if full_reset {
+        // Full reset: reset to Pending and clear instance
         ctx.set_status(TaskStatus::Pending);
         ctx.store.set_instance(&name, None);
+        ctx.state_mut().phase = TaskPhase::None;
         ctx.save_status()?;
         println!("Task '{}' reset to pending.", name);
+    } else {
+        // Soft reset: just change phase, keep resources
+        ctx.state_mut().phase = target_phase.clone();
+        ctx.state_mut().status = TaskStatus::Idle;
+        ctx.state_mut().idle_reason = None;
+        ctx.state_mut().active_since = None;
+        ctx.save_status()?;
+        println!(
+            "Task '{}' reset to phase '{}'.",
+            name,
+            target_phase.display_name()
+        );
     }
+    Ok(())
+}
+
+/// Soft reset: just update status without cleaning resources
+fn update_status_only(
+    ctx: &mut TaskContext,
+    name: &str,
+    is_scratch: bool,
+    target_phase: TaskPhase,
+) -> Result<()> {
+    if is_scratch {
+        return Err(WtError::InvalidInput(
+            "Cannot soft-reset scratch environments. Use 'wt reset <name>' for full cleanup."
+                .to_string(),
+        ));
+    }
+
+    ctx.state_mut().phase = target_phase.clone();
+    ctx.state_mut().status = TaskStatus::Idle;
+    ctx.state_mut().idle_reason = None;
+    ctx.state_mut().active_since = None;
+    ctx.save_status()?;
+
+    println!(
+        "Task '{}' reset to phase '{}'.",
+        name,
+        target_phase.display_name()
+    );
+    println!(
+        "Hint: Resources (worktree, branch) were kept. Run 'wt run {}' to continue.",
+        name
+    );
+
     Ok(())
 }
 

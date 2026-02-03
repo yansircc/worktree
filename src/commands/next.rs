@@ -1,140 +1,141 @@
-use std::collections::HashMap;
+//! Next command for Phases v2.
+//!
+//! Forces a task to advance to the next phase.
+//!
+//! Usage: `wt next <task>`
+//!
+//! Behavior:
+//! 1. Validates current phase allows transition
+//! 2. Stops current process (if any)
+//! 3. Updates phase to next
+//! 4. Triggers on_enter workflow (if configured)
 
-use serde::Serialize;
+use crate::error::{Result, WtError};
+use crate::models::{IdleReason, StatusStore, TaskPhase, TaskStatus, TaskStore, WtConfig};
+use crate::services::multiplexer::create_multiplexer;
 
-use crate::display::colored_index;
-use crate::error::Result;
-use crate::models::{Task, TaskStatus, TaskStore};
-
-#[derive(Serialize)]
-struct NextOutput {
-    ready: Vec<TaskWithIndex>,
-    blocked: Vec<BlockedTask>,
-}
-
-#[derive(Serialize)]
-struct TaskWithIndex {
-    index: usize,
-    name: String,
-}
-
-#[derive(Serialize)]
-struct BlockedTask {
-    index: usize,
-    name: String,
-    waiting_for: Vec<String>,
-}
-
-pub fn execute(json: bool) -> Result<()> {
+/// Execute the next command
+///
+/// # Arguments
+/// * `task_ref` - Task name or index
+pub fn execute(task_ref: String) -> Result<()> {
     let store = TaskStore::load()?;
-    let tasks = store.list();
+    let config = WtConfig::load()?;
 
-    // Build name -> index mapping (1-based)
-    let index_map: HashMap<&str, usize> = tasks
-        .iter()
-        .enumerate()
-        .map(|(i, t)| (t.name(), i + 1))
-        .collect();
+    // Resolve task reference
+    let task_name = store.resolve_task_ref(&task_ref)?;
 
-    let (ready, blocked) = classify_tasks(&tasks, &store);
+    // Get current state
+    let mut status_store = StatusStore::load()?;
+    let state = status_store.get(&task_name);
 
-    if json {
-        print_json(&ready, &blocked, &index_map);
-    } else {
-        print_human(&ready, &blocked, &index_map);
+    // Check if already completed first
+    if state.status == TaskStatus::Completed {
+        return Err(WtError::InvalidInput(format!(
+            "Task '{}' is already completed",
+            task_name
+        )));
+    }
+
+    // Get current and next phase
+    let current_phase = &state.phase;
+    let next_phase = get_next_phase(current_phase);
+
+    match next_phase {
+        None => {
+            // At final phase (merging), no next
+            return Err(WtError::InvalidInput(format!(
+                "Task '{}' is in phase '{}' which has no next phase. Use 'wt complete' to finish.",
+                task_name,
+                current_phase.display_name()
+            )));
+        }
+        Some(new_phase) => {
+            // Stop current process if running
+            if state.status == TaskStatus::Active {
+                if let Some(instance) = &state.instance {
+                    let mux = create_multiplexer(config.multiplexer_type());
+                    // Send Ctrl+C to stop the process
+                    let _ = mux.send_keys(
+                        &instance.session_name,
+                        &instance.window_name,
+                        "C-c",
+                    );
+                    println!(
+                        "Stopped process in window '{}'",
+                        instance.window_name
+                    );
+                }
+            }
+
+            // Check if transitioning to "completed" (final phase)
+            let is_completing = new_phase == TaskPhase::None && current_phase == &TaskPhase::Merging;
+
+            // Update state
+            let task_state = status_store.get_mut(&task_name);
+
+            if is_completing {
+                // Mark as completed
+                task_state.status = TaskStatus::Completed;
+                task_state.phase = TaskPhase::None;
+                task_state.idle_reason = None;
+                task_state.active_since = None;
+                println!("Task '{}' marked as completed", task_name);
+            } else {
+                task_state.phase = new_phase.clone();
+                // Set to Idle, waiting for next action
+                task_state.status = TaskStatus::Idle;
+                task_state.idle_reason = Some(IdleReason::Done);
+                task_state.active_since = None;
+                println!(
+                    "Task '{}' advanced to phase '{}'",
+                    task_name,
+                    new_phase.display_name()
+                );
+            }
+
+            // Save status
+            status_store.save()?;
+
+            // Note about on_enter workflow
+            if !is_completing {
+                println!("Hint: Run 'wt run {}' to start the {} workflow", task_name, new_phase.display_name());
+            }
+        }
     }
 
     Ok(())
 }
 
-fn classify_tasks<'a>(
-    tasks: &[&'a Task],
-    store: &TaskStore,
-) -> (Vec<&'a Task>, Vec<(&'a Task, Vec<String>)>) {
-    let mut ready = Vec::new();
-    let mut blocked = Vec::new();
-
-    for task in tasks {
-        // Skip tasks that are not pending (get status from StatusStore)
-        if store.get_status(task.name()) != TaskStatus::Pending {
-            continue;
-        }
-
-        let incomplete_deps: Vec<String> = task
-            .depends()
-            .iter()
-            .filter(|dep_name| store.get_status(dep_name) != TaskStatus::Completed)
-            .cloned()
-            .collect();
-
-        if incomplete_deps.is_empty() {
-            ready.push(*task);
-        } else {
-            blocked.push((*task, incomplete_deps));
-        }
+/// Get the next phase for a given phase
+fn get_next_phase(current: &TaskPhase) -> Option<TaskPhase> {
+    // Standard phase sequence: None -> Developing -> Reviewing -> Merging -> (Completed)
+    match current {
+        TaskPhase::None => Some(TaskPhase::Developing),
+        TaskPhase::Developing => Some(TaskPhase::Reviewing),
+        TaskPhase::Reviewing => Some(TaskPhase::Merging),
+        TaskPhase::Merging => None, // Completion handled separately
     }
-
-    (ready, blocked)
 }
 
-fn print_json(ready: &[&Task], blocked: &[(&Task, Vec<String>)], index_map: &HashMap<&str, usize>) {
-    let output = NextOutput {
-        ready: ready
-            .iter()
-            .map(|t| TaskWithIndex {
-                index: index_map[t.name()],
-                name: t.name().to_string(),
-            })
-            .collect(),
-        blocked: blocked
-            .iter()
-            .map(|(t, deps)| BlockedTask {
-                index: index_map[t.name()],
-                name: t.name().to_string(),
-                waiting_for: deps.clone(),
-            })
-            .collect(),
-    };
-    println!("{}", serde_json::to_string(&output).unwrap_or_default());
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn print_human(
-    ready: &[&Task],
-    blocked: &[(&Task, Vec<String>)],
-    index_map: &HashMap<&str, usize>,
-) {
-    if ready.is_empty() && blocked.is_empty() {
-        println!("No pending tasks.");
-        return;
-    }
-
-    if !ready.is_empty() {
-        println!("Ready to start:");
-        for task in ready {
-            let idx = index_map[task.name()];
-            println!(
-                "  {} {} {}",
-                colored_index(idx),
-                TaskStatus::Pending.colored_icon(),
-                task.name()
-            );
-        }
-    }
-
-    if !blocked.is_empty() {
-        if !ready.is_empty() {
-            println!();
-        }
-        println!("Blocked:");
-        for (task, deps) in blocked {
-            let idx = index_map[task.name()];
-            println!(
-                "  {} {} {} (waiting for: {})",
-                colored_index(idx),
-                TaskStatus::Pending.colored_icon(),
-                task.name(),
-                deps.join(", ")
-            );
-        }
+    #[test]
+    fn test_get_next_phase() {
+        assert_eq!(
+            get_next_phase(&TaskPhase::None),
+            Some(TaskPhase::Developing)
+        );
+        assert_eq!(
+            get_next_phase(&TaskPhase::Developing),
+            Some(TaskPhase::Reviewing)
+        );
+        assert_eq!(
+            get_next_phase(&TaskPhase::Reviewing),
+            Some(TaskPhase::Merging)
+        );
+        assert_eq!(get_next_phase(&TaskPhase::Merging), None);
     }
 }

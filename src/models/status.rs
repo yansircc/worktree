@@ -1,9 +1,15 @@
-//! Status model for Agent Hooks system.
+//! Status model for wt task management.
 //!
-//! Implements the state model from `.claude/specs/agent-hooks.md`:
+//! Supports both legacy status model and phases v2:
+//!
+//! **Legacy:**
 //! - Status: Pending / Active / Idle / Completed
 //! - Phase: None / Developing / Reviewing / Merging
 //! - IdleReason: Done / HumanReview / Error / Conflict / Timeout / Manual
+//!
+//! **Phases v2:**
+//! - DerivedTaskStatus: derived from phase state via state.rs
+//! - TaskRuntimeState: tracks current phase and step execution
 
 use std::collections::HashMap;
 use std::fs;
@@ -14,6 +20,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, WtError};
 use crate::models::Instance;
+
+// Import phases v2 types for bridging
+use crate::models::state::{DerivedTaskStatus, TaskRuntimeState};
 
 /// Path to the v2 status file
 pub const STATUS_FILE: &str = ".wt/status.json";
@@ -223,6 +232,69 @@ impl TaskState {
         self.idle_reason = Some(reason);
         self.active_since = None;
     }
+
+    // ========================================================================
+    // Phases v2 Bridge
+    // ========================================================================
+
+    /// Convert legacy TaskStatus to DerivedTaskStatus (v2)
+    ///
+    /// This bridge allows gradual migration to phases v2.
+    pub fn to_derived_status(&self) -> DerivedTaskStatus {
+        match self.status {
+            TaskStatus::Pending => DerivedTaskStatus::Pending,
+            TaskStatus::Active => DerivedTaskStatus::Active,
+            TaskStatus::Idle => DerivedTaskStatus::Idle,
+            TaskStatus::Completed => DerivedTaskStatus::Completed,
+        }
+    }
+
+    /// Convert legacy TaskPhase to phase ID string (v2)
+    ///
+    /// Returns None for TaskPhase::None (pending state).
+    pub fn phase_id(&self) -> Option<&'static str> {
+        match self.phase {
+            TaskPhase::None => None,
+            TaskPhase::Developing => Some("developing"),
+            TaskPhase::Reviewing => Some("reviewing"),
+            TaskPhase::Merging => Some("merging"),
+        }
+    }
+
+    /// Create from v2 runtime state (reverse bridge)
+    pub fn from_runtime_state(runtime: &TaskRuntimeState) -> Self {
+        let status = runtime.task_status();
+        let phase = match runtime.phase_id.as_deref() {
+            None => TaskPhase::None,
+            Some("developing") => TaskPhase::Developing,
+            Some("reviewing") => TaskPhase::Reviewing,
+            Some("merging") => TaskPhase::Merging,
+            Some("completed") => TaskPhase::None, // Completed has no phase
+            _ => TaskPhase::Developing, // Default for unknown phases
+        };
+
+        let (task_status, idle_reason) = match status {
+            DerivedTaskStatus::Pending => (TaskStatus::Pending, None),
+            DerivedTaskStatus::Active => (TaskStatus::Active, None),
+            DerivedTaskStatus::Idle => (TaskStatus::Idle, Some(IdleReason::Done)),
+            DerivedTaskStatus::Completed => (TaskStatus::Completed, None),
+        };
+
+        let active_since = if task_status == TaskStatus::Active {
+            Some(Utc::now())
+        } else {
+            None
+        };
+
+        Self {
+            status: task_status,
+            phase,
+            idle_reason,
+            active_since,
+            instance: None,
+            scratch: None,
+        }
+    }
 }
 
 // ============================================================================
@@ -319,6 +391,45 @@ impl StatusStore {
     /// Set status for a task (v1 compat)
     pub fn set_status(&mut self, name: &str, status: TaskStatus) {
         self.get_mut(name).status = status;
+    }
+
+    // ========================================================================
+    // Phases v2 Support
+    // ========================================================================
+
+    /// Get derived task status for a task (v2)
+    pub fn get_derived_status(&self, name: &str) -> DerivedTaskStatus {
+        self.tasks
+            .get(name)
+            .map(|s| s.to_derived_status())
+            .unwrap_or_default()
+    }
+
+    /// Get all derived task statuses (v2)
+    pub fn all_derived_statuses(&self) -> Vec<DerivedTaskStatus> {
+        self.tasks.values().map(|s| s.to_derived_status()).collect()
+    }
+
+    /// Count tasks by derived status (v2)
+    pub fn count_by_derived_status(&self) -> (usize, usize, usize, usize) {
+        let statuses = self.all_derived_statuses();
+        let pending = statuses
+            .iter()
+            .filter(|s| **s == DerivedTaskStatus::Pending)
+            .count();
+        let active = statuses
+            .iter()
+            .filter(|s| **s == DerivedTaskStatus::Active)
+            .count();
+        let idle = statuses
+            .iter()
+            .filter(|s| **s == DerivedTaskStatus::Idle)
+            .count();
+        let completed = statuses
+            .iter()
+            .filter(|s| **s == DerivedTaskStatus::Completed)
+            .count();
+        (pending, active, idle, completed)
     }
 }
 
@@ -589,5 +700,87 @@ mod tests {
         assert_eq!(state.status, TaskStatus::Active);
         assert_eq!(state.phase, TaskPhase::Developing);
         assert!(state.active_since.is_some());
+    }
+
+    // ==================== Phases v2 Bridge Tests ====================
+
+    #[test]
+    fn test_task_state_to_derived_status() {
+        let mut state = TaskState::default();
+        assert_eq!(state.to_derived_status(), DerivedTaskStatus::Pending);
+
+        state.status = TaskStatus::Active;
+        assert_eq!(state.to_derived_status(), DerivedTaskStatus::Active);
+
+        state.status = TaskStatus::Idle;
+        assert_eq!(state.to_derived_status(), DerivedTaskStatus::Idle);
+
+        state.status = TaskStatus::Completed;
+        assert_eq!(state.to_derived_status(), DerivedTaskStatus::Completed);
+    }
+
+    #[test]
+    fn test_task_state_phase_id() {
+        let mut state = TaskState::default();
+        assert_eq!(state.phase_id(), None);
+
+        state.phase = TaskPhase::Developing;
+        assert_eq!(state.phase_id(), Some("developing"));
+
+        state.phase = TaskPhase::Reviewing;
+        assert_eq!(state.phase_id(), Some("reviewing"));
+
+        state.phase = TaskPhase::Merging;
+        assert_eq!(state.phase_id(), Some("merging"));
+    }
+
+    #[test]
+    fn test_task_state_from_runtime_state() {
+        // Test pending
+        let runtime = TaskRuntimeState::pending();
+        let state = TaskState::from_runtime_state(&runtime);
+        assert_eq!(state.status, TaskStatus::Pending);
+        assert_eq!(state.phase, TaskPhase::None);
+
+        // Test completed
+        let runtime = TaskRuntimeState::completed();
+        let state = TaskState::from_runtime_state(&runtime);
+        assert_eq!(state.status, TaskStatus::Completed);
+    }
+
+    #[test]
+    fn test_store_get_derived_status() {
+        let mut store = StatusStore::default();
+        store.get_mut("task1").status = TaskStatus::Active;
+        store.get_mut("task2").status = TaskStatus::Completed;
+
+        assert_eq!(
+            store.get_derived_status("task1"),
+            DerivedTaskStatus::Active
+        );
+        assert_eq!(
+            store.get_derived_status("task2"),
+            DerivedTaskStatus::Completed
+        );
+        assert_eq!(
+            store.get_derived_status("nonexistent"),
+            DerivedTaskStatus::Pending
+        );
+    }
+
+    #[test]
+    fn test_store_count_by_derived_status() {
+        let mut store = StatusStore::default();
+        store.get_mut("task1").status = TaskStatus::Pending;
+        store.get_mut("task2").status = TaskStatus::Active;
+        store.get_mut("task3").status = TaskStatus::Active;
+        store.get_mut("task4").status = TaskStatus::Idle;
+        store.get_mut("task5").status = TaskStatus::Completed;
+
+        let (pending, active, idle, completed) = store.count_by_derived_status();
+        assert_eq!(pending, 1);
+        assert_eq!(active, 2);
+        assert_eq!(idle, 1);
+        assert_eq!(completed, 1);
     }
 }

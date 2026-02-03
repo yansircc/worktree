@@ -336,23 +336,31 @@ Phase 5: 清理
 - [x] `src/services/observer/log.rs` - 步骤日志, workflow context
 - [x] 单元测试通过 (249 passed, +36 新增)
 
-### Phase 3 完成条件
+### Phase 3 完成条件 ✅ (Session 32)
 
-- [ ] `src/models/config.rs` 重写 - phases/workflows
-- [ ] `src/models/status.rs` 重写 - 派生状态
-- [ ] `src/models/store.rs` 重写 - 包含 Project
-- [ ] 集成测试通过
+- [x] `src/models/config.rs` 扩展 - phases/concurrency/observe 字段，v2 方法
+- [x] `src/models/status.rs` 扩展 - 状态桥接 (to_derived_status, from_runtime_state)
+- [x] `src/models/store.rs` 扩展 - Project 支持 (project_status, full_project_status)
+- [x] 单元测试通过 (265 passed, +16 新增)
 
 ### Phase 4 完成条件
 
-- [ ] `src/cli.rs` 重写
-- [ ] `src/commands/step.rs` 新增
-- [ ] `src/commands/prev.rs` 新增
-- [ ] `src/commands/stop.rs` 新增
-- [ ] `src/commands/next.rs` 重写
-- [ ] `src/commands/reset.rs` 重写
+**Phase 4a (Session 32) ✅**
+- [x] `src/commands/step.rs` 新增 - wt step done/block/fail
+- [x] `src/commands/prev.rs` 新增 - wt prev <task>
+- [x] `src/cli.rs` 添加 Step/Prev 命令
+
+**Phase 4b (Session 32) ✅**
+- [x] `src/commands/next.rs` 重写 - wt next <task> 强制推进阶段
+- [x] `src/commands/stop.rs` 新增 - wt stop <task>
+- [x] `src/commands/reset.rs` 扩展 - 添加 --to 参数
+- [x] `tests/cli/next.rs` 重写测试
+- [x] CLI 测试通过 (116 passed)
+
+**Phase 4c (待完成)**
 - [ ] 删除 run.rs, review.rs, complete.rs, pause.rs, resume.rs, hooks_cmd.rs, pipeline_cmd.rs
-- [ ] CLI 测试通过
+- [ ] 更新 cli.rs 删除旧命令定义
+- [ ] 更新 main.rs 删除旧路由
 
 ### Phase 5 完成条件
 
