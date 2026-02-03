@@ -5,6 +5,7 @@ mod status;
 mod store;
 mod task;
 pub mod task_parser;
+pub mod task_resolver;
 pub mod validator;
 
 // Phases modules
