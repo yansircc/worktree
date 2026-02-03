@@ -389,9 +389,10 @@ fn execute_on_enter(
     // Create runtime state
     let mut runtime_state = TaskRuntimeState::pending();
 
-    // Execute phase transition
+    // Execute phase transition with progress output
     let transition = PhaseTransition::new(config, context)
-        .with_log_dir(PathBuf::from(".wt/logs"));
+        .with_log_dir(PathBuf::from(".wt/logs"))
+        .with_progress(true);
 
     let _result = transition.enter(phase, &mut runtime_state)?;
 

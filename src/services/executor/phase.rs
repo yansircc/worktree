@@ -34,6 +34,7 @@ pub struct PhaseTransition<'a> {
     config: &'a WtConfig,
     context: ExecutionContext,
     log_dir: Option<PathBuf>,
+    show_progress: bool,
 }
 
 impl<'a> PhaseTransition<'a> {
@@ -43,12 +44,19 @@ impl<'a> PhaseTransition<'a> {
             config,
             context,
             log_dir: None,
+            show_progress: false,
         }
     }
 
     /// Set log directory.
     pub fn with_log_dir(mut self, dir: PathBuf) -> Self {
         self.log_dir = Some(dir);
+        self
+    }
+
+    /// Enable terminal progress output.
+    pub fn with_progress(mut self, show: bool) -> Self {
+        self.show_progress = show;
         self
     }
 
@@ -101,7 +109,8 @@ impl<'a> PhaseTransition<'a> {
         // Execute on_enter workflow
         let on_enter_result = if let Some(ref workflow) = phase.on_enter {
             let executor = WorkflowExecutor::new(self.config, phase_context.clone())
-                .with_log_dir(self.get_phase_log_dir(&phase.id));
+                .with_log_dir(self.get_phase_log_dir(&phase.id))
+                .with_progress(self.show_progress);
 
             let result = executor.execute(workflow)?;
 
@@ -149,7 +158,8 @@ impl<'a> PhaseTransition<'a> {
         // Execute on_exit workflow
         if let Some(ref workflow) = phase.on_exit {
             let executor = WorkflowExecutor::new(self.config, exit_context)
-                .with_log_dir(self.get_phase_log_dir(&phase.id));
+                .with_log_dir(self.get_phase_log_dir(&phase.id))
+                .with_progress(self.show_progress);
 
             let result = executor.execute(workflow)?;
 

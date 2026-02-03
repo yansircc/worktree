@@ -4,8 +4,11 @@
 //! - Sequential execution
 //! - Parallel execution
 //! - DAG-based execution
+//! - Observer integration (terminal progress, file logging)
 
 use std::path::PathBuf;
+
+use chrono::Utc;
 
 use crate::error::Result;
 use crate::models::step::{StepResult, StepState};
@@ -13,6 +16,8 @@ use crate::models::workflow::{ExecutionMode, OnStepBlocked, OnStepFailure, Workf
 use crate::models::WtConfig;
 use crate::services::executor::context::ExecutionContext;
 use crate::services::executor::step::StepExecutor;
+use crate::services::observer::log::{create_workflow_log_entry, LogObserver};
+use crate::services::observer::terminal::{TerminalObserver, TerminalSettings};
 
 /// Result of workflow execution
 #[derive(Debug)]
@@ -30,6 +35,8 @@ pub struct WorkflowExecutor<'a> {
     config: &'a WtConfig,
     context: ExecutionContext,
     log_dir: Option<PathBuf>,
+    /// Show terminal progress output
+    show_progress: bool,
 }
 
 impl<'a> WorkflowExecutor<'a> {
@@ -39,6 +46,7 @@ impl<'a> WorkflowExecutor<'a> {
             config,
             context,
             log_dir: None,
+            show_progress: false,
         }
     }
 
@@ -48,9 +56,40 @@ impl<'a> WorkflowExecutor<'a> {
         self
     }
 
+    /// Enable terminal progress output.
+    pub fn with_progress(mut self, show: bool) -> Self {
+        self.show_progress = show;
+        self
+    }
+
     /// Execute a workflow.
     pub fn execute(&self, workflow: &Workflow) -> Result<WorkflowResult> {
         let start = std::time::Instant::now();
+        let started_at = Utc::now();
+
+        // Create observers
+        let terminal_observer = if self.show_progress {
+            Some(TerminalObserver::new(TerminalSettings {
+                show_progress: true,
+                ..Default::default()
+            }))
+        } else {
+            None
+        };
+
+        let mut log_observer = if let Some(ref dir) = self.log_dir {
+            let phase_name = if self.context.phase.is_empty() {
+                "unknown"
+            } else {
+                &self.context.phase
+            };
+            let mut obs = LogObserver::new(dir, &self.context.task, phase_name)
+                .with_stream(true);
+            let _ = obs.init();
+            Some(obs)
+        } else {
+            None
+        };
 
         if workflow.is_empty() {
             return Ok(WorkflowResult {
@@ -58,6 +97,13 @@ impl<'a> WorkflowExecutor<'a> {
                 step_results: Vec::new(),
                 duration_ms: 0,
             });
+        }
+
+        let workflow_name = workflow.id.clone().unwrap_or_else(|| "workflow".to_string());
+
+        // Notify workflow start
+        if let Some(ref obs) = terminal_observer {
+            obs.on_workflow_start(&workflow_name, workflow.steps.len());
         }
 
         let execution_config = workflow.execution.as_ref();
@@ -73,18 +119,36 @@ impl<'a> WorkflowExecutor<'a> {
 
         let step_results = match mode {
             ExecutionMode::Sequential => {
-                self.execute_sequential(workflow, &on_failure, &on_blocked)
+                self.execute_sequential(workflow, &on_failure, &on_blocked, &terminal_observer, &mut log_observer)
             }
             ExecutionMode::Parallel => {
-                self.execute_parallel(workflow, &on_failure, &on_blocked)
+                self.execute_parallel(workflow, &on_failure, &on_blocked, &terminal_observer, &mut log_observer)
             }
             ExecutionMode::Dag => {
-                self.execute_dag(workflow, &on_failure, &on_blocked)
+                self.execute_dag(workflow, &on_failure, &on_blocked, &terminal_observer, &mut log_observer)
             }
         };
 
         let state = WorkflowState::derive(&step_results);
         let duration_ms = start.elapsed().as_millis() as u64;
+
+        // Notify workflow complete
+        if let Some(ref obs) = terminal_observer {
+            obs.on_workflow_complete(&workflow_name, &state, duration_ms);
+        }
+
+        // Save workflow context/summary to log
+        if let Some(ref obs) = log_observer {
+            let entry = create_workflow_log_entry(
+                workflow.id.as_deref(),
+                &workflow_name,
+                state.clone(),
+                &step_results,
+                duration_ms,
+                started_at,
+            );
+            let _ = obs.save_workflow_context(&entry);
+        }
 
         Ok(WorkflowResult {
             state,
@@ -99,6 +163,8 @@ impl<'a> WorkflowExecutor<'a> {
         workflow: &Workflow,
         on_failure: &OnStepFailure,
         on_blocked: &OnStepBlocked,
+        terminal_observer: &Option<TerminalObserver>,
+        log_observer: &mut Option<LogObserver>,
     ) -> Vec<StepResult> {
         let mut results: Vec<StepResult> = Vec::new();
         let mut context = self.context.clone();
@@ -112,10 +178,28 @@ impl<'a> WorkflowExecutor<'a> {
                 context.prev_state = Some(format!("{:?}", prev.state).to_lowercase());
             }
 
+            let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", index));
+
+            // Notify step start
+            if let Some(ref obs) = terminal_observer {
+                obs.on_step_start(index, &step_name);
+            }
+            if let Some(ref mut obs) = log_observer {
+                let _ = obs.on_step_start(index, step.id.as_deref());
+            }
+
             // Execute step
             let executor = StepExecutor::new(self.config, context.clone())
                 .with_log_dir(self.log_dir.clone().unwrap_or_default());
             let result = executor.execute(step);
+
+            // Notify step complete
+            if let Some(ref obs) = terminal_observer {
+                obs.on_step_complete(index, &step_name, &result.state);
+            }
+            if let Some(ref mut obs) = log_observer {
+                let _ = obs.on_step_complete(&result);
+            }
 
             // Check for early termination
             let should_abort = match result.state {
@@ -152,16 +236,38 @@ impl<'a> WorkflowExecutor<'a> {
         workflow: &Workflow,
         _on_failure: &OnStepFailure,
         _on_blocked: &OnStepBlocked,
+        terminal_observer: &Option<TerminalObserver>,
+        log_observer: &mut Option<LogObserver>,
     ) -> Vec<StepResult> {
         // For now, execute sequentially but mark as parallel
         // TODO: Use thread pool for true parallel execution
         let mut results: Vec<StepResult> = Vec::new();
 
         for (index, step) in workflow.steps.iter().enumerate() {
+            let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", index));
+
+            // Notify step start
+            if let Some(ref obs) = terminal_observer {
+                obs.on_step_start(index, &step_name);
+            }
+            if let Some(ref mut obs) = log_observer {
+                let _ = obs.on_step_start(index, step.id.as_deref());
+            }
+
             let context = self.context.clone().next_step(index, step.id.as_deref());
             let executor = StepExecutor::new(self.config, context)
                 .with_log_dir(self.log_dir.clone().unwrap_or_default());
-            results.push(executor.execute(step));
+            let result = executor.execute(step);
+
+            // Notify step complete
+            if let Some(ref obs) = terminal_observer {
+                obs.on_step_complete(index, &step_name, &result.state);
+            }
+            if let Some(ref mut obs) = log_observer {
+                let _ = obs.on_step_complete(&result);
+            }
+
+            results.push(result);
         }
 
         results
@@ -173,6 +279,8 @@ impl<'a> WorkflowExecutor<'a> {
         workflow: &Workflow,
         on_failure: &OnStepFailure,
         on_blocked: &OnStepBlocked,
+        terminal_observer: &Option<TerminalObserver>,
+        log_observer: &mut Option<LogObserver>,
     ) -> Vec<StepResult> {
         let mut results: Vec<Option<StepResult>> = vec![None; workflow.steps.len()];
         let execution_order = workflow.execution_order();
@@ -198,21 +306,46 @@ impl<'a> WorkflowExecutor<'a> {
 
             // Execute batch (could be parallelized)
             for &idx in &batch {
+                let step = &workflow.steps[idx];
+                let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", idx));
+
                 if skip_indices.contains(&idx) {
-                    results[idx] = Some(StepResult {
+                    let result = StepResult {
                         step_id: workflow.steps[idx].id.clone(),
                         state: StepState::Skipped,
                         message: Some("Dependency failed".to_string()),
                         ..Default::default()
-                    });
+                    };
+
+                    // Notify skipped step
+                    if let Some(ref obs) = terminal_observer {
+                        obs.on_step_complete(idx, &step_name, &result.state);
+                    }
+
+                    results[idx] = Some(result);
                     continue;
                 }
 
-                let step = &workflow.steps[idx];
+                // Notify step start
+                if let Some(ref obs) = terminal_observer {
+                    obs.on_step_start(idx, &step_name);
+                }
+                if let Some(ref mut obs) = log_observer {
+                    let _ = obs.on_step_start(idx, step.id.as_deref());
+                }
+
                 let context = self.context.clone().next_step(idx, step.id.as_deref());
                 let executor = StepExecutor::new(self.config, context)
                     .with_log_dir(self.log_dir.clone().unwrap_or_default());
                 let result = executor.execute(step);
+
+                // Notify step complete
+                if let Some(ref obs) = terminal_observer {
+                    obs.on_step_complete(idx, &step_name, &result.state);
+                }
+                if let Some(ref mut obs) = log_observer {
+                    let _ = obs.on_step_complete(&result);
+                }
 
                 // Check for abort
                 let should_abort = match result.state {
