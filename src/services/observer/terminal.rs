@@ -53,6 +53,17 @@ impl TerminalObserver {
             eprintln!("{} Workflow {} completed: {:?} ({})", icon, workflow_name, state, duration_str);
         }
     }
+
+    /// Called when a step is about to be retried.
+    pub fn on_step_retry(&self, step_index: usize, step_name: &str, attempt: u32, max_attempts: u32, delay_ms: u64) {
+        if self.settings.show_progress {
+            let delay_str = format_duration(delay_ms);
+            eprintln!(
+                "  ↻ Step {}: {} - Retry {}/{} in {}",
+                step_index + 1, step_name, attempt + 1, max_attempts, delay_str
+            );
+        }
+    }
 }
 
 /// Format duration in human-readable form.

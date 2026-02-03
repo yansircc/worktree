@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -77,6 +78,9 @@ pub struct StepResult {
     pub exports: HashMap<String, String>,
     /// Execution duration in milliseconds
     pub duration_ms: u64,
+    /// Retry attempt number (0 = first attempt)
+    #[serde(default)]
+    pub attempt: u32,
 }
 
 impl Default for StepResult {
@@ -90,7 +94,16 @@ impl Default for StepResult {
             artifacts: Vec::new(),
             exports: HashMap::new(),
             duration_ms: 0,
+            attempt: 0,
         }
+    }
+}
+
+impl StepResult {
+    /// Create a result with a specific attempt number
+    pub fn with_attempt(mut self, attempt: u32) -> Self {
+        self.attempt = attempt;
+        self
     }
 }
 
@@ -267,6 +280,27 @@ impl Default for StepVerify {
 }
 
 // ============================================================================
+// OnError
+// ============================================================================
+
+/// Step failure handling action
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OnError {
+    /// Use workflow-level setting (default)
+    #[default]
+    Inherit,
+    /// Mark as failed, abort workflow
+    Fail,
+    /// Mark as failed, continue execution
+    Continue,
+    /// Mark as blocked, pause workflow
+    Block,
+    /// Retry the step (uses step.retry config)
+    Retry,
+}
+
+// ============================================================================
 // Step Retry
 // ============================================================================
 
@@ -291,6 +325,36 @@ impl Default for StepRetry {
             max_attempts: default_max_attempts(),
             delay: None,
         }
+    }
+}
+
+/// Parse a duration string (e.g., "30s", "5m", "1h", "100ms")
+///
+/// Supported formats:
+/// - `Nms` - milliseconds
+/// - `Ns` - seconds
+/// - `Nm` - minutes
+/// - `Nh` - hours
+///
+/// Returns None if parsing fails.
+pub fn parse_duration(s: &str) -> Option<Duration> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // Try each suffix in order (longest first to avoid ambiguity)
+    if let Some(num) = s.strip_suffix("ms") {
+        num.parse::<u64>().ok().map(Duration::from_millis)
+    } else if let Some(num) = s.strip_suffix('s') {
+        num.parse::<u64>().ok().map(Duration::from_secs)
+    } else if let Some(num) = s.strip_suffix('m') {
+        num.parse::<u64>().ok().map(|n| Duration::from_secs(n * 60))
+    } else if let Some(num) = s.strip_suffix('h') {
+        num.parse::<u64>().ok().map(|n| Duration::from_secs(n * 3600))
+    } else {
+        // Try parsing as seconds if no suffix
+        s.parse::<u64>().ok().map(Duration::from_secs)
     }
 }
 
@@ -351,6 +415,10 @@ pub struct Step {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<StepRetry>,
 
+    /// Error handling action
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_error: Option<OnError>,
+
     /// Dependencies (for DAG mode)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends: Vec<String>,
@@ -372,8 +440,14 @@ impl Step {
             condition: None,
             timeout: None,
             retry: None,
+            on_error: None,
             depends: Vec::new(),
         }
+    }
+
+    /// Get effective on_error, considering inheritance
+    pub fn effective_on_error(&self) -> &OnError {
+        self.on_error.as_ref().unwrap_or(&OnError::Inherit)
     }
 }
 
@@ -395,4 +469,72 @@ mod tests {
         assert!(step.condition.is_some());
     }
 
+    #[test]
+    fn test_on_error_default() {
+        assert_eq!(OnError::default(), OnError::Inherit);
+    }
+
+    #[test]
+    fn test_on_error_serialize_deserialize() {
+        let json = r#"{"id": "test", "run": "echo test", "on_error": "continue"}"#;
+        let step: Step = serde_json::from_str(json).unwrap();
+        assert_eq!(step.on_error, Some(OnError::Continue));
+
+        let json = r#"{"id": "test", "run": "echo test", "on_error": "retry"}"#;
+        let step: Step = serde_json::from_str(json).unwrap();
+        assert_eq!(step.on_error, Some(OnError::Retry));
+    }
+
+    #[test]
+    fn test_effective_on_error() {
+        let step = Step::script("echo test");
+        assert_eq!(step.effective_on_error(), &OnError::Inherit);
+
+        let mut step = Step::script("echo test");
+        step.on_error = Some(OnError::Continue);
+        assert_eq!(step.effective_on_error(), &OnError::Continue);
+    }
+
+    #[test]
+    fn test_parse_duration_seconds() {
+        assert_eq!(parse_duration("30s"), Some(Duration::from_secs(30)));
+        assert_eq!(parse_duration("1s"), Some(Duration::from_secs(1)));
+        assert_eq!(parse_duration("0s"), Some(Duration::from_secs(0)));
+    }
+
+    #[test]
+    fn test_parse_duration_minutes() {
+        assert_eq!(parse_duration("5m"), Some(Duration::from_secs(5 * 60)));
+        assert_eq!(parse_duration("1m"), Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn test_parse_duration_hours() {
+        assert_eq!(parse_duration("1h"), Some(Duration::from_secs(3600)));
+        assert_eq!(parse_duration("2h"), Some(Duration::from_secs(7200)));
+    }
+
+    #[test]
+    fn test_parse_duration_milliseconds() {
+        assert_eq!(parse_duration("100ms"), Some(Duration::from_millis(100)));
+        assert_eq!(parse_duration("500ms"), Some(Duration::from_millis(500)));
+    }
+
+    #[test]
+    fn test_parse_duration_no_suffix() {
+        assert_eq!(parse_duration("30"), Some(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn test_parse_duration_invalid() {
+        assert_eq!(parse_duration(""), None);
+        assert_eq!(parse_duration("abc"), None);
+        assert_eq!(parse_duration("10x"), None);
+    }
+
+    #[test]
+    fn test_step_result_with_attempt() {
+        let result = StepResult::default().with_attempt(2);
+        assert_eq!(result.attempt, 2);
+    }
 }

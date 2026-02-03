@@ -101,6 +101,7 @@ impl<'a> StepExecutor<'a> {
             artifacts: Vec::new(), // TODO: collect artifacts
             exports: std::collections::HashMap::new(), // TODO: extract exports
             duration_ms: start.elapsed().as_millis() as u64,
+            attempt: 0,
         }
     }
 

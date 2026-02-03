@@ -13,7 +13,7 @@ use chrono::Utc;
 use rayon::prelude::*;
 
 use crate::error::Result;
-use crate::models::step::{Step, StepResult, StepState};
+use crate::models::step::{OnError, Step, StepResult, StepState};
 use crate::models::workflow::{ExecutionMode, OnStepBlocked, OnStepFailure, Workflow, WorkflowState};
 use crate::models::WtConfig;
 use crate::services::executor::context::ExecutionContext;
@@ -173,6 +173,122 @@ impl<'a> WorkflowExecutor<'a> {
         })
     }
 
+    /// Resume workflow execution from previously saved results.
+    ///
+    /// This continues execution from the first non-successful step,
+    /// preserving results of already completed steps.
+    pub fn resume(
+        &self,
+        workflow: &Workflow,
+        saved_results: Vec<StepResult>,
+    ) -> Result<WorkflowResult> {
+        let start = std::time::Instant::now();
+
+        // Find the resume point: first step that didn't succeed
+        let resume_from = saved_results.iter()
+            .position(|r| !matches!(r.state, StepState::Success | StepState::Skipped))
+            .unwrap_or(saved_results.len());
+
+        // If all steps completed successfully, return the saved results
+        if resume_from >= workflow.steps.len() {
+            let state = WorkflowState::derive(&saved_results);
+            return Ok(WorkflowResult {
+                state,
+                step_results: saved_results,
+                duration_ms: 0,
+            });
+        }
+
+        // Create observers
+        let terminal_observer = if self.show_progress {
+            Some(TerminalObserver::new(TerminalSettings {
+                show_progress: true,
+                ..Default::default()
+            }))
+        } else {
+            None
+        };
+
+        let log_observer = if let Some(ref dir) = self.log_dir {
+            let phase_name = if self.context.phase.is_empty() {
+                "unknown"
+            } else {
+                &self.context.phase
+            };
+            let mut obs = LogObserver::new(dir, &self.context.task, phase_name)
+                .with_stream(true);
+            let _ = obs.init();
+            Some(obs)
+        } else {
+            None
+        };
+
+        let sync_observers = SyncObservers::new(terminal_observer, log_observer);
+
+        // Notify resume
+        if self.show_progress {
+            eprintln!(
+                "↻ Resuming workflow from step {} (skipping {} completed steps)",
+                resume_from + 1,
+                resume_from
+            );
+        }
+
+        // Copy preserved results
+        let mut results: Vec<StepResult> = saved_results[..resume_from].to_vec();
+
+        // Get execution config
+        let execution_config = workflow.execution.as_ref();
+        let on_failure = execution_config
+            .map(|e| e.on_step_failure.clone())
+            .unwrap_or_default();
+        let on_blocked = execution_config
+            .map(|e| e.on_step_blocked.clone())
+            .unwrap_or_default();
+
+        // Execute remaining steps sequentially
+        let mut context = self.context.clone();
+
+        for (index, step) in workflow.steps.iter().enumerate().skip(resume_from) {
+            context = context.next_step(index, step.id.as_deref());
+
+            // Add previous step info
+            if let Some(prev) = results.last() {
+                context.prev_state = Some(format!("{:?}", prev.state).to_lowercase());
+            }
+
+            let result = self.execute_step_with_retry(
+                step, index, context.clone(), &sync_observers
+            );
+
+            let should_abort = Self::should_abort(step, &result, &on_failure, &on_blocked);
+            results.push(result);
+
+            if should_abort {
+                break;
+            }
+        }
+
+        let state = WorkflowState::derive(&results);
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        // Notify workflow complete
+        if self.show_progress {
+            let workflow_name = workflow.id.clone().unwrap_or_else(|| "workflow".to_string());
+            let obs = TerminalObserver::new(TerminalSettings {
+                show_progress: true,
+                ..Default::default()
+            });
+            obs.on_workflow_complete(&workflow_name, &state, duration_ms);
+        }
+
+        Ok(WorkflowResult {
+            state,
+            step_results: results,
+            duration_ms,
+        })
+    }
+
     /// Execute a single step with thread-safe observer notifications.
     ///
     /// This method is safe to call from multiple threads concurrently.
@@ -201,15 +317,86 @@ impl<'a> WorkflowExecutor<'a> {
         result
     }
 
-    /// Check if execution should abort based on step result.
+    /// Execute a single step with retry support.
+    ///
+    /// If step has on_error: retry and retry config, this will retry on failure.
+    fn execute_step_with_retry(
+        &self,
+        step: &Step,
+        index: usize,
+        context: ExecutionContext,
+        observers: &SyncObservers,
+    ) -> StepResult {
+        use crate::models::step::{parse_duration, OnError};
+
+        // Check if retry is enabled for this step
+        let should_retry = matches!(step.effective_on_error(), OnError::Retry);
+        if !should_retry {
+            return self.execute_step_with_sync_observers(step, index, context, observers);
+        }
+
+        let retry_config = step.retry.as_ref();
+        let max_attempts = retry_config.map(|r| r.max_attempts).unwrap_or(2);
+        let delay = retry_config
+            .and_then(|r| r.delay.as_deref())
+            .and_then(parse_duration);
+
+        let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", index));
+
+        for attempt in 0..max_attempts {
+            // Execute the step
+            let mut result = self.execute_step_with_sync_observers(
+                step, index, context.clone(), observers
+            );
+            result.attempt = attempt;
+
+            // Check if retry is needed
+            let should_retry_now = matches!(result.state, StepState::Failed | StepState::Timeout)
+                && attempt + 1 < max_attempts;
+
+            if !should_retry_now {
+                return result;
+            }
+
+            // Notify retry
+            let delay_ms = delay.map(|d| d.as_millis() as u64).unwrap_or(0);
+            observers.on_step_retry(index, &step_name, attempt, max_attempts, delay_ms);
+
+            // Wait before retry
+            if let Some(d) = delay {
+                std::thread::sleep(d);
+            }
+        }
+
+        // Should not reach here, but return a failed result just in case
+        StepResult {
+            step_id: step.id.clone(),
+            state: StepState::Failed,
+            message: Some("Max retries exceeded".to_string()),
+            attempt: max_attempts - 1,
+            ..Default::default()
+        }
+    }
+
+    /// Check if execution should abort based on step result and on_error config.
+    ///
+    /// Priority: step.on_error > workflow.on_step_failure
     fn should_abort(
+        step: &Step,
         result: &StepResult,
         on_failure: &OnStepFailure,
         on_blocked: &OnStepBlocked,
     ) -> bool {
         match result.state {
             StepState::Failed | StepState::Timeout => {
-                matches!(on_failure, OnStepFailure::Abort)
+                // Check step-level on_error first
+                match step.effective_on_error() {
+                    OnError::Inherit => matches!(on_failure, OnStepFailure::Abort),
+                    OnError::Fail => true,
+                    OnError::Continue => false,
+                    OnError::Block => true, // Block also stops execution
+                    OnError::Retry => false, // Retry handled by execute_step_with_retry
+                }
             }
             StepState::Blocked => {
                 matches!(on_blocked, OnStepBlocked::Abort | OnStepBlocked::Pause)
@@ -238,7 +425,7 @@ impl<'a> WorkflowExecutor<'a> {
                 context.prev_state = Some(format!("{:?}", prev.state).to_lowercase());
             }
 
-            let result = self.execute_step_with_sync_observers(
+            let result = self.execute_step_with_retry(
                 step, index, context.clone(), observers
             );
 
@@ -250,7 +437,7 @@ impl<'a> WorkflowExecutor<'a> {
                 }
             }
 
-            let should_abort = Self::should_abort(&result, on_failure, on_blocked);
+            let should_abort = Self::should_abort(step, &result, on_failure, on_blocked);
             results.push(result);
 
             if should_abort {
@@ -298,10 +485,10 @@ impl<'a> WorkflowExecutor<'a> {
                     }
 
                     let context = self.context.clone().next_step(index, step.id.as_deref());
-                    let result = self.execute_step_with_sync_observers(step, index, context, observers);
+                    let result = self.execute_step_with_retry(step, index, context, observers);
 
                     // Signal abort if needed
-                    if Self::should_abort(&result, on_failure, on_blocked) {
+                    if Self::should_abort(step, &result, on_failure, on_blocked) {
                         aborted.store(true, Ordering::Relaxed);
                     }
 
@@ -385,10 +572,10 @@ impl<'a> WorkflowExecutor<'a> {
                         }
 
                         let context = self.context.clone().next_step(idx, step.id.as_deref());
-                        let result = self.execute_step_with_sync_observers(step, idx, context, observers);
+                        let result = self.execute_step_with_retry(step, idx, context, observers);
 
                         // Signal abort if needed
-                        if Self::should_abort(&result, on_failure, on_blocked) {
+                        if Self::should_abort(step, &result, on_failure, on_blocked) {
                             aborted.store(true, Ordering::Relaxed);
                         }
 
@@ -399,10 +586,13 @@ impl<'a> WorkflowExecutor<'a> {
 
             // Store batch results
             let mut should_abort_workflow = false;
-            for (idx, result) in batch_results {
-                if Self::should_abort(&result, on_failure, on_blocked) {
+            for (idx, result) in &batch_results {
+                let step = &workflow.steps[*idx];
+                if Self::should_abort(step, result, on_failure, on_blocked) {
                     should_abort_workflow = true;
                 }
+            }
+            for (idx, result) in batch_results {
                 results[idx] = Some(result);
             }
 
@@ -817,5 +1007,368 @@ mod tests {
             "DAG batch took {}ms, expected < 180ms (parallel b+c)",
             result.duration_ms
         );
+    }
+
+    // =========================================================================
+    // OnError Tests
+    // =========================================================================
+
+    #[test]
+    fn test_on_error_continue_overrides_workflow_abort() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // Workflow default is abort, but step has on_error: continue
+        let mut step_fail = Step::script("exit 1");
+        step_fail.on_error = Some(OnError::Continue);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                step_fail,
+                Step::script("true"), // Should still run
+            ],
+            execution: Some(ExecutionConfig {
+                on_step_failure: OnStepFailure::Abort,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Failed);
+        assert_eq!(result.step_results.len(), 3);
+        assert_eq!(result.step_results[0].state, StepState::Success);
+        assert_eq!(result.step_results[1].state, StepState::Failed);
+        assert_eq!(result.step_results[2].state, StepState::Success); // Continues despite failure
+    }
+
+    #[test]
+    fn test_on_error_fail_overrides_workflow_continue() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // Workflow default is continue, but step has on_error: fail
+        let mut step_fail = Step::script("exit 1");
+        step_fail.on_error = Some(OnError::Fail);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                step_fail,
+                Step::script("true"), // Should NOT run
+            ],
+            execution: Some(ExecutionConfig {
+                on_step_failure: OnStepFailure::Continue,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Failed);
+        assert_eq!(result.step_results.len(), 2); // Third step not executed
+        assert_eq!(result.step_results[0].state, StepState::Success);
+        assert_eq!(result.step_results[1].state, StepState::Failed);
+    }
+
+    #[test]
+    fn test_on_error_inherit_uses_workflow_setting() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // No on_error set, should use workflow's on_step_failure
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("exit 1"),
+                Step::script("true"),
+            ],
+            execution: Some(ExecutionConfig {
+                on_step_failure: OnStepFailure::Continue,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.step_results.len(), 3);
+        assert_eq!(result.step_results[2].state, StepState::Success);
+    }
+
+    // =========================================================================
+    // Retry Tests
+    // =========================================================================
+
+    #[test]
+    fn test_retry_on_failure() {
+        use crate::models::step::StepRetry;
+
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // Step with on_error: retry, max_attempts: 2
+        // First attempt fails, second succeeds (we can't easily test this with scripts)
+        // So we test that max retries are exhausted
+        let mut step_fail = Step::script("exit 1");
+        step_fail.on_error = Some(OnError::Retry);
+        step_fail.retry = Some(StepRetry {
+            max_attempts: 2,
+            delay: Some("10ms".to_string()),
+        });
+
+        let workflow = Workflow {
+            steps: vec![step_fail],
+            execution: Some(ExecutionConfig {
+                on_step_failure: OnStepFailure::Continue,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Failed);
+        assert_eq!(result.step_results.len(), 1);
+        assert_eq!(result.step_results[0].state, StepState::Failed);
+        // Should have attempted twice (attempt 0 and 1)
+        assert_eq!(result.step_results[0].attempt, 1); // Last attempt index
+    }
+
+    #[test]
+    fn test_retry_eventually_succeeds() {
+        use crate::models::step::StepRetry;
+        use std::fs;
+
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // Create a temp file to track attempts
+        let temp_dir = std::env::temp_dir();
+        let counter_file = temp_dir.join("wt_retry_test_counter");
+        let _ = fs::remove_file(&counter_file);
+
+        // Script that fails first time, succeeds second time
+        let script = format!(
+            r#"
+            FILE="{}"
+            if [ -f "$FILE" ]; then
+                exit 0
+            else
+                touch "$FILE"
+                exit 1
+            fi
+            "#,
+            counter_file.display()
+        );
+
+        let mut step = Step::script(&script);
+        step.on_error = Some(OnError::Retry);
+        step.retry = Some(StepRetry {
+            max_attempts: 3,
+            delay: Some("10ms".to_string()),
+        });
+
+        let workflow = Workflow {
+            steps: vec![step],
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        // Cleanup
+        let _ = fs::remove_file(&counter_file);
+
+        assert_eq!(result.state, WorkflowState::Success);
+        assert_eq!(result.step_results[0].state, StepState::Success);
+        assert_eq!(result.step_results[0].attempt, 1); // Second attempt (index 1)
+    }
+
+    #[test]
+    fn test_no_retry_without_on_error_retry() {
+        use crate::models::step::StepRetry;
+
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // Step with retry config but no on_error: retry - should NOT retry
+        let mut step_fail = Step::script("exit 1");
+        step_fail.retry = Some(StepRetry {
+            max_attempts: 3,
+            delay: None,
+        });
+        // on_error is None (Inherit)
+
+        let workflow = Workflow {
+            steps: vec![step_fail],
+            execution: Some(ExecutionConfig {
+                on_step_failure: OnStepFailure::Continue,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.step_results[0].state, StepState::Failed);
+        assert_eq!(result.step_results[0].attempt, 0); // Only one attempt
+    }
+
+    // =========================================================================
+    // Resume Tests
+    // =========================================================================
+
+    #[test]
+    fn test_resume_from_checkpoint() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // Workflow with 3 steps
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("true"),
+                Step::script("true"),
+            ],
+            ..Default::default()
+        };
+
+        // Simulate saved results: first step succeeded, second failed
+        let saved_results = vec![
+            StepResult {
+                step_id: None,
+                state: StepState::Success,
+                ..Default::default()
+            },
+            StepResult {
+                step_id: None,
+                state: StepState::Failed,
+                ..Default::default()
+            },
+        ];
+
+        let result = executor.resume(&workflow, saved_results).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Success);
+        assert_eq!(result.step_results.len(), 3);
+        // First step preserved
+        assert_eq!(result.step_results[0].state, StepState::Success);
+        // Second and third re-executed
+        assert_eq!(result.step_results[1].state, StepState::Success);
+        assert_eq!(result.step_results[2].state, StepState::Success);
+    }
+
+    #[test]
+    fn test_resume_all_completed() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("true"),
+            ],
+            ..Default::default()
+        };
+
+        // All steps already succeeded
+        let saved_results = vec![
+            StepResult {
+                state: StepState::Success,
+                ..Default::default()
+            },
+            StepResult {
+                state: StepState::Success,
+                ..Default::default()
+            },
+        ];
+
+        let result = executor.resume(&workflow, saved_results).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Success);
+        assert_eq!(result.step_results.len(), 2);
+        assert_eq!(result.duration_ms, 0); // No new execution
+    }
+
+    #[test]
+    fn test_resume_from_beginning() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("true"),
+            ],
+            ..Default::default()
+        };
+
+        // First step failed, nothing to preserve
+        let saved_results = vec![
+            StepResult {
+                state: StepState::Failed,
+                ..Default::default()
+            },
+        ];
+
+        let result = executor.resume(&workflow, saved_results).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Success);
+        assert_eq!(result.step_results.len(), 2);
+        // Both steps re-executed
+        assert_eq!(result.step_results[0].state, StepState::Success);
+        assert_eq!(result.step_results[1].state, StepState::Success);
+    }
+
+    #[test]
+    fn test_resume_preserves_skipped() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("true"),
+                Step::script("true"),
+            ],
+            ..Default::default()
+        };
+
+        // First step succeeded, second skipped, third failed
+        let saved_results = vec![
+            StepResult {
+                state: StepState::Success,
+                ..Default::default()
+            },
+            StepResult {
+                state: StepState::Skipped,
+                ..Default::default()
+            },
+            StepResult {
+                state: StepState::Failed,
+                ..Default::default()
+            },
+        ];
+
+        let result = executor.resume(&workflow, saved_results).unwrap();
+
+        // First and second preserved, third re-executed
+        assert_eq!(result.step_results.len(), 3);
+        assert_eq!(result.step_results[0].state, StepState::Success);
+        assert_eq!(result.step_results[1].state, StepState::Skipped);
+        assert_eq!(result.step_results[2].state, StepState::Success);
     }
 }

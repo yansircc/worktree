@@ -148,6 +148,18 @@ impl LogObserver {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         fs::write(path, json)
     }
+
+    /// Called when a step is about to be retried.
+    pub fn on_step_retry(&mut self, step_index: usize, attempt: u32, max_attempts: u32, delay_ms: u64) -> io::Result<()> {
+        if let Some(ref mut writer) = self.writer {
+            writeln!(writer, "---")?;
+            writeln!(writer, "# Step {} retry {}/{} at {}", step_index, attempt + 1, max_attempts, Utc::now())?;
+            writeln!(writer, "# Waiting {}ms before retry", delay_ms)?;
+            writeln!(writer, "---")?;
+            writer.flush()?;
+        }
+        Ok(())
+    }
 }
 
 /// Create workflow log entry from execution results.

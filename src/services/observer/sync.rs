@@ -63,6 +63,23 @@ impl SyncObservers {
         }
     }
 
+    /// Notify observers that a step will be retried.
+    ///
+    /// Thread-safe: terminal writes to stderr (atomic), log uses mutex.
+    pub fn on_step_retry(&self, index: usize, step_name: &str, attempt: u32, max_attempts: u32, delay_ms: u64) {
+        // Terminal observer
+        if let Some(ref obs) = self.terminal {
+            obs.on_step_retry(index, step_name, attempt, max_attempts, delay_ms);
+        }
+
+        // Log observer: could add retry info to log here if needed
+        if let Ok(mut guard) = self.log.lock() {
+            if let Some(ref mut obs) = *guard {
+                let _ = obs.on_step_retry(index, attempt, max_attempts, delay_ms);
+            }
+        }
+    }
+
     /// Extract the log observer for final workflow context saving.
     ///
     /// Consumes the wrapper and returns the inner LogObserver.
