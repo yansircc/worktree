@@ -10,6 +10,38 @@ wt step block "原因"       # 当前 step → blocked，等待 human 介入
 wt step fail "原因"        # 当前 step → failed，等待 human 介入
 ```
 
+### Agent 自验证 (Best Practice)
+
+推荐在 agent step 中启用 Stop hook 自验证机制，确保 agent 退出前完成质量检查：
+
+```jsonc
+// phase 配置示例
+{
+  "on_enter": {
+    "steps": [
+      {
+        "agent": {
+          "prompt": "@.wt/tasks/${task}.md",
+          "settings": ".wt/templates/verify-settings.json"  // 启用自验证
+        },
+        "verify": { "type": "self" }
+      }
+    ]
+  }
+}
+```
+
+**工作流程**：
+1. Agent 完成任务尝试退出
+2. Stop hook 触发，提示阅读 `.wt/verify.md` 自检清单
+3. Agent 根据检查结果调用 `wt step done/block/fail`
+4. 状态标记后允许退出
+
+**相关文件**：
+- `.wt/hooks/verify-stop.cjs` - Stop hook 脚本
+- `.wt/verify.md` - 验证清单模板
+- `.wt/templates/verify-settings.json` - Claude settings 模板
+
 ## Human 强制命令
 
 Human 强制操作阶段转换：
