@@ -1,40 +1,37 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 28 完成的工作 (2026-02-03)
+## Session 29 完成的工作 (2026-02-03)
 
-### 1. Dead Code 彻底清理
+### 重构计划完整执行
 
-删除所有 `#[allow(dead_code)]` 标记的代码：
+完成 `.claude/specs/refactor-extract-task-context.md` 中的全部 3 个 Phase：
 
-| 文件 | 删除内容 |
-|------|----------|
-| `files.rs` | `copy_files()` (功能已在 workspace.rs) |
-| `status.rs` | 构造函数 `pending/active/idle/completed` |
-| `status.rs` | 状态方法 `to_completed/to_pending/is_error/has_conflict/active_duration` |
-| `status.rs` | `StatusStore::set/remove` |
-| `agent_step.rs` | builder 方法 `with_skip_permissions/verbose/output_format/input_format` |
-| `step.rs` | `StepResult` 简化为 unit struct |
-| `tui/app.rs` | 未使用的 `config` 字段 |
+#### Phase 1: 提取 TaskContext
 
-测试专用方法改为 `#[cfg(test)]`：
-- `TaskState::to_active()`
-- `ExecutionContext::with_phase/with_var`
+新增 `src/services/task_context.rs` (194 行)：
+- 封装 load → resolve → validate → save 模式
+- 重构 7 个命令: complete, delete, pause, reset, resume, review, tail
+- 减少约 200 行重复代码
 
-### 2. PipelineStore 提取
+#### Phase 2: 提取 task_parser
 
-新增 `src/services/hooks/pipeline_store.rs`：
-- 简化 `list/kill/cleanup_pipelines` 函数
-- 消除重复的路径构建和错误处理
+新增 `src/models/task_parser.rs` (266 行)：
+- 从 store.rs 提取 `parse_file`, `parse_markdown`, `validate_name`
+- store.rs: 970 → 740 行 (代码约 320 行，测试约 420 行)
 
-### 3. 架构分析 + 重构规格
+#### Phase 3: 提取 builtin_pipelines
 
-完成全库分析，生成 `.claude/specs/refactor-extract-task-context.md`：
+新增 `src/models/builtin_pipelines.rs` (124 行)：
+- 从 config.rs 提取 code-review, merge, refactor pipeline 定义
+- config.rs: 777 → 710 行 (代码约 305 行，测试约 405 行)
 
-| Phase | 内容 | 优先级 |
-|-------|------|--------|
-| P1 | 提取 TaskContext 减少 commands 层重复 | 高 |
-| P2 | 拆分 store.rs (970行 → ~400行) | 中 |
-| P3 | 拆分 config.rs (777行 → ~400行) | 低 |
+#### 变更统计
+
+```
+净变化: -472 行 (155 added, 627 removed)
+新增文件: 3 个
+修改文件: 12 个
+```
 
 ---
 
@@ -43,28 +40,33 @@
 ### 测试
 
 ```
-cargo test --lib: 173 passed
+cargo test --lib: 176 passed
 cargo test --test cli: 121 passed
 编译警告: 0
 ```
 
 ### 代码统计
 
-| 文件 | 行数 | 说明 |
-|------|------|------|
-| store.rs | 970 | 待拆分 (P2) |
-| config.rs | 777 | 待拆分 (P3) |
-| pipeline.rs | 588 | |
-| status.rs | 593 | 已清理 |
-| **总计** | 12,202 | |
+| 文件 | 总行数 | 代码 | 测试 |
+|------|--------|------|------|
+| store.rs | 740 | ~320 | ~420 |
+| config.rs | 710 | ~305 | ~405 |
+| task_parser.rs | 266 | - | - |
+| task_context.rs | 194 | - | - |
+| builtin_pipelines.rs | 124 | - | - |
+
+### 架构改进
+
+- **TaskContext**: 统一任务操作模式，7 个命令使用
+- **task_parser**: 任务文件解析逻辑独立
+- **builtin_pipelines**: 内置 pipeline 定义独立
 
 ---
 
 ## 下一步工作
 
-1. **执行重构 Phase 1** - 提取 TaskContext (`specs/refactor-extract-task-context.md`)
-2. **实际测试 complete 工作流** - run → review → complete 全流程
-3. **评估 Phase 2/3** - 根据需要拆分大文件
+1. **实际测试 complete 工作流** - run → review → complete 全流程
+2. **功能完善** - 根据实际使用反馈优化
 
 ---
 
@@ -72,6 +74,7 @@ cargo test --test cli: 121 passed
 
 | Session | 主要工作 |
 |---------|----------|
+| 29 | 重构: TaskContext + task_parser + builtin_pipelines |
 | 28 | Dead code 彻底清理 + 架构分析 + 重构规格 |
 | 27 | AgentStep 重构 + ClaudeCommandBuilder |
 | 26 | Pipeline 完善 + 预定义 pipelines |
