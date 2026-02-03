@@ -276,6 +276,12 @@ Agent Step 刚启动，尚无 transcript：
 - 移除 `can_mark_idle()`/`mark_idle()`/`can_resume()`/`can_complete()`/`mark_completed()` 方法
 - 重写 `actions.rs` 使用 `wt stop`/`wt next` 命令
 
+### Phase 3：可选增强（部分完成）
+
+1. `p` - 执行 `wt prev`（回退阶段） ✅
+2. Enter 对 Idle 任务打开 worktree shell ✅
+3. 显示真实 workflow/step 进度 - ⏸️ 待多步骤 workflow 支持后实现
+
 ## 测试
 
 ### 手动测试场景

@@ -34,6 +34,13 @@ pub enum TuiAction {
     },
     /// Tail a task's transcript
     Tail { name: String },
+    /// Open shell in worktree directory (for Idle tasks)
+    OpenWorktreeShell {
+        multiplexer: MultiplexerType,
+        session: String,
+        worktree_path: String,
+        task_name: String,
+    },
 }
 
 /// Task with computed metrics for display
@@ -283,9 +290,11 @@ impl App {
     }
 
     /// Get action for Enter key on selected task
-    /// - Inside multiplexer + window exists: switch to it
-    /// - Inside multiplexer + window closed: show resume command
-    /// - Outside multiplexer: show attach command
+    /// - Active + window exists: switch to it
+    /// - Active + window closed: show resume command
+    /// - Idle + window exists: switch to it
+    /// - Idle + window closed: open worktree shell
+    /// - Outside multiplexer: attach to session
     pub fn enter_action(&self) -> Option<TuiAction> {
         let task = self.selected_task()?;
 
@@ -315,14 +324,30 @@ impl App {
                 })
             }
         } else {
-            // Multiplexer window closed, show resume command
-            let worktree = task.worktree_path.as_ref()?;
-            let session_id = task.session_id.as_ref()?;
-            Some(TuiAction::ShowResume {
-                worktree: worktree.clone(),
-                session_id: session_id.clone(),
-                claude_command,
-            })
+            // Window closed
+            match task.status {
+                TaskStatus::Idle => {
+                    // Idle task: open worktree shell
+                    let worktree = task.worktree_path.as_ref()?;
+                    Some(TuiAction::OpenWorktreeShell {
+                        multiplexer: mux_type,
+                        session: session.clone(),
+                        worktree_path: worktree.clone(),
+                        task_name: task.name.clone(),
+                    })
+                }
+                TaskStatus::Active => {
+                    // Active task with closed window: show resume command
+                    let worktree = task.worktree_path.as_ref()?;
+                    let session_id = task.session_id.as_ref()?;
+                    Some(TuiAction::ShowResume {
+                        worktree: worktree.clone(),
+                        session_id: session_id.clone(),
+                        claude_command,
+                    })
+                }
+                _ => None,
+            }
         }
     }
 

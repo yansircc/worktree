@@ -1,5 +1,30 @@
 # Handoff 文档 - wt 开发进度
 
+## Session 37 完成的工作 (2026-02-03)
+
+### TUI v2 可选增强
+
+**新增快捷键**：
+- `p` - 执行 `wt prev`（回退阶段），适用于 Active/Idle 任务
+
+**改进 Enter 行为**：
+- Idle 任务按 Enter：如果 window 不存在，在 worktree 目录打开新 shell（而非显示 resume command）
+- Active 任务按 Enter：保持原有行为（window 存在则切换，不存在则显示 resume command）
+
+**更新帮助面板**：
+- 添加 `p` (prev) 和 `t` (tail) 快捷键说明
+
+**改动文件**：
+- `src/tui/mod.rs` - 添加 `p` 快捷键处理，处理 `OpenWorktreeShell` action
+- `src/tui/app.rs` - 添加 `TuiAction::OpenWorktreeShell`，修改 `enter_action()` 处理 Idle 任务
+- `src/tui/ui.rs` - 更新 footer 显示 `p` 快捷键，更新 help 面板
+- `src/commands/status/mod.rs` - 处理新的 `TuiAction::OpenWorktreeShell`
+
+**未实现**：
+- 显示真实 workflow/step 进度 - 分析后发现当前系统只启动单个 agent step，无多步骤 workflow 执行状态可显示，需要更大改动（持久化 workflow 状态等），建议留到真正需要多步骤 workflow 时再实现
+
+---
+
 ## Session 36 完成的工作 (2026-02-03)
 
 ### TUI v2 重构 Phase 1 + Phase 2 完成
@@ -94,11 +119,11 @@ wt internal          # 内部命令
 
 ## 下一步工作
 
-### TUI v2 可选增强
+### TUI v2 可选增强（已部分完成）
 
-- 显示真实的 workflow/step 进度（当前是占位符）
-- 添加 `p` 快捷键（回退阶段）
-- 改进 Enter 对 Idle 任务的行为（打开 worktree shell）
+- ✅ 添加 `p` 快捷键（回退阶段）
+- ✅ 改进 Enter 对 Idle 任务的行为（打开 worktree shell）
+- ⏸️ 显示真实的 workflow/step 进度 - 当前只有单个 agent step，需要多步骤 workflow 支持后再实现
 
 ### Phase 9: 高级功能
 | 子阶段 | 目标 | 状态 |
@@ -131,6 +156,7 @@ wt internal          # 内部命令
 
 | Session | 主要工作 |
 |---------|----------|
+| 37 | **TUI v2 增强** - `p` 快捷键(回退阶段)、Enter 对 Idle 任务打开 worktree shell |
 | 36 | **TUI v2 完成** - 左右分栏布局、新快捷键(n/s/l)、清理旧代码 |
 | 35 | Phase 6.2c + 6.3 + Phase 7 完成 - Observer 集成 + prev/stop/step 命令完善 |
 | 34 | Phase 6.2a/b 完成 - next 命令连接执行引擎 + agent 启动 |

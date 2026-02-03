@@ -77,5 +77,9 @@ fn handle_tui_action(action: TuiAction) -> Result<()> {
             // Execute tail command (default: 1 turn)
             crate::commands::tail::execute(name, 1)
         }
+        TuiAction::OpenWorktreeShell { .. } => {
+            // This is handled within TUI, not here
+            Ok(())
+        }
     }
 }

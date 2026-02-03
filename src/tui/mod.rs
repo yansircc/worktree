@@ -150,6 +150,49 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                                         // Exit TUI and handle in status.rs
                                         return Ok(action);
                                     }
+                                    TuiAction::OpenWorktreeShell {
+                                        multiplexer,
+                                        session,
+                                        worktree_path,
+                                        task_name,
+                                    } => {
+                                        // Open shell in worktree directory
+                                        match multiplexer {
+                                            MultiplexerType::Tmux => {
+                                                // Create new window with shell in worktree dir
+                                                Command::new("tmux")
+                                                    .args([
+                                                        "new-window",
+                                                        "-t",
+                                                        &session,
+                                                        "-n",
+                                                        &task_name,
+                                                        "-c",
+                                                        &worktree_path,
+                                                    ])
+                                                    .status()
+                                                    .ok();
+                                            }
+                                            MultiplexerType::Zellij => {
+                                                // For Zellij, create new tab
+                                                Command::new("zellij")
+                                                    .args([
+                                                        "-s",
+                                                        &session,
+                                                        "action",
+                                                        "new-tab",
+                                                        "--name",
+                                                        &task_name,
+                                                        "--cwd",
+                                                        &worktree_path,
+                                                    ])
+                                                    .status()
+                                                    .ok();
+                                            }
+                                        }
+                                        // Refresh data to show updated state
+                                        app.refresh()?;
+                                    }
                                     _ => {}
                                 }
                             }
@@ -196,6 +239,33 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                                     let name = task.name.clone();
                                     // Execute wt stop (don't need to leave TUI)
                                     crate::commands::stop::execute(name, false)?;
+                                    app.refresh()?;
+                                }
+                            }
+                        }
+
+                        // Prev (Active or Idle) - go back to previous phase
+                        KeyCode::Char('p') => {
+                            if let Some(task) = app.selected_task() {
+                                if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
+                                    let name = task.name.clone();
+                                    // Temporarily leave TUI to show output
+                                    disable_raw_mode().ok();
+                                    let mut stdout = io::stdout();
+                                    execute!(stdout, LeaveAlternateScreen, DisableMouseCapture).ok();
+
+                                    // Execute wt prev
+                                    let result = crate::commands::prev::execute(name);
+                                    if let Err(e) = &result {
+                                        eprintln!("Error: {}", e);
+                                    }
+
+                                    // Brief pause to see output
+                                    std::thread::sleep(std::time::Duration::from_millis(500));
+
+                                    // Re-enter TUI
+                                    enable_raw_mode().ok();
+                                    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).ok();
                                     app.refresh()?;
                                 }
                             }

@@ -438,8 +438,10 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         Line::from("  j/k     Navigate tasks"),
         Line::from("  Enter   Attach to agent window"),
         Line::from("  n       Next phase (wt next)"),
+        Line::from("  p       Prev phase (wt prev)"),
         Line::from("  s       Stop task (wt stop)"),
         Line::from("  l       View logs"),
+        Line::from("  t       Tail transcript"),
         Line::from("  q       Quit"),
     ];
 
@@ -484,6 +486,12 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             if task.status == TaskStatus::Active {
                 spans.push(Span::styled("s", Style::default().fg(Color::Yellow)));
                 spans.push(Span::raw(" stop  "));
+            }
+
+            // p (prev) - available for Active and Idle
+            if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
+                spans.push(Span::styled("p", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" prev  "));
             }
 
             // l (log) - available for Active and Idle
