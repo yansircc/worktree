@@ -36,6 +36,7 @@ pub fn generate_config(project_name: &str) -> String {
     "definitions": {{
       // developing 阶段 - 需要资源（worktree, branch, window）
       "developing": {{
+        "id": "developing",
         "resources": "full",
         "on_enter": {{
           "steps": [
@@ -55,6 +56,7 @@ pub fn generate_config(project_name: &str) -> String {
 
       // reviewing 阶段 - 需要资源
       "reviewing": {{
+        "id": "reviewing",
         "resources": "full",
         "on_enter": {{
           "steps": [
@@ -70,6 +72,7 @@ pub fn generate_config(project_name: &str) -> String {
 
       // completed 阶段 - 不需要资源
       "completed": {{
+        "id": "completed",
         "resources": "none"
       }}
     }}
