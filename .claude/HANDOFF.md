@@ -1,38 +1,31 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 34 完成的工作 (2026-02-03)
+## Session 35 完成的工作 (2026-02-03)
 
-### Phase 6.2 实现 - next 命令连接执行引擎 ✅
+### Phase 6.2c + 6.3 + Phase 7 全部完成
 
-重写了 `wt next` 命令，连接配置系统和执行引擎：
+**Phase 6.2c - prev 使用配置：**
+- 使用 `config.phase_sequence()` 替代硬编码枚举
+- 使用 `prev_phase()` 从 executor 模块
 
-| 改动 | 说明 |
-|------|------|
-| 配置驱动 | 使用 `config.phase_sequence()` 而非硬编码枚举 |
-| 资源分配 | `allocate_resources()` 创建 worktree/branch/window |
-| Agent 启动 | `start_agent_in_window()` 在 multiplexer 中启动 claude |
-| 默认 Agent | `AgentStep::default_develop()` / `default_review()` |
+**Phase 6.3 - Observer 集成：**
+- `WorkflowExecutor` 集成 `TerminalObserver` + `LogObserver`
+- 执行 workflow 时输出进度到 stderr
+- 日志写入 `.wt/logs/<task>/<phase>/`
 
-**执行流程：**
-```
-wt next <task>
-    ├── 确定下一阶段 (从配置)
-    ├── 分配资源 (worktree/branch/window)
-    ├── 有 on_enter workflow?
-    │   ├── 交互式 agent → 在 window 中启动 → Active
-    │   └── 脚本 → 同步执行 → Idle
-    └── 无 workflow → 启动 default_develop → Active
-```
+**Phase 7.1 - prev 命令完善：**
+- 执行 on_exit workflow（退出当前阶段时）
+- 回退到 pending 时自动清理资源（worktree/window）
 
-### 设计决策文档化
+**Phase 7.2 - stop 命令完善：**
+- 记录停止事件到 `.wt/logs/<task>/stop.log`
+- 更新提示信息显示当前 phase
+- 清理遗留的 `wt run` 引用 → `wt next`
 
-在 `decisions.md` 中添加了 **D12: observe 是可观测性配置**：
-- `observe` 是用户配置视角的概念，不是观察者模式
-- 实现时按职责拆分为 Reporter/Logger/Executor
-
-### 新增 /deeptalk skill
-
-创建了深度讨论模式 skill，用于第一性原理思考。
+**Phase 7.3 - step 命令完善：**
+- 记录 step 操作到 `step-actions.log`
+- 保存消息到 `last-step-result.txt` 供步骤间通信
+- 支持 `WT_PHASE`、`WT_STEP` 环境变量
 
 ---
 
@@ -58,8 +51,8 @@ wt delete            # 删除任务
 
 # 阶段控制 (Phases v2)
 wt next <task>       # 推进到下一阶段 (创建资源 + 启动 agent)
-wt prev <task>       # 回退到上一阶段
-wt stop <task>       # 停止任务进程
+wt prev <task>       # 回退到上一阶段 (执行 on_exit + 清理资源)
+wt stop <task>       # 停止任务进程 (支持 --kill-window)
 wt reset <task>      # 重置任务 (支持 --to 参数)
 wt step done/block/fail  # Agent 标记 step 状态
 
@@ -81,19 +74,20 @@ wt internal          # 内部命令
 
 详见 **`.claude/specs/roadmap.md`**
 
-### Phase 6 剩余工作
+### Phase 8: TUI 更新
 
 | 子阶段 | 目标 | 状态 |
 |--------|------|------|
-| 6.2c | prev.rs 同步更新 (使用配置) | 待做 |
-| 6.3 | Observer 集成 (执行进度输出) | 待做 |
+| 8.1 | 显示 workflow 执行进度、step 状态 | 待做 |
+| 8.2 | 更新快捷键、添加 workflow 控制 | 待做 |
 
-### 建议的下一 Session
+### Phase 9: 高级功能
 
-**Session 35 目标**：Phase 6.2c + 6.3
-
-1. 更新 `prev.rs` 使用配置中的 phase sequence
-2. 在执行过程中集成 Observer 输出进度
+| 子阶段 | 目标 | 状态 |
+|--------|------|------|
+| 9.1 | 并发执行 - DAG 并行、多任务并行 | 待做 |
+| 9.2 | 条件分支 - condition step | 待做 |
+| 9.3 | 错误恢复 - on_error、重试、断点续执行 | 待做 |
 
 ---
 
@@ -108,11 +102,12 @@ wt internal          # 内部命令
 | Phase 4b | ✅ | 重写命令 (next/stop/reset --to) |
 | Phase 4c | ✅ | 删除旧命令 |
 | Phase 5 | ✅ | 清理旧代码 |
-| Phase 6.1 | ✅ | 配置模型 (已有) |
-| Phase 6.2a | ✅ | next 使用配置 |
-| Phase 6.2b | ✅ | next 启动 agent |
-| Phase 6.2c | 待做 | prev 同步更新 |
-| Phase 6.3 | 待做 | Observer 集成 |
+| Phase 6.1 | ✅ | 配置模型 |
+| Phase 6.2 | ✅ | next/prev 使用配置 |
+| Phase 6.3 | ✅ | Observer 集成 |
+| Phase 7.1 | ✅ | prev 命令 on_exit + 资源清理 |
+| Phase 7.2 | ✅ | stop 命令日志 + 提示更新 |
+| Phase 7.3 | ✅ | step 命令日志 + 步骤通信 |
 
 ---
 
@@ -120,7 +115,8 @@ wt internal          # 内部命令
 
 | Session | 主要工作 |
 |---------|----------|
-| 34 | **Phase 6.2a/b 完成** - next 命令连接执行引擎 + agent 启动 |
+| 35 | **Phase 6.2c + 6.3 + Phase 7 完成** - Observer 集成 + prev/stop/step 命令完善 |
+| 34 | Phase 6.2a/b 完成 - next 命令连接执行引擎 + agent 启动 |
 | 33 | Phase 4c+5 完成 - 删除旧命令 + 清理旧代码 |
 | 32 | Phase 3+4a+4b 完成 - 状态管理 + step/prev/next/stop/reset 命令 |
 | 31 | Phase 1+2 完成 - 核心模型 + 执行引擎 |
