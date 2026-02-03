@@ -1,3 +1,8 @@
+//! wt init command - initialize a new wt project.
+
+mod config;
+mod templates;
+
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -6,14 +11,10 @@ use crate::constants::TASKS_DIR;
 use crate::error::{Result, WtError};
 use crate::models::CONFIG_FILE;
 
-const GITIGNORE_MARKER: &str = "# wt - Worktree Task Manager";
-
-const GITIGNORE_ENTRIES: &str = r#"# wt - Worktree Task Manager
-# https://github.com/anthropics/wt
-.wt/*
-!.wt/tasks/
-!.wt/config.jsonc
-"#;
+use config::generate_config;
+use templates::{
+    GITIGNORE_ENTRIES, GITIGNORE_MARKER, VERIFY_MD, VERIFY_SETTINGS_JSON, VERIFY_STOP_CJS,
+};
 
 fn get_project_name() -> String {
     env::current_dir()
@@ -22,75 +23,56 @@ fn get_project_name() -> String {
         .unwrap_or_else(|| "wt".to_string())
 }
 
-fn generate_config(project_name: &str) -> String {
-    format!(
-        r#"{{
-  // ============================================
-  // 基础配置
-  // ============================================
+fn create_verify_templates(wt_dir: &Path) -> Result<()> {
+    // Create .wt/hooks/ directory
+    let hooks_dir = wt_dir.join("hooks");
+    if !hooks_dir.exists() {
+        fs::create_dir_all(&hooks_dir).map_err(|e| WtError::Io {
+            operation: "create".to_string(),
+            path: hooks_dir.display().to_string(),
+            message: e.to_string(),
+        })?;
+    }
 
-  // Terminal multiplexer: tmux (默认) 或 zellij
-  "multiplexer": "tmux",
+    // Create .wt/templates/ directory
+    let templates_dir = wt_dir.join("templates");
+    if !templates_dir.exists() {
+        fs::create_dir_all(&templates_dir).map_err(|e| WtError::Io {
+            operation: "create".to_string(),
+            path: templates_dir.display().to_string(),
+            message: e.to_string(),
+        })?;
+    }
 
-  // Session 名称
-  "session_name": "{}",
+    // Create verify.md
+    let verify_md_path = wt_dir.join("verify.md");
+    fs::write(&verify_md_path, VERIFY_MD).map_err(|e| WtError::Io {
+        operation: "create".to_string(),
+        path: verify_md_path.display().to_string(),
+        message: e.to_string(),
+    })?;
 
-  // Claude CLI 命令（默认: claude）
-  // "claude_command": "claude",
+    // Create hooks/verify-stop.cjs
+    let verify_stop_path = hooks_dir.join("verify-stop.cjs");
+    fs::write(&verify_stop_path, VERIFY_STOP_CJS).map_err(|e| WtError::Io {
+        operation: "create".to_string(),
+        path: verify_stop_path.display().to_string(),
+        message: e.to_string(),
+    })?;
 
-  // Worktree 目录
-  // "worktree_dir": ".wt/worktrees",
+    // Create templates/verify-settings.json
+    let verify_settings_path = templates_dir.join("verify-settings.json");
+    fs::write(&verify_settings_path, VERIFY_SETTINGS_JSON).map_err(|e| WtError::Io {
+        operation: "create".to_string(),
+        path: verify_settings_path.display().to_string(),
+        message: e.to_string(),
+    })?;
 
-  // ============================================
-  // Phases - 任务生命周期定义
-  // ============================================
-  // 任务按阶段推进: pending → developing → reviewing → completed
-  // 每个阶段可以定义 on_enter (进入时执行) 和 on_exit (退出时执行) 工作流
-  //
-  // 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}, ${{session}}, ${{window}}
+    println!("Created .wt/verify.md");
+    println!("Created .wt/hooks/verify-stop.cjs");
+    println!("Created .wt/templates/verify-settings.json");
 
-  "phases": {{
-    // 阶段序列（默认）
-    "sequence": ["pending", "developing", "reviewing", "completed"],
-
-    // 阶段定义
-    "definitions": {{
-      // developing 阶段 - 需要资源（worktree, branch, window）
-      "developing": {{
-        "resources": "full",
-        "on_enter": [
-          {{
-            "agent": {{
-              "prompt": "@.wt/tasks/${{task}}.md 请完成这个任务",
-              "model": "sonnet"
-            }}
-          }}
-        ]
-      }},
-
-      // reviewing 阶段 - 需要资源
-      "reviewing": {{
-        "resources": "full",
-        "on_enter": [
-          {{
-            "agent": {{
-              "prompt": "审查代码质量和安全性",
-              "model": "sonnet"
-            }}
-          }}
-        ]
-      }},
-
-      // completed 阶段 - 不需要资源
-      "completed": {{
-        "resources": "none"
-      }}
-    }}
-  }}
-}}
-"#,
-        project_name
-    )
+    Ok(())
 }
 
 fn update_gitignore() -> Result<bool> {
@@ -176,6 +158,9 @@ pub fn execute() -> Result<()> {
         println!("Created {}/", TASKS_DIR);
     }
 
+    // Create verify templates for agent self-verification
+    create_verify_templates(wt_dir)?;
+
     // Update .gitignore
     if update_gitignore()? {
         println!("Updated .gitignore");
@@ -206,55 +191,10 @@ pub fn execute() -> Result<()> {
         "  2. Create tasks: wt create --json '{{\"name\": \"...\", \"description\": \"...\"}}'"
     );
     println!("  3. Start working: wt next <task>");
+    println!();
+    println!("Agent self-verification:");
+    println!("  Config already enables verify-settings.json in developing phase.");
+    println!("  Customize .wt/verify.md to define your quality checklist.");
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_generate_config_contains_project_name() {
-        let config = generate_config("my-project");
-        assert!(config.contains("\"session_name\": \"my-project\""));
-    }
-
-    #[test]
-    fn test_generate_config_has_required_fields() {
-        let config = generate_config("test");
-        assert!(config.contains("\"multiplexer\":"));
-        assert!(config.contains("\"session_name\":"));
-        assert!(config.contains("\"phases\":"));
-    }
-
-    #[test]
-    fn test_generate_config_has_template_variables() {
-        let config = generate_config("test");
-        assert!(config.contains("${task}"));
-    }
-
-    #[test]
-    fn test_generate_config_has_phases() {
-        let config = generate_config("test");
-        assert!(config.contains("\"sequence\":"));
-        assert!(config.contains("\"definitions\":"));
-        assert!(config.contains("\"developing\":"));
-    }
-
-    #[test]
-    fn test_gitignore_entries_has_marker() {
-        assert!(GITIGNORE_ENTRIES.contains(GITIGNORE_MARKER));
-    }
-
-    #[test]
-    fn test_gitignore_entries_has_wt_dir() {
-        assert!(GITIGNORE_ENTRIES.contains(".wt/*"));
-    }
-
-    #[test]
-    fn test_gitignore_entries_exposes_tasks_and_config() {
-        assert!(GITIGNORE_ENTRIES.contains("!.wt/tasks/"));
-        assert!(GITIGNORE_ENTRIES.contains("!.wt/config.jsonc"));
-    }
 }
