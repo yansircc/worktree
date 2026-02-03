@@ -10,7 +10,7 @@ fn test_help() {
     assert!(stdout.contains("create"));
     assert!(stdout.contains("list"));
     assert!(stdout.contains("next"));
-    assert!(stdout.contains("start"));
+    assert!(stdout.contains("step"));
 }
 
 #[test]

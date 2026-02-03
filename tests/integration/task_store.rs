@@ -14,7 +14,7 @@ Task description with **markdown**
 - bullet 2
 "#;
 
-    let task = wt::models::TaskStore::parse_markdown(content, "roundtrip.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(content, "roundtrip.md".to_string()).unwrap();
     assert_eq!(task.name(), "roundtrip");
     assert_eq!(task.depends(), &["dep1".to_string()]);
     assert!(task.content.contains("**markdown**"));
@@ -38,7 +38,7 @@ fn main() {
 And more text.
 "#;
 
-    let task = wt::models::TaskStore::parse_markdown(content, "codeblock.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(content, "codeblock.md".to_string()).unwrap();
     assert!(task.content.contains("```rust"));
     assert!(task.content.contains("fn main()"));
 }
@@ -60,7 +60,7 @@ This is a horizontal rule, not frontmatter.
 Another one.
 "#;
 
-    let task = wt::models::TaskStore::parse_markdown(content, "tricky.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(content, "tricky.md".to_string()).unwrap();
     assert_eq!(task.name(), "tricky");
     assert!(task.content.contains("---"));
 }
@@ -72,7 +72,7 @@ fn test_task_with_very_long_name() {
     let long_name = "a".repeat(200);
     let content = format!("---\nname: {}\n---\n\nContent", long_name);
 
-    let task = wt::models::TaskStore::parse_markdown(&content, "long.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(&content, "long.md".to_string()).unwrap();
     assert_eq!(task.name(), long_name);
 }
 
@@ -89,7 +89,7 @@ And {braces}
 And [brackets]
 "#;
 
-    let task = wt::models::TaskStore::parse_markdown(content, "special.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(content, "special.md".to_string()).unwrap();
     assert!(task.content.contains("colons"));
     assert!(task.content.contains("\"quotes\""));
 }
@@ -98,7 +98,7 @@ And [brackets]
 fn test_task_with_empty_depends_array() {
     let content = "---\nname: empty\ndepends: []\n---\n\nContent";
 
-    let task = wt::models::TaskStore::parse_markdown(content, "empty.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(content, "empty.md".to_string()).unwrap();
     assert!(task.depends().is_empty());
 }
 
@@ -112,7 +112,7 @@ fn test_task_with_many_dependencies() {
         .join("\n");
     let content = format!("---\nname: many\ndepends:\n{}\n---\n\nContent", deps_yaml);
 
-    let task = wt::models::TaskStore::parse_markdown(&content, "many.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(&content, "many.md".to_string()).unwrap();
     assert_eq!(task.depends().len(), 50);
 }
 
@@ -129,7 +129,7 @@ fn test_task_input_roundtrip() {
     };
 
     let markdown = input.to_markdown();
-    let task = wt::models::TaskStore::parse_markdown(&markdown, "test.md".to_string()).unwrap();
+    let task = wt::models::task_parser::parse_markdown(&markdown, "test.md".to_string()).unwrap();
 
     assert_eq!(task.name(), "roundtrip");
     assert_eq!(task.depends(), &["a".to_string(), "b".to_string()]);
@@ -140,33 +140,33 @@ fn test_task_input_roundtrip() {
 
 #[test]
 fn test_validate_name_unicode() {
-    assert!(wt::models::TaskStore::validate_task_name("任务").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("tâche").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("задача").is_ok());
+    assert!(wt::models::task_parser::validate_name("任务").is_ok());
+    assert!(wt::models::task_parser::validate_name("tâche").is_ok());
+    assert!(wt::models::task_parser::validate_name("задача").is_ok());
 }
 
 #[test]
 fn test_validate_name_numbers() {
-    assert!(wt::models::TaskStore::validate_task_name("123").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("task123").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("123task").is_ok());
+    assert!(wt::models::task_parser::validate_name("123").is_ok());
+    assert!(wt::models::task_parser::validate_name("task123").is_ok());
+    assert!(wt::models::task_parser::validate_name("123task").is_ok());
 }
 
 #[test]
 fn test_validate_name_underscores_and_hyphens() {
-    assert!(wt::models::TaskStore::validate_task_name("my_task").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("my-task").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("my_task-name").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("__double__").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("--double--").is_err());
+    assert!(wt::models::task_parser::validate_name("my_task").is_ok());
+    assert!(wt::models::task_parser::validate_name("my-task").is_ok());
+    assert!(wt::models::task_parser::validate_name("my_task-name").is_ok());
+    assert!(wt::models::task_parser::validate_name("__double__").is_ok());
+    assert!(wt::models::task_parser::validate_name("--double--").is_err());
 }
 
 #[test]
 fn test_validate_name_edge_cases() {
-    assert!(wt::models::TaskStore::validate_task_name("a").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("0").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("task1").is_ok());
-    assert!(wt::models::TaskStore::validate_task_name("MyTask").is_ok());
+    assert!(wt::models::task_parser::validate_name("a").is_ok());
+    assert!(wt::models::task_parser::validate_name("0").is_ok());
+    assert!(wt::models::task_parser::validate_name("task1").is_ok());
+    assert!(wt::models::task_parser::validate_name("MyTask").is_ok());
 }
 
 // ==================== Status Transitions ====================

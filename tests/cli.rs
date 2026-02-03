@@ -28,10 +28,6 @@ mod next;
 mod no_config;
 #[path = "cli/reset.rs"]
 mod reset;
-#[path = "cli/resume.rs"]
-mod resume;
-#[path = "cli/review.rs"]
-mod review;
 #[path = "cli/scratch.rs"]
 mod scratch;
 #[path = "cli/status.rs"]

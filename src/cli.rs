@@ -39,34 +39,6 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Run a task (creates worktree if needed, starts Claude)
-    Run {
-        /// Task name or index (required unless --all is used)
-        task: Option<String>,
-
-        /// Start all tasks that are ready (no unmerged dependencies)
-        #[arg(long)]
-        all: bool,
-    },
-
-    /// Mark a task for review (ready to be merged)
-    Review {
-        /// Task name to mark for review
-        name: String,
-    },
-
-    /// Resume a task from review state back to running
-    Resume {
-        /// Task name to resume
-        name: String,
-    },
-
-    /// Complete a task (merge to main and cleanup)
-    Complete {
-        /// Task name to complete
-        name: String,
-    },
-
     /// Delete a task's resources (worktree, branch)
     Delete {
         /// Task name or index
@@ -158,32 +130,6 @@ pub enum Commands {
         args: Vec<String>,
     },
 
-    /// Manually trigger a hook (for debugging)
-    Hooks {
-        #[command(subcommand)]
-        action: HooksAction,
-    },
-
-    /// Pause a running task (Active -> Idle)
-    Pause {
-        /// Task name to pause
-        name: String,
-
-        /// Reason for pausing
-        #[arg(long, default_value = "manual")]
-        reason: String,
-    },
-
-    /// Manage background pipelines
-    Pipeline {
-        #[command(subcommand)]
-        action: PipelineAction,
-    },
-
-    // ========================================================================
-    // Phases v2 Commands
-    // ========================================================================
-
     /// Mark current step status (used by Agent)
     ///
     /// This command is called by the Agent during execution to mark
@@ -217,22 +163,6 @@ pub enum Commands {
 }
 
 #[derive(Subcommand)]
-pub enum HooksAction {
-    /// Run a specific hook manually
-    Run {
-        /// Hook name (run, review, resume, complete, delete, reset)
-        hook: String,
-
-        /// Target task name
-        #[arg(long)]
-        task: Option<String>,
-    },
-
-    /// List available hooks
-    List,
-}
-
-#[derive(Subcommand)]
 pub enum CompletionsAction {
     /// Generate completions script to stdout
     Generate {
@@ -242,47 +172,6 @@ pub enum CompletionsAction {
     /// Install completions to shell config (auto-detects shell)
     Install,
 }
-
-#[derive(Subcommand)]
-pub enum PipelineAction {
-    /// List all background pipelines
-    List {
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Show output from a pipeline
-    Logs {
-        /// Pipeline ID
-        id: String,
-
-        /// Follow output (like tail -f)
-        #[arg(long, short)]
-        follow: bool,
-
-        /// Number of lines to show
-        #[arg(short = 'n', default_value = "50")]
-        lines: usize,
-    },
-
-    /// Kill a running pipeline
-    Kill {
-        /// Pipeline ID
-        id: String,
-    },
-
-    /// Clean up old pipeline records
-    Cleanup {
-        /// Max age in hours (default: 24)
-        #[arg(long, default_value = "24")]
-        max_age: u64,
-    },
-}
-
-// ============================================================================
-// Phases v2 Subcommands
-// ============================================================================
 
 #[derive(Subcommand)]
 pub enum StepAction {

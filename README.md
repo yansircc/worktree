@@ -17,20 +17,19 @@ cargo install --path .
 ## 快速开始
 
 ```bash
-wt init                                    # 初始化
+wt init                    # 初始化
 wt create --json '{"name": "auth", "depends": [], "description": "实现认证"}'
-wt run auth                                # 启动任务
-wt status                                  # 查看状态 (TUI)
-wt tail auth                               # 查看最后输出
-wt logs                                    # 生成调试日志
-wt review auth                             # 标记待审核
-wt complete auth                           # 完成任务 (merge + 清理)
-wt resume auth                             # 继续开发
-wt pause auth                              # 暂停任务
-wt reset auth                              # 重置（会备份代码）
+wt next auth               # 推进任务 (Pending → Active)
+wt status                  # 查看状态 (TUI)
+wt tail auth               # 查看最后输出
+wt stop auth               # 停止任务进程
+wt reset auth              # 重置（会备份代码）
+wt delete auth             # 删除任务资源
 ```
 
 ## 命令
+
+### 任务管理
 
 | 命令 | 说明 |
 |------|------|
@@ -38,25 +37,35 @@ wt reset auth                              # 重置（会备份代码）
 | `wt create --json '{...}'` | 创建任务 |
 | `wt validate [name]` | 验证任务 |
 | `wt list [--tree] [--json]` | 列出任务（显示索引） |
-| `wt next [--json]` | 显示可启动任务 |
-| `wt run <name\|index>` | 启动任务（支持名称或索引） |
-| `wt run --all` | 启动所有就绪任务 |
-| `wt status [--json] [--action X --task Y]` | 查看状态 (默认 TUI) |
-| `wt tail <name\|index> [-n N]` | 查看最后 N 条输出 (JSON) |
-| `wt logs` | 生成所有任务的过滤日志 |
-| `wt review <name\|index>` | 标记待审核 |
-| `wt resume <name\|index>` | 继续开发 |
-| `wt pause <name\|index> [--reason R]` | 暂停任务 |
-| `wt complete <name\|index>` | 完成任务 (merge + 清理) |
-| `wt reset <name\|index>` | 重置到 pending（备份代码）|
-| `wt new [name]` | 创建 scratch 环境 |
 | `wt delete <name> [--force]` | 删除任务资源 |
-| `wt hooks list` | 列出配置的 hooks |
-| `wt hooks run <hook> [--task T]` | 手动触发 hook（调试用） |
-| `wt completions generate <shell>` | 生成 shell 补全脚本 |
-| `wt completions install` | 安装 shell 补全到配置文件 |
 
-> **提示**：所有接受任务名的命令都支持使用索引，如 `wt run 1` 等同于 `wt run auth`（假设 auth 是第 1 个任务）
+### 阶段控制
+
+| 命令 | 说明 |
+|------|------|
+| `wt next <task>` | 推进到下一阶段 |
+| `wt prev <task>` | 回退到上一阶段 |
+| `wt stop <task>` | 停止任务进程 |
+| `wt reset <task> [--to <phase>]` | 重置任务（可指定目标阶段） |
+| `wt step done\|block\|fail` | Agent 标记 step 状态 |
+
+### 状态和日志
+
+| 命令 | 说明 |
+|------|------|
+| `wt status [--json]` | 查看状态 (默认 TUI) |
+| `wt tail <name> [-n N]` | 查看最后 N 条输出 |
+| `wt logs` | 生成所有任务的调试日志 |
+
+### 其他
+
+| 命令 | 说明 |
+|------|------|
+| `wt new [name]` | 创建 scratch 环境 |
+| `wt completions generate <shell>` | 生成 shell 补全脚本 |
+| `wt completions install` | 安装 shell 补全 |
+
+> **提示**：所有接受任务名的命令都支持使用索引，如 `wt next 1`
 
 ## 任务状态
 
@@ -83,7 +92,7 @@ Phase:
 | Pending | (none) | 任务已定义，未创建资源 |
 | Active | developing | agent 正在开发 |
 | Idle | developing | agent 暂停，等待用户 |
-| Active | reviewing | review pipeline 在运行 |
+| Active | reviewing | review 进行中 |
 | Idle | reviewing | review 完成，等待下一步 |
 | Active | merging | 合并/清理进行中 |
 | Completed | (none) | 任务完成 |
@@ -108,23 +117,9 @@ Phase:
 | `↑↓` / `jk` | 导航 |
 | `Enter` | 进入 multiplexer 窗口 |
 | `t` | tail (查看输出) |
-| `r` | 标记 review |
-| `u` | resume (继续开发) |
-| `c` | complete (完成) |
+| `n` | next (推进阶段) |
+| `u` | resume (继续) |
 | `q` | 退出 |
-
-## Status --action 参数
-
-非交互方式执行 TUI 操作，返回 JSON：
-
-```bash
-wt status --action list --task ui      # 查看可用操作
-wt status --action review --task ui    # 标记待审核
-wt status --action resume --task ui    # 继续开发
-wt status --action complete --task ui  # 完成任务
-wt status --action enter --task ui     # 获取 multiplexer 命令
-wt status --action tail --task ui      # 查看输出
-```
 
 ## 配置
 
@@ -142,150 +137,13 @@ wt status --action tail --task ui      # 查看输出
   "claude_command": "claude",
 
   // Worktree 目录
-  "worktree_dir": ".wt/worktrees",
-
-  // Hooks - 每个命令的行为定义
-  "hooks": {
-    "run": [
-      { "type": "script", "run": "npm install" },
-      { "type": "agent", "interactive": true, "prompt": "..." }
-    ],
-    "review": [
-      { "type": "script", "run": "npm run lint" }
-    ]
-  }
+  "worktree_dir": ".wt/worktrees"
 }
 ```
-
-完整示例见 `.wt/config.example.jsonc`。
-
-## Hooks 系统
-
-### 设计原则
-
-- **命令 = Hook** - 每个命令的行为完全由 hooks 定义
-- **全部 Hooks 化** - 没有特殊配置，全部统一为 hooks
-- **Pipeline 优先** - 多 agent 通过 stream-json 自动串联
-
-### 可用 Hooks
-
-| Hook | 触发命令 | 默认状态转换 |
-|------|----------|--------------|
-| `run` | `wt run` | Pending → Active + developing |
-| `review` | `wt review` | * → Idle + reviewing |
-| `resume` | `wt resume` | Idle → Active |
-| `complete` | `wt complete` | * → Completed |
-| `delete` | `wt delete` | 移除记录 |
-| `reset` | `wt reset` | * → Pending |
-
-### Step 类型
-
-#### 1. script
-
-执行 shell 脚本：
-
-```jsonc
-{
-  "type": "script",
-  "run": "npm run lint",
-  "on_error": { ... }  // 可选：失败时执行的步骤
-}
-```
-
-#### 2. agent
-
-运行 Claude agent：
-
-```jsonc
-{
-  "type": "agent",
-  "interactive": false,           // false = -p 模式, true = REPL 模式
-  "model": "haiku",               // haiku | sonnet | opus
-  "prompt": "...",                // 内联 prompt 或 @file 引用
-  "tools": ["Read", "Edit"],      // 可用工具列表
-  "allowed_tools": ["Bash(npm *)"], // 自动批准的工具
-  "skip_permissions": false,      // 是否跳过权限提示
-  "output_format": "text",        // text | json | stream-json
-  "window": "new"                 // 交互模式: main | new
-}
-```
-
-#### 3. internal
-
-调用 wt 内置操作：
-
-```jsonc
-{
-  "type": "internal",
-  "run": "worktree:create",
-  "on_conflict": { ... }  // 可选：冲突时执行的步骤
-}
-```
-
-可用操作：`worktree:create`, `worktree:destroy`, `branch:create`, `branch:delete`, `branch:merge`, `window:create`, `window:close`, `files:backup`, `files:clean`
-
-#### 4. condition
-
-条件判断：
-
-```jsonc
-{
-  "type": "condition",
-  "if": "wt internal git:has-changes ${worktree}",
-  "then": { ... },
-  "else": { ... }
-}
-```
-
-### Pipeline 模式
-
-多个 agent 通过 stream-json 自动串联：
-
-```jsonc
-{
-  "hooks": {
-    "review": {
-      "pipeline": [
-        {
-          "type": "agent",
-          "model": "haiku",
-          "prompt": "List all changed files and summarize changes"
-        },
-        {
-          "type": "agent",
-          "model": "sonnet",
-          "prompt": "Based on the above, perform detailed code review"
-        }
-      ]
-    }
-  }
-}
-```
-
-wt 自动转换为：
-
-```bash
-claude -p --output-format stream-json "prompt1" | \
-claude -p --input-format stream-json --output-format stream-json "prompt2"
-```
-
-### 变量
-
-所有 step 中可使用：
-
-| 变量 | 说明 |
-|------|------|
-| `${task}` | 任务名 |
-| `${branch}` | 分支名 |
-| `${worktree}` | worktree 路径 |
-| `${session}` | multiplexer session |
-| `${window}` | multiplexer window |
-| `${repo_root}` | 仓库根目录 |
-| `${phase}` | 当前阶段 |
 
 ## 内部操作 (wt internal)
 
-供 hooks 脚本使用的原子操作。
+供脚本使用的原子操作。
 
 ### Git 操作
 
@@ -321,36 +179,6 @@ wt internal mux:list-windows <session>
 ```bash
 wt internal files:backup <task> [backup_dir]   # 输出备份路径
 wt internal files:clean <worktree> <patterns...>
-```
-
-### 状态操作
-
-```bash
-wt internal status:set <task> <status>    # pending/active/idle/completed
-wt internal status:get <task>
-```
-
-### 任务操作
-
-```bash
-wt internal task:exists <task>       # exit 0=存在, 1=不存在
-wt internal task:deps-ready <task>   # exit 0=就绪, 1=未就绪
-wt internal task:blocked-by <task>   # 输出阻塞的任务列表
-```
-
-### 配置操作
-
-```bash
-wt internal config:get <key>   # 支持: claude_command, session_name, multiplexer, worktree_dir
-```
-
-### 通知操作
-
-```bash
-wt internal notify <title> <message>
-wt internal confirm <message>   # exit 0=确认, 1=取消
-wt internal abort <message>     # 输出错误并退出
-wt internal log <task> <message>
 ```
 
 ## License

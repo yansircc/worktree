@@ -289,7 +289,7 @@ fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
         return error_response(
             "resume",
             &format!(
-                "Cannot resume: task is {} (need review)",
+                "Cannot resume: task is {} (need idle)",
                 status_before.display_name()
             ),
             task_name,
@@ -298,8 +298,8 @@ fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
         );
     }
 
-    // Resume by calling the resume command
-    if let Err(e) = crate::commands::resume::execute(task_name.to_string()) {
+    // Resume by calling the next command (v2: next advances from idle)
+    if let Err(e) = crate::commands::next::execute(task_name.to_string()) {
         return error_response(
             "resume",
             &format!("Failed to resume: {}", e),

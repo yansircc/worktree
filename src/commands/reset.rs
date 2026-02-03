@@ -20,7 +20,7 @@ use chrono::Utc;
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
 use crate::models::{TaskPhase, TaskStatus, WtConfig};
-use crate::services::{dependency, git, hooks::HooksEngine, multiplexer::create_multiplexer, TaskContext};
+use crate::services::{dependency, git, multiplexer::create_multiplexer, TaskContext};
 
 /// Parse target phase from string
 fn parse_target_phase(s: &str) -> Option<TaskPhase> {
@@ -89,21 +89,9 @@ pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
     if let Some(instance) = ctx.instance().cloned() {
         let worktree_path = Path::new(&instance.worktree_path);
 
-        // Build hook context and run before_reset hook
-        let hook_ctx = ctx
-            .build_hook_context()?
-            .with_status("pending")
-            .with_prev_status(current_status.display_name());
-        let hooks = HooksEngine::new(&ctx.config);
-
-        // Execute "reset" hook (cleanup scripts, slim down before backup)
-        if worktree_path.exists() {
-            hooks.execute("reset", &hook_ctx)?;
-
-            // Skip backup for scratch environments
-            if !is_scratch {
-                backup_worktree(&name, &instance.worktree_path)?;
-            }
+        // Backup worktree before cleanup (skip for scratch environments)
+        if worktree_path.exists() && !is_scratch {
+            backup_worktree(&name, &instance.worktree_path)?;
         }
 
         println!("Cleaning up resources...");

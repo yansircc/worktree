@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::error::{Result, WtError};
 use crate::models::TaskStatus;
-use crate::services::{git, hooks::HooksEngine, multiplexer::create_multiplexer, TaskContext};
+use crate::services::{git, multiplexer::create_multiplexer, TaskContext};
 
 /// Execute the delete command.
 ///
@@ -66,15 +66,6 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
     // Get instance info before modifying anything
     let instance = ctx.instance().cloned();
     let repo_root = ctx.repo_root()?.to_string();
-
-    // Build hook context
-    let hook_ctx = ctx
-        .build_hook_context()?
-        .with_status(current_status.display_name());
-
-    // Execute "delete" hook
-    let hooks = HooksEngine::new(&ctx.config);
-    hooks.execute("delete", &hook_ctx)?;
 
     // Close multiplexer window if exists
     if let Some(ref inst) = instance {

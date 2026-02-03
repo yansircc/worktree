@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::constants::BACKUPS_DIR;
 use crate::error::{Result, WtError};
 use crate::models::{Instance, TaskState, TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, hooks::ExecutionContext};
+use crate::services::{executor::ExecutionContext, git};
 
 /// Task execution context - encapsulates load/resolve/save workflow.
 ///

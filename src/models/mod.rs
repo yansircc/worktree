@@ -1,5 +1,4 @@
 mod agent_step;
-pub mod builtin_pipelines;
 mod config;
 mod status;
 mod store;

@@ -1,22 +1,14 @@
-//! Miscellaneous atomic operations for hooks.
+//! Miscellaneous atomic operations for internal commands.
 //!
 //! Usage:
 //!   wt internal files:backup <task> [backup_dir]
 //!   wt internal files:clean <worktree> <patterns...>
-//!   wt internal status:set <task> <status>
-//!   wt internal status:get <task>
-//!   wt internal task:exists <task>
-//!   wt internal task:deps-ready <task>
-//!   wt internal task:blocked-by <task>
-//!   wt internal notify <title> <message>
-//!   wt internal confirm <message>
-//!   wt internal abort <message>
-//!   wt internal log <task> <message>
-//!   wt internal config:get <key>
+//!
+//! Note: status, task, config, and notify operations were removed in phases-v2.
 
 use crate::error::{Result, WtError};
 use crate::models::TaskStore;
-use crate::services::{config_ops, files, notify, status_ops};
+use crate::services::files;
 
 /// Execute a files operation
 pub fn execute_files(action: &str, args: Vec<String>) -> Result<()> {
@@ -59,148 +51,34 @@ pub fn execute_files(action: &str, args: Vec<String>) -> Result<()> {
     }
 }
 
-/// Execute a status operation
-pub fn execute_status(action: &str, args: Vec<String>) -> Result<()> {
-    match action {
-        "set" => {
-            if args.len() < 2 {
-                return Err(WtError::InvalidInput(
-                    "status:set requires 2 arguments: <task> <status>".to_string(),
-                ));
-            }
-            let task = &args[0];
-            let status = status_ops::parse_status(&args[1])?;
-            status_ops::set_status(task, status)
-        }
-        "get" => {
-            if args.is_empty() {
-                return Err(WtError::InvalidInput(
-                    "status:get requires 1 argument: <task>".to_string(),
-                ));
-            }
-            let status = status_ops::get_status(&args[0])?;
-            println!("{}", status);
-            Ok(())
-        }
-        _ => Err(WtError::InvalidInput(format!(
-            "Unknown status operation '{}'. Available: set, get",
-            action
-        ))),
-    }
+/// Execute a status operation (removed in phases-v2)
+pub fn execute_status(action: &str, _args: Vec<String>) -> Result<()> {
+    Err(WtError::InvalidInput(format!(
+        "status:{} operation was removed in phases-v2. Use 'wt status' command instead.",
+        action
+    )))
 }
 
-/// Execute a task operation
-pub fn execute_task(action: &str, args: Vec<String>) -> Result<()> {
-    match action {
-        "exists" => {
-            if args.is_empty() {
-                return Err(WtError::InvalidInput(
-                    "task:exists requires 1 argument: <task>".to_string(),
-                ));
-            }
-            if status_ops::task_exists(&args[0])? {
-                println!("true");
-                Ok(())
-            } else {
-                println!("false");
-                std::process::exit(1);
-            }
-        }
-        "deps-ready" => {
-            if args.is_empty() {
-                return Err(WtError::InvalidInput(
-                    "task:deps-ready requires 1 argument: <task>".to_string(),
-                ));
-            }
-            if status_ops::deps_ready(&args[0])? {
-                println!("true");
-                Ok(())
-            } else {
-                println!("false");
-                std::process::exit(1);
-            }
-        }
-        "blocked-by" => {
-            if args.is_empty() {
-                return Err(WtError::InvalidInput(
-                    "task:blocked-by requires 1 argument: <task>".to_string(),
-                ));
-            }
-            let blocked = status_ops::list_blocked_by(&args[0])?;
-            for task in blocked {
-                println!("{}", task);
-            }
-            Ok(())
-        }
-        _ => Err(WtError::InvalidInput(format!(
-            "Unknown task operation '{}'. Available: exists, deps-ready, blocked-by",
-            action
-        ))),
-    }
+/// Execute a task operation (removed in phases-v2)
+pub fn execute_task(action: &str, _args: Vec<String>) -> Result<()> {
+    Err(WtError::InvalidInput(format!(
+        "task:{} operation was removed in phases-v2.",
+        action
+    )))
 }
 
-/// Execute a config operation
-pub fn execute_config(action: &str, args: Vec<String>) -> Result<()> {
-    match action {
-        "get" => {
-            if args.is_empty() {
-                return Err(WtError::InvalidInput(
-                    "config:get requires 1 argument: <key>".to_string(),
-                ));
-            }
-            let value = config_ops::get_config(&args[0])?;
-            println!("{}", value);
-            Ok(())
-        }
-        _ => Err(WtError::InvalidInput(format!(
-            "Unknown config operation '{}'. Available: get",
-            action
-        ))),
-    }
+/// Execute a config operation (removed in phases-v2)
+pub fn execute_config(action: &str, _args: Vec<String>) -> Result<()> {
+    Err(WtError::InvalidInput(format!(
+        "config:{} operation was removed in phases-v2.",
+        action
+    )))
 }
 
-/// Execute a notify/interaction operation
-pub fn execute_notify(action: &str, args: Vec<String>) -> Result<()> {
-    match action {
-        "notify" => {
-            if args.len() < 2 {
-                return Err(WtError::InvalidInput(
-                    "notify requires 2 arguments: <title> <message>".to_string(),
-                ));
-            }
-            notify::notify(&args[0], &args[1])
-        }
-        "confirm" => {
-            if args.is_empty() {
-                return Err(WtError::InvalidInput(
-                    "confirm requires 1 argument: <message>".to_string(),
-                ));
-            }
-            if notify::confirm(&args[0])? {
-                Ok(())
-            } else {
-                std::process::exit(1);
-            }
-        }
-        "abort" => {
-            if args.is_empty() {
-                return Err(WtError::InvalidInput(
-                    "abort requires 1 argument: <message>".to_string(),
-                ));
-            }
-            notify::abort(&args[0])
-        }
-        "log" => {
-            if args.len() < 2 {
-                return Err(WtError::InvalidInput(
-                    "log requires 2 arguments: <task> <message>".to_string(),
-                ));
-            }
-            notify::log(&args[0], &args[1])
-        }
-        _ => Err(WtError::InvalidInput(format!(
-            "Unknown notify operation '{}'. Available: notify, confirm, abort, log",
-            action
-        ))),
-    }
+/// Execute a notify/interaction operation (removed in phases-v2)
+pub fn execute_notify(action: &str, _args: Vec<String>) -> Result<()> {
+    Err(WtError::InvalidInput(format!(
+        "{} operation was removed in phases-v2.",
+        action
+    )))
 }

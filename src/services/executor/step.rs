@@ -213,7 +213,7 @@ impl<'a> StepExecutor<'a> {
         let working_dir = self.context.working_dir();
 
         // Build command
-        let builder = ClaudeCommandBuilder::from_agent_step(agent, &self.to_old_context());
+        let builder = ClaudeCommandBuilder::from_agent_step(agent, &self.context);
         let args = builder.prompt(&expanded_prompt).build();
 
         let mut cmd = Command::new(&self.config.claude_command);
@@ -324,17 +324,6 @@ impl<'a> StepExecutor<'a> {
         }
     }
 
-    /// Convert to old-style ExecutionContext for ClaudeCommandBuilder compatibility.
-    fn to_old_context(&self) -> crate::services::hooks::context::ExecutionContext {
-        crate::services::hooks::context::ExecutionContext::new(
-            &self.context.task,
-            &self.context.branch,
-            &self.context.worktree,
-            &self.context.repo_root,
-        )
-        .with_session(&self.context.session)
-        .with_window(&self.context.window)
-    }
 }
 
 #[cfg(test)]

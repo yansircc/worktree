@@ -3,7 +3,7 @@
 //! Provides a unified interface for building Claude CLI command arguments.
 
 use crate::models::AgentStep;
-use crate::services::hooks::context::ExecutionContext;
+use crate::services::executor::ExecutionContext;
 
 /// Builder for Claude CLI command arguments
 pub struct ClaudeCommandBuilder {

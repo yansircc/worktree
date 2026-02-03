@@ -168,13 +168,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                             }
                         }
 
-                        // Resume (Idle only)
+                        // Resume (Idle only) - uses next command in v2
                         KeyCode::Char('u') => {
                             if app.can_resume() {
-                                // Call resume command
+                                // Call next command (v2: next advances from idle)
                                 if let Some(task) = app.selected_task() {
                                     let name = task.name.clone();
-                                    crate::commands::resume::execute(name)?;
+                                    crate::commands::next::execute(name)?;
                                     app.refresh()?;
                                 }
                             }

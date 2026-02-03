@@ -1,66 +1,14 @@
 //! CLI tests for scratch environment behavior
 //!
 //! Scratch environments (created via `wt new`) have special lifecycle rules:
-//! - Cannot use `wt review` or `wt complete`
 //! - Can delete directly from Running or Review state
 //! - Delete removes entry from status.json entirely (no Completed state)
+//!
+//! Note: In phases-v2, the `review` and `complete` commands have been removed.
+//! Scratch lifecycle is now managed via `next`, `stop`, and `delete`.
 
 use crate::common::*;
 use serde_json::json;
-
-// ==================== Review Forbidden ====================
-
-#[test]
-fn test_scratch_review_forbidden() {
-    let dir = setup_test_repo();
-
-    // Create scratch status entry (no task file)
-    set_scratch_status(dir.path(), "scratch-env", "active");
-
-    let (ok, _, stderr) = run_wt(dir.path(), &["review", "scratch-env"]);
-
-    assert!(!ok);
-    assert!(
-        stderr.contains("Scratch") || stderr.contains("cannot be marked"),
-        "Expected scratch-specific error, got: {}",
-        stderr
-    );
-}
-
-#[test]
-fn test_scratch_review_suggests_delete() {
-    let dir = setup_test_repo();
-
-    set_scratch_status(dir.path(), "scratch-env", "active");
-
-    let (ok, _, stderr) = run_wt(dir.path(), &["review", "scratch-env"]);
-
-    assert!(!ok);
-    assert!(
-        stderr.contains("delete"),
-        "Error should suggest using 'wt delete', got: {}",
-        stderr
-    );
-}
-
-// ==================== Complete Forbidden ====================
-
-#[test]
-fn test_scratch_complete_forbidden() {
-    let dir = setup_test_repo();
-
-    // Create scratch in review state
-    set_scratch_status(dir.path(), "scratch-env", "idle");
-
-    let (ok, _, stderr) = run_wt(dir.path(), &["complete", "scratch-env"]);
-
-    assert!(!ok);
-    assert!(
-        stderr.contains("Scratch") || stderr.contains("cannot be completed"),
-        "Expected scratch-specific error, got: {}",
-        stderr
-    );
-}
 
 // ==================== Delete Allowed ====================
 
@@ -166,13 +114,13 @@ fn test_scratch_identified_by_flag_not_missing_file() {
     // Create normal status entry (no scratch flag) without task file
     set_task_status(dir.path(), "orphan", "active");
 
-    // Try to mark for review - should fail because task file not found, not because scratch
-    let (ok, _, stderr) = run_wt(dir.path(), &["review", "orphan"]);
+    // Try to use reset command - should fail because task file not found
+    let (ok, _, stderr) = run_wt(dir.path(), &["reset", "orphan"]);
 
     assert!(!ok);
     assert!(
         stderr.contains("not found"),
-        "Should fail because task not found, not scratch: {}",
+        "Should fail because task not found: {}",
         stderr
     );
 }

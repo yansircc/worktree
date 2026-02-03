@@ -28,7 +28,7 @@ use std::path::Path;
 
 use crate::constants::DEFAULT_SESSION_NAME;
 use crate::error::{Result, WtError};
-use crate::models::builtin_pipelines;
+// builtin_pipelines removed in phases-v2
 use crate::models::AgentStep;
 use crate::services::multiplexer::{create_multiplexer, Multiplexer, MultiplexerType};
 
@@ -318,15 +318,9 @@ impl WtConfig {
         self.hooks.get(name)
     }
 
-    /// Get a pipeline by name (user-defined or built-in)
+    /// Get a pipeline by name (user-defined only in phases-v2)
     pub fn get_pipeline(&self, name: &str) -> Option<Vec<Step>> {
-        // First check user-defined pipelines
-        if let Some(steps) = self.pipelines.get(name) {
-            return Some(steps.clone());
-        }
-
-        // Then check built-in pipelines
-        builtin_pipelines::get(name)
+        self.pipelines.get(name).cloned()
     }
 
     /// Resolve a HookDef, expanding pipeline references
@@ -709,34 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn test_builtin_pipeline_code_review() {
-        let config = WtConfig::default();
-        let pipeline = config.get_pipeline("code-review");
-        assert!(pipeline.is_some());
-        let steps = pipeline.unwrap();
-        assert_eq!(steps.len(), 2);
-    }
-
-    #[test]
-    fn test_builtin_pipeline_merge() {
-        let config = WtConfig::default();
-        let pipeline = config.get_pipeline("merge");
-        assert!(pipeline.is_some());
-        let steps = pipeline.unwrap();
-        assert_eq!(steps.len(), 1);
-    }
-
-    #[test]
-    fn test_builtin_pipeline_refactor() {
-        let config = WtConfig::default();
-        let pipeline = config.get_pipeline("refactor");
-        assert!(pipeline.is_some());
-        let steps = pipeline.unwrap();
-        assert_eq!(steps.len(), 2);
-    }
-
-    #[test]
-    fn test_builtin_pipeline_unknown() {
+    fn test_pipeline_unknown() {
         let config = WtConfig::default();
         let pipeline = config.get_pipeline("unknown");
         assert!(pipeline.is_none());
@@ -755,22 +722,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_pipeline_ref() {
-        let config = WtConfig::default();
-        let hook = HookDef::PipelineRef {
-            use_pipeline: "code-review".to_string(),
-        };
-        let resolved = config.resolve_hook(&hook);
-        assert!(resolved.is_some());
-        match resolved.unwrap() {
-            HookDef::Pipeline { pipeline } => {
-                assert_eq!(pipeline.len(), 2);
-            }
-            _ => panic!("Expected Pipeline"),
-        }
-    }
-
-    #[test]
     fn test_user_defined_pipeline() {
         let json = r#"{
             "pipelines": {
@@ -782,22 +733,6 @@ mod tests {
         let config = WtConfig::from_str(json).unwrap();
         let pipeline = config.get_pipeline("my-review");
         assert!(pipeline.is_some());
-        assert_eq!(pipeline.unwrap().len(), 1);
-    }
-
-    #[test]
-    fn test_user_pipeline_overrides_builtin() {
-        let json = r#"{
-            "pipelines": {
-                "code-review": [
-                    {"type": "agent", "prompt": "my custom review"}
-                ]
-            }
-        }"#;
-        let config = WtConfig::from_str(json).unwrap();
-        let pipeline = config.get_pipeline("code-review");
-        assert!(pipeline.is_some());
-        // User-defined should override builtin (only 1 step vs 2)
         assert_eq!(pipeline.unwrap().len(), 1);
     }
 

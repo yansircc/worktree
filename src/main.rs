@@ -18,10 +18,6 @@ fn main() {
         Commands::Create { json } => commands::create::execute(json),
         Commands::Validate { name } => commands::validate::execute(name),
         Commands::List { tree, json } => commands::list::execute(tree, json),
-        Commands::Run { task, all } => commands::run::execute(task, all),
-        Commands::Review { name } => commands::review::execute(name),
-        Commands::Resume { name } => commands::resume::execute(name),
-        Commands::Complete { name } => commands::complete::execute(name),
         Commands::Delete { name, force } => commands::delete::execute(name, force),
         Commands::Next { task } => commands::next::execute(task),
         Commands::Reset { name, to } => commands::reset::execute(name, to),
@@ -36,10 +32,6 @@ fn main() {
             CompletionsAction::Install => commands::completions::install(),
         },
         Commands::Internal { operation, args } => commands::internal::execute(operation, args),
-        Commands::Hooks { action } => commands::hooks_cmd::execute(action),
-        Commands::Pause { name, reason } => commands::pause::execute(name, reason),
-        Commands::Pipeline { action } => commands::pipeline_cmd::execute(action),
-        // Phases v2 commands
         Commands::Step { action } => match action {
             StepAction::Done => commands::step::execute("done", None),
             StepAction::Block { message } => commands::step::execute("block", message),
