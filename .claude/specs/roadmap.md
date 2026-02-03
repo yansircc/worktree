@@ -5,25 +5,24 @@
 **已完成**:
 - Phases v2 重构 (Phase 1-7) ✅
 - TUI v2 重构 (Phase 8) ✅
-- Dead Code Cleanup (部分) ✅
-
-**进行中**:
-- Dead Code Cleanup - 剩余 27 个警告
+- Dead Code Cleanup ✅ (Session 39 完成，0 warnings)
+- 文档更新 ✅
 
 ---
 
 ## 下一步工作
 
-### 1. 完成 Dead Code Cleanup
+### 1. 代码质量改进
 
-**Spec**: `.claude/specs/dead-code-cleanup.md`
+**Spec**: `.claude/specs/code-quality-improvements.md`
 
-剩余警告主要在:
-- `models/phase.rs` - 未使用的方法
-- `models/step.rs` - 未使用的类型和方法
-- `models/workflow.rs` - 未使用的方法
-- `services/task_context.rs` - 未使用的方法
-- `services/observer/` - 未使用的类型和方法
+**高优先级**:
+- 修复 TUI 中的 unsafe unwrap
+- 完善 executor 模块 TODO
+
+**中优先级**:
+- 拆分大模块 (store.rs, status.rs)
+- 增加 services 层测试
 
 ### 2. Phase 9: 高级功能 (待做)
 
@@ -43,4 +42,4 @@
 | 6 | 配置格式 + next/prev 连接执行引擎 | 34 |
 | 7 | prev/stop/step 命令完善 | 35 |
 | 8 | TUI v2 重构 | 36-37 |
-| - | Hooks 清理 + Dead Code Cleanup | 38 |
+| - | Hooks 清理 + Dead Code Cleanup | 38-39 |
