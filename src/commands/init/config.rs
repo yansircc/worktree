@@ -37,31 +37,35 @@ pub fn generate_config(project_name: &str) -> String {
       // developing 阶段 - 需要资源（worktree, branch, window）
       "developing": {{
         "resources": "full",
-        "on_enter": [
-          {{
-            "agent": {{
-              "prompt": "@.wt/tasks/${{task}}.md 请完成这个任务",
-              "model": "sonnet",
-              // 启用 agent 自验证（推荐）
-              // agent 退出前会自动检查并调用 wt step done/block/fail
-              "settings": ".wt/templates/verify-settings.json"
-            }},
-            "verify": {{ "type": "self" }}
-          }}
-        ]
+        "on_enter": {{
+          "steps": [
+            {{
+              "agent": {{
+                "prompt": "@.wt/tasks/${{task}}.md 请完成这个任务",
+                "model": "sonnet",
+                // 启用 agent 自验证（推荐）
+                // agent 退出前会自动检查并调用 wt step done/block/fail
+                "settings": ".wt/templates/verify-settings.json"
+              }},
+              "verify": {{ "type": "self" }}
+            }}
+          ]
+        }}
       }},
 
       // reviewing 阶段 - 需要资源
       "reviewing": {{
         "resources": "full",
-        "on_enter": [
-          {{
-            "agent": {{
-              "prompt": "审查代码质量和安全性",
-              "model": "sonnet"
+        "on_enter": {{
+          "steps": [
+            {{
+              "agent": {{
+                "prompt": "审查代码质量和安全性",
+                "model": "sonnet"
+              }}
             }}
-          }}
-        ]
+          ]
+        }}
       }},
 
       // completed 阶段 - 不需要资源
