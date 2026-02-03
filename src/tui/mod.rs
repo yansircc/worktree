@@ -3,7 +3,7 @@
 mod app;
 mod ui;
 
-pub use app::{App, TuiAction};
+pub use app::App;
 
 use std::io;
 use std::process::Command;
@@ -17,11 +17,11 @@ use crossterm::{
 use ratatui::prelude::*;
 
 use crate::error::Result;
-use crate::models::TaskStatus;
+use crate::models::{TaskStatus, UserAction};
 use crate::services::multiplexer::MultiplexerType;
 
 /// Run the TUI application and return the action to perform
-pub fn run(show_all: bool) -> Result<TuiAction> {
+pub fn run(show_all: bool) -> Result<UserAction> {
     // Setup terminal
     enable_raw_mode().map_err(|e| crate::error::WtError::Io {
         operation: "enable raw mode".to_string(),
@@ -62,7 +62,7 @@ pub fn run(show_all: bool) -> Result<TuiAction> {
     result
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiAction> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<UserAction> {
     let tick_rate = Duration::from_secs(2);
 
     loop {
@@ -89,7 +89,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                     match key.code {
                         // Quit
                         KeyCode::Char('q') | KeyCode::Esc => {
-                            return Ok(TuiAction::Quit);
+                            return Ok(UserAction::Quit);
                         }
 
                         // Navigate
@@ -100,7 +100,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                         KeyCode::Enter => {
                             if let Some(action) = app.enter_action() {
                                 match &action {
-                                    TuiAction::SwitchWindow {
+                                    UserAction::SwitchWindow {
                                         multiplexer,
                                         session,
                                         window,
@@ -145,12 +145,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                                         // Refresh data after returning
                                         app.refresh()?;
                                     }
-                                    TuiAction::AttachSession { .. }
-                                    | TuiAction::ShowResume { .. } => {
+                                    UserAction::AttachSession { .. }
+                                    | UserAction::ShowResume { .. } => {
                                         // Exit TUI and handle in status.rs
                                         return Ok(action);
                                     }
-                                    TuiAction::OpenWorktreeShell {
+                                    UserAction::OpenWorktreeShell {
                                         multiplexer,
                                         session,
                                         worktree_path,

@@ -354,6 +354,8 @@ pub fn current_branch(path: &str) -> Result<String> {
 mod tests {
     use super::*;
 
+    // ==================== parse_diff_stats Tests ====================
+
     #[test]
     fn test_parse_diff_stats_empty() {
         // Empty output returns None to trigger fallback to uncommitted changes
@@ -391,5 +393,80 @@ mod tests {
             parse_diff_stats("1 file changed, 1 insertion(+), 1 deletion(-)"),
             Some((1, 1))
         );
+    }
+
+    #[test]
+    fn test_parse_diff_stats_large_numbers() {
+        assert_eq!(
+            parse_diff_stats("100 files changed, 9999 insertions(+), 5432 deletions(-)"),
+            Some((9999, 5432))
+        );
+    }
+
+    #[test]
+    fn test_parse_diff_stats_files_only() {
+        // Only files changed, no insertions or deletions (e.g., binary files)
+        assert_eq!(
+            parse_diff_stats("2 files changed"),
+            Some((0, 0))
+        );
+    }
+
+    // ==================== GitMetrics Tests ====================
+
+    #[test]
+    fn test_git_metrics_default() {
+        let metrics = GitMetrics::default();
+        assert_eq!(metrics.additions, 0);
+        assert_eq!(metrics.deletions, 0);
+        assert_eq!(metrics.commits, 0);
+        assert!(!metrics.has_conflict);
+    }
+
+    #[test]
+    fn test_git_metrics_clone() {
+        let metrics = GitMetrics {
+            additions: 10,
+            deletions: 5,
+            commits: 3,
+            has_conflict: true,
+        };
+        let cloned = metrics.clone();
+        assert_eq!(cloned.additions, 10);
+        assert_eq!(cloned.deletions, 5);
+        assert_eq!(cloned.commits, 3);
+        assert!(cloned.has_conflict);
+    }
+
+    // ==================== RebaseResult Tests ====================
+
+    #[test]
+    fn test_rebase_result_debug() {
+        assert!(format!("{:?}", RebaseResult::Success).contains("Success"));
+        assert!(format!("{:?}", RebaseResult::AlreadyUpToDate).contains("AlreadyUpToDate"));
+        assert!(format!("{:?}", RebaseResult::Conflicts).contains("Conflicts"));
+    }
+
+    // ==================== get_worktree_metrics Tests ====================
+
+    #[test]
+    fn test_get_worktree_metrics_nonexistent_path() {
+        let result = get_worktree_metrics("/nonexistent/path/that/does/not/exist");
+        assert!(result.is_none());
+    }
+
+    // ==================== get_last_activity Tests ====================
+
+    #[test]
+    fn test_get_last_activity_nonexistent_path() {
+        let result = get_last_activity("/nonexistent/path/that/does/not/exist");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_last_activity_current_dir() {
+        // Current directory should have a valid modification time
+        let result = get_last_activity(".");
+        assert!(result.is_some());
     }
 }

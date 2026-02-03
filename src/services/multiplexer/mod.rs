@@ -122,6 +122,8 @@ pub fn check_multiplexer_installed(mux_type: MultiplexerType) -> Result<()> {
 mod tests {
     use super::*;
 
+    // ==================== MultiplexerType::from_str Tests ====================
+
     #[test]
     fn test_multiplexer_type_from_str() {
         assert_eq!(
@@ -144,8 +146,96 @@ mod tests {
     }
 
     #[test]
+    fn test_multiplexer_type_from_str_mixed_case() {
+        assert_eq!(
+            MultiplexerType::from_str("Tmux"),
+            Some(MultiplexerType::Tmux)
+        );
+        assert_eq!(
+            MultiplexerType::from_str("Zellij"),
+            Some(MultiplexerType::Zellij)
+        );
+        assert_eq!(
+            MultiplexerType::from_str("TmUx"),
+            Some(MultiplexerType::Tmux)
+        );
+    }
+
+    #[test]
+    fn test_multiplexer_type_from_str_invalid() {
+        assert_eq!(MultiplexerType::from_str(""), None);
+        assert_eq!(MultiplexerType::from_str(" "), None);
+        assert_eq!(MultiplexerType::from_str("screen"), None);
+        assert_eq!(MultiplexerType::from_str("tmux "), None); // trailing space
+    }
+
+    // ==================== MultiplexerType::display Tests ====================
+
+    #[test]
     fn test_multiplexer_type_display() {
         assert_eq!(format!("{}", MultiplexerType::Tmux), "tmux");
         assert_eq!(format!("{}", MultiplexerType::Zellij), "zellij");
+    }
+
+    // ==================== MultiplexerType::binary_name Tests ====================
+
+    #[test]
+    fn test_multiplexer_type_binary_name() {
+        assert_eq!(MultiplexerType::Tmux.binary_name(), "tmux");
+        assert_eq!(MultiplexerType::Zellij.binary_name(), "zellij");
+    }
+
+    // ==================== MultiplexerType::default Tests ====================
+
+    #[test]
+    fn test_multiplexer_type_default() {
+        assert_eq!(MultiplexerType::default(), MultiplexerType::Tmux);
+    }
+
+    // ==================== create_multiplexer Tests ====================
+
+    #[test]
+    fn test_create_multiplexer_tmux() {
+        let mux = create_multiplexer(MultiplexerType::Tmux);
+        // Can't directly test the type, but we can verify it doesn't panic
+        // and returns a valid trait object
+        let _ = mux.is_available();
+    }
+
+    #[test]
+    fn test_create_multiplexer_zellij() {
+        let mux = create_multiplexer(MultiplexerType::Zellij);
+        let _ = mux.is_available();
+    }
+
+    // ==================== MultiplexerType Serialization Tests ====================
+
+    #[test]
+    fn test_multiplexer_type_serialize() {
+        let tmux = MultiplexerType::Tmux;
+        let json = serde_json::to_string(&tmux).unwrap();
+        assert_eq!(json, "\"tmux\"");
+
+        let zellij = MultiplexerType::Zellij;
+        let json = serde_json::to_string(&zellij).unwrap();
+        assert_eq!(json, "\"zellij\"");
+    }
+
+    #[test]
+    fn test_multiplexer_type_deserialize() {
+        let tmux: MultiplexerType = serde_json::from_str("\"tmux\"").unwrap();
+        assert_eq!(tmux, MultiplexerType::Tmux);
+
+        let zellij: MultiplexerType = serde_json::from_str("\"zellij\"").unwrap();
+        assert_eq!(zellij, MultiplexerType::Zellij);
+    }
+
+    #[test]
+    fn test_multiplexer_type_clone_copy() {
+        let original = MultiplexerType::Tmux;
+        let cloned = original.clone();
+        let copied = original; // Copy trait
+        assert_eq!(original, cloned);
+        assert_eq!(original, copied);
     }
 }

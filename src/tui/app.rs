@@ -5,43 +5,10 @@ use std::time::SystemTime;
 use crate::constants::IDLE_THRESHOLD_SECS;
 use crate::display::format_duration;
 use crate::error::Result;
-use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{git, multiplexer::MultiplexerType, transcript};
-use crate::services::multiplexer::create_multiplexer;
-
-/// Action to perform after TUI exits or during TUI
-#[derive(Debug, Clone)]
-pub enum TuiAction {
-    /// Just quit, no action
-    Quit,
-    /// Switch to multiplexer window (inside multiplexer, window exists)
-    SwitchWindow {
-        multiplexer: MultiplexerType,
-        session: String,
-        window: String,
-    },
-    /// Attach to multiplexer session (outside multiplexer, window exists)
-    AttachSession {
-        multiplexer: MultiplexerType,
-        session: String,
-        window: String,
-    },
-    /// Show resume command (multiplexer window closed, need to copy command)
-    ShowResume {
-        worktree: String,
-        session_id: String,
-        claude_command: String,
-    },
-    /// Tail a task's transcript
-    Tail { name: String },
-    /// Open shell in worktree directory (for Idle tasks)
-    OpenWorktreeShell {
-        multiplexer: MultiplexerType,
-        session: String,
-        worktree_path: String,
-        task_name: String,
-    },
-}
+use crate::models::{TaskStatus, TaskStore, UserAction};
+use crate::services::action_resolver::{resolve_enter_action, TaskActionContext};
+use crate::services::multiplexer::{create_multiplexer, MultiplexerType};
+use crate::services::{git, transcript};
 
 /// Task with computed metrics for display
 #[derive(Debug, Clone)]
@@ -125,7 +92,10 @@ impl App {
                 continue;
             }
 
-            let task = store.get(task_name).unwrap();
+            let task = match store.get(task_name) {
+                Some(t) => t,
+                None => continue, // Skip if task disappeared during iteration
+            };
             let instance = store.get_instance(task.name());
             let worktree_path = instance.map(|i| i.worktree_path.clone());
 
@@ -223,7 +193,7 @@ impl App {
                 .unwrap_or((None, None, None, None));
 
             tasks.push(TaskDisplay {
-                index: index_map[task_name.as_str()],
+                index: *index_map.get(task_name.as_str()).unwrap_or(&0),
                 name: task.name().to_string(),
                 status: final_status,
                 phase,
@@ -281,82 +251,47 @@ impl App {
         }
     }
 
-    /// Check if running inside a multiplexer
-    pub fn is_in_multiplexer(&self, mux_type: MultiplexerType) -> bool {
-        match mux_type {
-            MultiplexerType::Tmux => std::env::var("TMUX").is_ok(),
-            MultiplexerType::Zellij => std::env::var("ZELLIJ").is_ok(),
-        }
+    /// Get action for Enter key on selected task.
+    /// Delegates to action_resolver for consistent behavior with command layer.
+    pub fn enter_action(&self) -> Option<UserAction> {
+        let task = self.selected_task()?;
+        let ctx = self.build_action_context(task);
+        resolve_enter_action(&ctx)
     }
 
-    /// Get action for Enter key on selected task
-    /// - Active + window exists: switch to it
-    /// - Active + window closed: show resume command
-    /// - Idle + window exists: switch to it
-    /// - Idle + window closed: open worktree shell
-    /// - Outside multiplexer: attach to session
-    pub fn enter_action(&self) -> Option<TuiAction> {
-        let task = self.selected_task()?;
+    /// Build TaskActionContext from TaskDisplay
+    fn build_action_context(&self, task: &TaskDisplay) -> TaskActionContext {
+        use crate::models::Instance;
 
-        // Need multiplexer and session info
-        let mux_type = task.multiplexer?;
-        let session = task.session_name.as_ref()?;
-        let window = task.window_name.as_ref()?;
-
-        let claude_command = WtConfig::load()
-            .map(|c| c.claude_command)
-            .unwrap_or_else(|_| "claude".to_string());
-
-        if task.mux_alive {
-            if self.is_in_multiplexer(mux_type) {
-                // Inside multiplexer: switch to target window
-                Some(TuiAction::SwitchWindow {
-                    multiplexer: mux_type,
-                    session: session.clone(),
-                    window: window.clone(),
-                })
-            } else {
-                // Outside multiplexer: attach to session
-                Some(TuiAction::AttachSession {
-                    multiplexer: mux_type,
-                    session: session.clone(),
-                    window: window.clone(),
-                })
-            }
+        let instance = if let (Some(mux), Some(session), Some(window)) =
+            (task.multiplexer, &task.session_name, &task.window_name)
+        {
+            Some(Instance {
+                branch: format!("wt/{}", task.name),
+                worktree_path: task.worktree_path.clone().unwrap_or_default(),
+                session_name: session.clone(),
+                window_name: window.clone(),
+                session_id: task.session_id.clone(),
+                multiplexer: mux,
+            })
         } else {
-            // Window closed
-            match task.status {
-                TaskStatus::Idle => {
-                    // Idle task: open worktree shell
-                    let worktree = task.worktree_path.as_ref()?;
-                    Some(TuiAction::OpenWorktreeShell {
-                        multiplexer: mux_type,
-                        session: session.clone(),
-                        worktree_path: worktree.clone(),
-                        task_name: task.name.clone(),
-                    })
-                }
-                TaskStatus::Active => {
-                    // Active task with closed window: show resume command
-                    let worktree = task.worktree_path.as_ref()?;
-                    let session_id = task.session_id.as_ref()?;
-                    Some(TuiAction::ShowResume {
-                        worktree: worktree.clone(),
-                        session_id: session_id.clone(),
-                        claude_command,
-                    })
-                }
-                _ => None,
-            }
+            None
+        };
+
+        TaskActionContext {
+            name: task.name.clone(),
+            status: task.status,
+            instance,
+            mux_alive: task.mux_alive,
         }
     }
 
     /// Get action to tail selected task's transcript
-    pub fn tail_action(&self) -> Option<TuiAction> {
+    pub fn tail_action(&self) -> Option<UserAction> {
         self.selected_task().and_then(|task| {
             // Can tail Active or Idle tasks
             if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
-                Some(TuiAction::Tail {
+                Some(UserAction::Tail {
                     name: task.name.clone(),
                 })
             } else {

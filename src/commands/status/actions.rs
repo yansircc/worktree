@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::models::{TaskStatus, TaskStore};
-use crate::tui::{App, TuiAction};
+use crate::models::{TaskStatus, TaskStore, UserAction};
+use crate::services::action_resolver::{resolve_enter_action, TaskActionContext};
 
 use super::types::{ActionResponse, CommandInfo, TaskInfo};
 
@@ -130,26 +130,21 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
         Err(e) => respond_and_exit(error_response_no_task(action, &e.to_string())),
     };
 
-    let mut app = match App::new(false) {
-        Ok(app) => app,
-        Err(e) => respond_and_exit(error_response_no_task(
-            action,
-            &format!("Failed to initialize: {}", e),
-        )),
-    };
+    // Build action context directly from store (no TUI dependency)
+    let status = store.get_status(&task_name);
+    let instance = store.get_instance(&task_name);
+    let ctx = TaskActionContext::from_store(&task_name, status, instance);
 
-    let task_idx = match app.tasks.iter().position(|t| t.name == task_name) {
-        Some(idx) => idx,
-        None => respond_and_exit(task_not_found_response(action, &task_name)),
-    };
-
-    app.selected = task_idx;
+    // Only allow actions on active/idle tasks (same as TUI filter)
+    if !matches!(status, TaskStatus::Active | TaskStatus::Idle | TaskStatus::Pending) {
+        respond_and_exit(task_not_found_response(action, &task_name));
+    }
 
     let response = match action {
-        "list" => handle_list_action(&app, &task_name),
+        "list" => handle_list_action(&ctx),
         "stop" | "review" | "done" => handle_stop_action(&task_name),
         "next" | "resume" => handle_next_action(&task_name),
-        "enter" => handle_enter_action(&app, &task_name),
+        "enter" => handle_enter_action(&ctx),
         "tail" => handle_tail_action(&task_name),
         _ => ActionResponse {
             action: action.to_string(),
@@ -178,14 +173,12 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
     }
 }
 
-fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
-    let task = app.selected_task().unwrap();
-
+fn handle_list_action(ctx: &TaskActionContext) -> ActionResponse {
     let mut available = vec![];
     let mut unavailable = HashMap::new();
 
     // tail/enter available for Active/Idle
-    if matches!(task.status, TaskStatus::Active | TaskStatus::Idle) {
+    if matches!(ctx.status, TaskStatus::Active | TaskStatus::Idle) {
         available.push("tail".to_string());
         available.push("enter".to_string());
     } else {
@@ -193,30 +186,30 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
             "tail".to_string(),
             format!(
                 "task is {} (need active or idle)",
-                task.status.display_name()
+                ctx.status.display_name()
             ),
         );
         unavailable.insert(
             "enter".to_string(),
             format!(
                 "task is {} (need active or idle)",
-                task.status.display_name()
+                ctx.status.display_name()
             ),
         );
     }
 
     // stop available for Active
-    if task.status == TaskStatus::Active {
+    if ctx.status == TaskStatus::Active {
         available.push("stop".to_string());
     } else {
         unavailable.insert(
             "stop".to_string(),
-            format!("task is {} (need active)", task.status.display_name()),
+            format!("task is {} (need active)", ctx.status.display_name()),
         );
     }
 
     // next available for non-Completed
-    if task.status != TaskStatus::Completed {
+    if ctx.status != TaskStatus::Completed {
         available.push("next".to_string());
     } else {
         unavailable.insert(
@@ -230,11 +223,11 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
         success: true,
         error: None,
         task: Some(TaskInfo {
-            name: task_name.to_string(),
-            status: Some(task.status),
+            name: ctx.name.clone(),
+            status: Some(ctx.status),
             status_before: None,
             status_after: None,
-            mux_alive: Some(task.mux_alive),
+            mux_alive: Some(ctx.mux_alive),
         }),
         available_actions: Some(available),
         unavailable_actions: Some(unavailable),
@@ -331,21 +324,19 @@ fn handle_next_action(task_name: &str) -> ActionResponse {
     success_response("next", task_name, status_before, status_after)
 }
 
-fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
-    let task = app.selected_task().unwrap();
-
-    match app.enter_action() {
-        Some(TuiAction::SwitchWindow {
+fn handle_enter_action(ctx: &TaskActionContext) -> ActionResponse {
+    match resolve_enter_action(ctx) {
+        Some(UserAction::SwitchWindow {
             session, window, ..
         })
-        | Some(TuiAction::AttachSession {
+        | Some(UserAction::AttachSession {
             session, window, ..
         }) => ActionResponse {
             action: "enter".to_string(),
             success: true,
             error: None,
             task: Some(TaskInfo {
-                name: task_name.to_string(),
+                name: ctx.name.clone(),
                 status: None,
                 status_before: None,
                 status_after: None,
@@ -360,7 +351,7 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
                 ..Default::default()
             }),
         },
-        Some(TuiAction::ShowResume {
+        Some(UserAction::ShowResume {
             worktree,
             session_id,
             claude_command,
@@ -369,7 +360,7 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
             success: true,
             error: None,
             task: Some(TaskInfo {
-                name: task_name.to_string(),
+                name: ctx.name.clone(),
                 status: None,
                 status_before: None,
                 status_after: None,
@@ -388,16 +379,40 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
                 ..Default::default()
             }),
         },
+        Some(UserAction::OpenWorktreeShell {
+            session,
+            worktree_path,
+            ..
+        }) => ActionResponse {
+            action: "enter".to_string(),
+            success: true,
+            error: None,
+            task: Some(TaskInfo {
+                name: ctx.name.clone(),
+                status: None,
+                status_before: None,
+                status_after: None,
+                mux_alive: None,
+            }),
+            available_actions: None,
+            unavailable_actions: None,
+            command: Some(CommandInfo {
+                cmd_type: "open_shell".to_string(),
+                session: Some(session),
+                worktree: Some(worktree_path),
+                ..Default::default()
+            }),
+        },
         _ => ActionResponse {
             action: "enter".to_string(),
             success: false,
             error: Some("Cannot enter: no multiplexer info available".to_string()),
             task: Some(TaskInfo {
-                name: task_name.to_string(),
-                status: Some(task.status),
+                name: ctx.name.clone(),
+                status: Some(ctx.status),
                 status_before: None,
                 status_after: None,
-                mux_alive: Some(task.mux_alive),
+                mux_alive: Some(ctx.mux_alive),
             }),
             available_actions: None,
             unavailable_actions: None,

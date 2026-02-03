@@ -5,9 +5,8 @@ mod types;
 use std::process::Command;
 
 use crate::error::Result;
-use crate::models::WtConfig;
+use crate::models::{UserAction, WtConfig};
 use crate::services::multiplexer::MultiplexerType;
-use crate::tui::TuiAction;
 
 pub fn execute(json: bool, verbose: bool, all: bool, action: Option<String>, task: Option<String>) -> Result<()> {
     // Verify we're in a wt project directory
@@ -35,14 +34,14 @@ pub fn execute(json: bool, verbose: bool, all: bool, action: Option<String>, tas
     }
 }
 
-fn handle_tui_action(action: TuiAction) -> Result<()> {
+fn handle_tui_action(action: UserAction) -> Result<()> {
     match action {
-        TuiAction::Quit => Ok(()),
-        TuiAction::SwitchWindow { .. } => {
+        UserAction::Quit => Ok(()),
+        UserAction::SwitchWindow { .. } => {
             // This should be handled within TUI, not here
             Ok(())
         }
-        TuiAction::AttachSession {
+        UserAction::AttachSession {
             multiplexer,
             session,
             window,
@@ -64,7 +63,7 @@ fn handle_tui_action(action: TuiAction) -> Result<()> {
             }
             Ok(())
         }
-        TuiAction::ShowResume {
+        UserAction::ShowResume {
             worktree,
             session_id,
             claude_command,
@@ -73,11 +72,11 @@ fn handle_tui_action(action: TuiAction) -> Result<()> {
             println!("cd {} && {} -r {}", worktree, claude_command, session_id);
             Ok(())
         }
-        TuiAction::Tail { name } => {
+        UserAction::Tail { name } => {
             // Execute tail command (default: 1 turn)
             crate::commands::tail::execute(name, 1)
         }
-        TuiAction::OpenWorktreeShell { .. } => {
+        UserAction::OpenWorktreeShell { .. } => {
             // This is handled within TUI, not here
             Ok(())
         }

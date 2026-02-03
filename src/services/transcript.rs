@@ -458,6 +458,8 @@ fn truncate_message(s: &str, max_len: usize) -> String {
 mod tests {
     use super::*;
 
+    // ==================== project_dir_name Tests ====================
+
     #[test]
     fn test_project_dir_name() {
         assert_eq!(project_dir_name("/Users/foo/project"), "-Users-foo-project");
@@ -467,6 +469,17 @@ mod tests {
             "-Users-foo-project--wt-worktrees-task"
         );
     }
+
+    #[test]
+    fn test_project_dir_name_edge_cases() {
+        assert_eq!(project_dir_name(""), "");
+        assert_eq!(project_dir_name("."), "-");
+        assert_eq!(project_dir_name("/"), "-");
+        assert_eq!(project_dir_name(".."), "--");
+        assert_eq!(project_dir_name("./foo"), "--foo");
+    }
+
+    // ==================== TranscriptMetrics::context_percent Tests ====================
 
     #[test]
     fn test_context_percent() {
@@ -488,5 +501,179 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(metrics.context_percent(), 0);
+    }
+
+    #[test]
+    fn test_context_percent_over_100() {
+        // Should cap at 100%
+        let metrics = TranscriptMetrics {
+            input_tokens: 150_000,
+            output_tokens: 100_000,
+            context_window: 200_000,
+            ..Default::default()
+        };
+        assert_eq!(metrics.context_percent(), 100);
+    }
+
+    #[test]
+    fn test_context_percent_exact_100() {
+        let metrics = TranscriptMetrics {
+            input_tokens: 100_000,
+            output_tokens: 100_000,
+            context_window: 200_000,
+            ..Default::default()
+        };
+        assert_eq!(metrics.context_percent(), 100);
+    }
+
+    // ==================== TranscriptMetrics::duration_secs Tests ====================
+
+    #[test]
+    fn test_duration_secs_none() {
+        let metrics = TranscriptMetrics::default();
+        assert!(metrics.duration_secs().is_none());
+    }
+
+    #[test]
+    fn test_duration_secs_only_start() {
+        let metrics = TranscriptMetrics {
+            started_at: Some(chrono::Utc::now()),
+            ..Default::default()
+        };
+        assert!(metrics.duration_secs().is_none());
+    }
+
+    #[test]
+    fn test_duration_secs_valid() {
+        use chrono::{Duration, Utc};
+        let start = Utc::now();
+        let end = start + Duration::seconds(120);
+        let metrics = TranscriptMetrics {
+            started_at: Some(start),
+            finished_at: Some(end),
+            ..Default::default()
+        };
+        assert_eq!(metrics.duration_secs(), Some(120));
+    }
+
+    // ==================== truncate_message Tests ====================
+
+    #[test]
+    fn test_truncate_message_short() {
+        assert_eq!(truncate_message("Hello", 10), "Hello");
+    }
+
+    #[test]
+    fn test_truncate_message_exact() {
+        assert_eq!(truncate_message("Hello", 5), "Hello");
+    }
+
+    #[test]
+    fn test_truncate_message_long() {
+        assert_eq!(truncate_message("Hello World!", 8), "Hello...");
+    }
+
+    #[test]
+    fn test_truncate_message_whitespace() {
+        assert_eq!(truncate_message("  Hello  ", 10), "Hello");
+    }
+
+    // ==================== format_tool_message Tests ====================
+
+    #[test]
+    fn test_format_tool_message_known_tools() {
+        assert_eq!(format_tool_message("Read"), "Reading file...");
+        assert_eq!(format_tool_message("Write"), "Writing file...");
+        assert_eq!(format_tool_message("Edit"), "Editing file...");
+        assert_eq!(format_tool_message("Bash"), "Running command...");
+        assert_eq!(format_tool_message("Glob"), "Searching files...");
+        assert_eq!(format_tool_message("Grep"), "Searching content...");
+        assert_eq!(format_tool_message("Task"), "Running sub-agent...");
+        assert_eq!(format_tool_message("WebFetch"), "Fetching web content...");
+        assert_eq!(format_tool_message("WebSearch"), "Searching web...");
+    }
+
+    #[test]
+    fn test_format_tool_message_mcp_tools() {
+        assert_eq!(format_tool_message("mcp__github__pr_list"), "Using pr_list...");
+        assert_eq!(format_tool_message("mcp__fs__read"), "Using read...");
+    }
+
+    #[test]
+    fn test_format_tool_message_unknown() {
+        assert_eq!(format_tool_message("CustomTool"), "Using CustomTool...");
+    }
+
+    // ==================== remove_fields Tests ====================
+
+    #[test]
+    fn test_remove_fields_simple() {
+        let mut json: Value = serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2024-01-01",
+            "secret": "should_be_removed"
+        });
+        remove_fields(&mut json, &["secret".to_string()]);
+        assert!(json.get("type").is_some());
+        assert!(json.get("timestamp").is_some());
+        assert!(json.get("secret").is_none());
+    }
+
+    #[test]
+    fn test_remove_fields_nested() {
+        let mut json: Value = serde_json::json!({
+            "outer": {
+                "inner": {
+                    "keep": "yes",
+                    "remove": "no"
+                }
+            }
+        });
+        remove_fields(&mut json, &["remove".to_string()]);
+        assert!(json["outer"]["inner"]["keep"].is_string());
+        assert!(json["outer"]["inner"].get("remove").is_none());
+    }
+
+    #[test]
+    fn test_remove_fields_array() {
+        let mut json: Value = serde_json::json!([
+            {"keep": "yes", "remove": "no"},
+            {"keep": "yes", "remove": "no"}
+        ]);
+        remove_fields(&mut json, &["remove".to_string()]);
+        assert!(json[0]["keep"].is_string());
+        assert!(json[0].get("remove").is_none());
+        assert!(json[1].get("remove").is_none());
+    }
+
+    // ==================== log_path Tests ====================
+
+    #[test]
+    fn test_log_path() {
+        let path = log_path("my-task", "abc12345-6789");
+        assert!(path.to_string_lossy().contains("my-task"));
+        assert!(path.to_string_lossy().contains("abc12345.jsonl"));
+    }
+
+    #[test]
+    fn test_log_path_short_session_id() {
+        let path = log_path("task", "abc");
+        assert!(path.to_string_lossy().contains("abc.jsonl"));
+    }
+
+    // ==================== TranscriptMetrics Default ====================
+
+    #[test]
+    fn test_transcript_metrics_default() {
+        let metrics = TranscriptMetrics::default();
+        assert_eq!(metrics.input_tokens, 0);
+        assert_eq!(metrics.output_tokens, 0);
+        assert_eq!(metrics.num_turns, 0);
+        assert_eq!(metrics.context_window, 0);
+        assert!(metrics.summary.is_none());
+        assert!(!metrics.completed);
+        assert!(metrics.started_at.is_none());
+        assert!(metrics.finished_at.is_none());
+        assert!(metrics.current_tool.is_none());
     }
 }

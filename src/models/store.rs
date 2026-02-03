@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::constants::TASKS_DIR;
 use crate::error::{Result, WtError};
-use crate::models::{task_parser, Instance, StatusStore, Task, TaskInput, TaskStatus};
+use crate::models::{task_parser, validator::TaskValidator, Instance, StatusStore, Task, TaskInput, TaskStatus};
 use crate::services::multiplexer::create_multiplexer;
 
 #[derive(Debug, Default)]
@@ -235,85 +235,12 @@ impl TaskStore {
 
     /// Validate all tasks and return errors
     pub fn validate(&self) -> Vec<(String, String)> {
-        let mut errors = Vec::new();
-
-        for task in self.tasks.values() {
-            // Check depends exist
-            for dep in task.depends() {
-                if !self.tasks.contains_key(dep) {
-                    errors.push((
-                        task.name().to_string(),
-                        format!("depends on '{}' which doesn't exist", dep),
-                    ));
-                }
-            }
-
-            // Check name matches filename
-            let expected_name = Path::new(&task.file_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-            if task.name() != expected_name {
-                errors.push((
-                    task.file_path.clone(),
-                    format!(
-                        "frontmatter name '{}' doesn't match filename '{}'",
-                        task.name(),
-                        expected_name
-                    ),
-                ));
-            }
-
-            // Check for circular dependencies
-            if let Some(cycle) = self.detect_cycle(task.name()) {
-                errors.push((
-                    task.name().to_string(),
-                    format!("circular dependency detected: {}", cycle.join(" -> ")),
-                ));
-            }
-        }
-
-        errors
-    }
-
-    /// Detect circular dependency starting from a task
-    fn detect_cycle(&self, start: &str) -> Option<Vec<String>> {
-        let mut visited = HashSet::new();
-        let mut path = Vec::new();
-        self.detect_cycle_recursive(start, &mut visited, &mut path)
-    }
-
-    fn detect_cycle_recursive(
-        &self,
-        current: &str,
-        visited: &mut HashSet<String>,
-        path: &mut Vec<String>,
-    ) -> Option<Vec<String>> {
-        if path.contains(&current.to_string()) {
-            // Found cycle - return the cycle path
-            let cycle_start = path.iter().position(|x| x == current).unwrap();
-            let mut cycle: Vec<String> = path[cycle_start..].to_vec();
-            cycle.push(current.to_string());
-            return Some(cycle);
-        }
-
-        if visited.contains(current) {
-            return None;
-        }
-
-        visited.insert(current.to_string());
-        path.push(current.to_string());
-
-        if let Some(task) = self.get(current) {
-            for dep in task.depends() {
-                if let Some(cycle) = self.detect_cycle_recursive(dep, visited, path) {
-                    return Some(cycle);
-                }
-            }
-        }
-
-        path.pop();
-        None
+        let validator = TaskValidator::new(&self.tasks);
+        validator
+            .validate_all()
+            .into_iter()
+            .map(|e| (e.task, e.message))
+            .collect()
     }
 }
 
@@ -321,8 +248,6 @@ impl TaskStore {
 mod tests {
     use super::*;
     use crate::models::TaskFrontmatter;
-
-    // ==================== Cycle Detection Tests ====================
 
     fn create_test_task(name: &str, depends: Vec<&str>) -> Task {
         Task {
@@ -335,104 +260,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_detect_cycle_no_cycle() {
-        let mut store = TaskStore::default();
-        store
-            .tasks
-            .insert("a".to_string(), create_test_task("a", vec![]));
-        store
-            .tasks
-            .insert("b".to_string(), create_test_task("b", vec!["a"]));
-        store
-            .tasks
-            .insert("c".to_string(), create_test_task("c", vec!["b"]));
-
-        assert!(store.detect_cycle("a").is_none());
-        assert!(store.detect_cycle("b").is_none());
-        assert!(store.detect_cycle("c").is_none());
-    }
-
-    #[test]
-    fn test_detect_cycle_simple_cycle() {
-        let mut store = TaskStore::default();
-        store
-            .tasks
-            .insert("a".to_string(), create_test_task("a", vec!["b"]));
-        store
-            .tasks
-            .insert("b".to_string(), create_test_task("b", vec!["a"]));
-
-        let cycle = store.detect_cycle("a");
-        assert!(cycle.is_some());
-        let cycle = cycle.unwrap();
-        assert!(cycle.contains(&"a".to_string()));
-        assert!(cycle.contains(&"b".to_string()));
-    }
-
-    #[test]
-    fn test_detect_cycle_self_reference() {
-        let mut store = TaskStore::default();
-        store
-            .tasks
-            .insert("a".to_string(), create_test_task("a", vec!["a"]));
-
-        let cycle = store.detect_cycle("a");
-        assert!(cycle.is_some());
-    }
-
-    #[test]
-    fn test_detect_cycle_long_chain() {
-        let mut store = TaskStore::default();
-        store
-            .tasks
-            .insert("a".to_string(), create_test_task("a", vec!["b"]));
-        store
-            .tasks
-            .insert("b".to_string(), create_test_task("b", vec!["c"]));
-        store
-            .tasks
-            .insert("c".to_string(), create_test_task("c", vec!["d"]));
-        store
-            .tasks
-            .insert("d".to_string(), create_test_task("d", vec!["a"]));
-
-        let cycle = store.detect_cycle("a");
-        assert!(cycle.is_some());
-    }
-
-    #[test]
-    fn test_detect_cycle_diamond_no_cycle() {
-        // a -> b, a -> c, b -> d, c -> d (diamond, no cycle)
-        let mut store = TaskStore::default();
-        store
-            .tasks
-            .insert("d".to_string(), create_test_task("d", vec![]));
-        store
-            .tasks
-            .insert("b".to_string(), create_test_task("b", vec!["d"]));
-        store
-            .tasks
-            .insert("c".to_string(), create_test_task("c", vec!["d"]));
-        store
-            .tasks
-            .insert("a".to_string(), create_test_task("a", vec!["b", "c"]));
-
-        assert!(store.detect_cycle("a").is_none());
-    }
-
-    #[test]
-    fn test_detect_cycle_missing_dependency() {
-        let mut store = TaskStore::default();
-        store
-            .tasks
-            .insert("a".to_string(), create_test_task("a", vec!["nonexistent"]));
-
-        // Should not panic, should return None (no cycle, just missing dep)
-        assert!(store.detect_cycle("a").is_none());
-    }
-
     // ==================== validate Tests ====================
+    // Note: Cycle detection tests are in models/validator.rs
 
     #[test]
     fn test_validate_all_valid() {
