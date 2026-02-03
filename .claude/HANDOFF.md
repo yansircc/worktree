@@ -1,50 +1,38 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 33 完成的工作 (2026-02-03)
+## Session 34 完成的工作 (2026-02-03)
 
-### Phase 4c + Phase 5 实现完成 ✅
+### Phase 6.2 实现 - next 命令连接执行引擎 ✅
 
-#### Phase 4c: 删除旧命令
+重写了 `wt next` 命令，连接配置系统和执行引擎：
 
-删除了 7 个旧命令文件和 2 个测试文件。
-
-| 文件 | 说明 |
+| 改动 | 说明 |
 |------|------|
-| `src/commands/run.rs` | 被 `wt next` 替代 |
-| `src/commands/review.rs` | 被自动阶段推进替代 |
-| `src/commands/resume.rs` | 被 `wt next` 替代 |
-| `src/commands/complete.rs` | 被自动阶段推进替代 |
-| `src/commands/pause.rs` | 被 `wt stop` 替代 |
-| `src/commands/hooks_cmd.rs` | Hooks 系统被删除 |
-| `src/commands/pipeline_cmd.rs` | Pipeline 系统被删除 |
+| 配置驱动 | 使用 `config.phase_sequence()` 而非硬编码枚举 |
+| 资源分配 | `allocate_resources()` 创建 worktree/branch/window |
+| Agent 启动 | `start_agent_in_window()` 在 multiplexer 中启动 claude |
+| 默认 Agent | `AgentStep::default_develop()` / `default_review()` |
 
-#### Phase 5: 清理旧代码
+**执行流程：**
+```
+wt next <task>
+    ├── 确定下一阶段 (从配置)
+    ├── 分配资源 (worktree/branch/window)
+    ├── 有 on_enter workflow?
+    │   ├── 交互式 agent → 在 window 中启动 → Active
+    │   └── 脚本 → 同步执行 → Idle
+    └── 无 workflow → 启动 default_develop → Active
+```
 
-**删除的 Services：**
-- `src/services/hooks/` (整个目录 - 5 个文件)
-- `src/services/config_ops.rs`
-- `src/services/status_ops.rs`
-- `src/services/notify.rs`
+### 设计决策文档化
 
-**删除的 Models：**
-- `src/models/builtin_pipelines.rs`
+在 `decisions.md` 中添加了 **D12: observe 是可观测性配置**：
+- `observe` 是用户配置视角的概念，不是观察者模式
+- 实现时按职责拆分为 Reporter/Logger/Executor
 
-**保留的文件：**
-- `src/models/agent_step.rs` - 仍被新的 step.rs 和 claude.rs 使用
+### 新增 /deeptalk skill
 
-**更新的文件：**
-
-| 文件 | 修改内容 |
-|------|----------|
-| `src/services/mod.rs` | 删除 hooks, config_ops, status_ops, notify 模块 |
-| `src/models/mod.rs` | 删除 builtin_pipelines 模块 |
-| `src/services/claude.rs` | 改用 `executor::ExecutionContext` |
-| `src/services/task_context.rs` | 改用 `executor::ExecutionContext` |
-| `src/services/executor/step.rs` | 删除 `to_old_context` 方法 |
-| `src/models/config.rs` | 删除 builtin_pipelines 依赖和相关测试 |
-| `src/commands/delete.rs` | 删除 HooksEngine 调用 |
-| `src/commands/reset.rs` | 删除 HooksEngine 调用 |
-| `src/commands/internal/misc.rs` | 简化，删除依赖于已删除模块的功能 |
+创建了深度讨论模式 skill，用于第一性原理思考。
 
 ---
 
@@ -53,7 +41,7 @@
 ### 测试
 
 ```
-cargo test --lib: 228 passed ✅
+cargo test --lib: 229 passed ✅
 cargo test --test cli: 106 passed ✅
 cargo test --test integration: 46 passed ✅
 ```
@@ -69,7 +57,7 @@ wt list              # 列出任务
 wt delete            # 删除任务
 
 # 阶段控制 (Phases v2)
-wt next <task>       # 推进到下一阶段
+wt next <task>       # 推进到下一阶段 (创建资源 + 启动 agent)
 wt prev <task>       # 回退到上一阶段
 wt stop <task>       # 停止任务进程
 wt reset <task>      # 重置任务 (支持 --to 参数)
@@ -84,32 +72,28 @@ wt logs              # 生成日志
 # 其他
 wt new               # 创建 scratch 环境
 wt completions       # Shell 补全
-wt internal          # 内部命令 (files:backup, files:clean)
+wt internal          # 内部命令
 ```
 
 ---
 
 ## 下一步工作
 
-详见 **`.claude/specs/roadmap.md`** - 后续开发路线图
+详见 **`.claude/specs/roadmap.md`**
 
-### Phase 6: 连接执行引擎 (下一阶段)
+### Phase 6 剩余工作
 
-当前状态：新模型和执行引擎已实现，但命令层还只做简单状态更新。
-
-| 子阶段 | 目标 |
-|--------|------|
-| 6.1 | 配置格式定义 (PhasesConfig) |
-| 6.2 | next 命令重写 (使用 PhaseExecutor) |
-| 6.3 | Observer 集成 |
+| 子阶段 | 目标 | 状态 |
+|--------|------|------|
+| 6.2c | prev.rs 同步更新 (使用配置) | 待做 |
+| 6.3 | Observer 集成 (执行进度输出) | 待做 |
 
 ### 建议的下一 Session
 
-**Session 34 目标**：Phase 6.1 - 配置格式定义
+**Session 35 目标**：Phase 6.2c + 6.3
 
-- 在 config.rs 中定义 phases 配置解析
-- 定义 WorkflowConfig 和 StepConfig
-- 添加配置验证和默认值
+1. 更新 `prev.rs` 使用配置中的 phase sequence
+2. 在执行过程中集成 Observer 输出进度
 
 ---
 
@@ -122,10 +106,13 @@ wt internal          # 内部命令 (files:backup, files:clean)
 | Phase 3 | ✅ | 状态管理 (config/status/store v2 桥接) |
 | Phase 4a | ✅ | 新增命令 (step/prev) |
 | Phase 4b | ✅ | 重写命令 (next/stop/reset --to) |
-| Phase 4c | ✅ | 删除旧命令 (run/review/resume/complete/pause/hooks/pipeline) |
-| Phase 5 | ✅ | 清理旧代码 (hooks/config_ops/status_ops/notify/builtin_pipelines) |
-
-**重构完成！** 🎉
+| Phase 4c | ✅ | 删除旧命令 |
+| Phase 5 | ✅ | 清理旧代码 |
+| Phase 6.1 | ✅ | 配置模型 (已有) |
+| Phase 6.2a | ✅ | next 使用配置 |
+| Phase 6.2b | ✅ | next 启动 agent |
+| Phase 6.2c | 待做 | prev 同步更新 |
+| Phase 6.3 | 待做 | Observer 集成 |
 
 ---
 
@@ -133,14 +120,8 @@ wt internal          # 内部命令 (files:backup, files:clean)
 
 | Session | 主要工作 |
 |---------|----------|
-| 33 | **Phase 4c+5 完成** - 删除旧命令 + 清理旧代码 |
+| 34 | **Phase 6.2a/b 完成** - next 命令连接执行引擎 + agent 启动 |
+| 33 | Phase 4c+5 完成 - 删除旧命令 + 清理旧代码 |
 | 32 | Phase 3+4a+4b 完成 - 状态管理 + step/prev/next/stop/reset 命令 |
 | 31 | Phase 1+2 完成 - 核心模型 + 执行引擎 |
 | 30 | Phases v2 文件清单 - 详细评估每个文件的处置方式 |
-| 29 | 重构: TaskContext + task_parser + builtin_pipelines |
-| 28 | Dead code 彻底清理 + 架构分析 + 重构规格 |
-| 27 | AgentStep 重构 + ClaudeCommandBuilder |
-| 26 | Pipeline 完善 + 预定义 pipelines |
-| 25 | 术语统一 + Agent step CLI 参数对齐 |
-| 24 | 命令层统一使用新 Hooks API |
-| 23 | Agent Hooks 系统实现 |

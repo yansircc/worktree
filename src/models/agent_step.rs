@@ -266,6 +266,23 @@ impl AgentStep {
         self.include_partial_messages = true;
         self
     }
+
+    /// Create a default development agent for a task
+    pub fn default_develop(task_name: &str) -> Self {
+        Self::new(format!(
+            "@.wt/tasks/{}.md 请完成这个任务。完成后运行 `wt step done` 标记完成。",
+            task_name
+        ))
+    }
+
+    /// Create a default review agent for a task
+    pub fn default_review(task_name: &str) -> Self {
+        Self::new(format!(
+            "请 review 任务 {} 的代码变更。完成后运行 `wt step done` 标记完成。",
+            task_name
+        ))
+        .with_model("opus")
+    }
 }
 
 #[cfg(test)]

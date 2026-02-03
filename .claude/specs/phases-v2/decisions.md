@@ -302,3 +302,49 @@ Steps 之间如何传递数据？
 1. 数据流清晰可见
 2. 便于调试和理解
 3. 支持复杂的数据传递场景
+
+---
+
+## D12: observe 是可观测性配置，不是观察者模式
+
+**状态：** 已决定
+
+**背景：**
+规格中的 `observe` 出现在 Step/Workflow/Phase/Project 四个层级，包含输出位置、multiplexer 窗口、通知等配置。这与软件设计中的"观察者模式"容易混淆。
+
+**问题分析：**
+1. 规格中的 `observe` 回答的问题是「我想怎样感知执行状态」
+2. 它包含：输出位置 (terminal/file)、交互模式、multiplexer 窗口、通知 (slack)、进度显示
+3. 从用户视角看，「在哪个窗口看执行」和「日志写到哪」都是「观测」的一部分
+4. 但从实现角度，这混合了被动接收（记录）和主动控制（创建窗口）
+
+**决策：** 保持规格设计，`observe` 是**配置视角**的概念
+
+用户配置 `observe` 描述「想怎样观测」，实现时拆分为不同组件：
+
+```
+observe 配置 (用户写的)
+    │
+    ├── output: terminal/file/both
+    │       → TerminalReporter / FileLogger
+    │
+    ├── multiplexer: { window, focus }
+    │       → 交给 Executor 处理窗口创建/切换
+    │
+    └── notifications: { on_blocked: slack }
+        → NotificationSender (未来实现)
+```
+
+**实现映射：**
+
+| 配置项 | 实现组件 | 职责 |
+|--------|----------|------|
+| observe.output = terminal | TerminalReporter | 输出进度到 stderr |
+| observe.output = file | FileLogger | 写入日志文件 |
+| observe.multiplexer | Executor | 创建/切换 multiplexer 窗口 |
+| observe.notifications | NotificationSender | 发送通知 (未来) |
+
+**理由：**
+1. 保持用户配置的直观性——「observe」比「output + execution_environment + notifications」更易理解
+2. 实现时按职责拆分，避免单一组件承担过多责任
+3. multiplexer 是「执行环境」，但从用户视角属于「观测配置」，两者不矛盾

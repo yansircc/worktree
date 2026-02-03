@@ -2,95 +2,38 @@
 
 ## 当前状态
 
-Phases v2 重构已完成：
+Phases v2 重构进度：
 - 新模型层 (step/workflow/phase/project/state) ✅
 - 执行引擎 (executor/observer) ✅
 - 命令层更新 (next/prev/stop/reset/step) ✅
 - 旧代码清理 (hooks/pipelines) ✅
-
-**但是**：新的模型和执行引擎还没有被命令层实际使用。目前的命令只做简单的状态更新。
+- **next 命令连接执行引擎** ✅ (Session 34)
 
 ---
 
 ## Phase 6: 连接执行引擎
 
-**目标**：让 `wt next` 命令实际使用新的执行引擎
+### 6.1 配置格式定义 ✅
 
-### 6.1 配置格式定义
+已完成：
+- PhasesConfig 在 project.rs 中定义
+- Phase/Workflow/Step 配置模型完整
+- config.phase_sequence() 和 get_phase() 方法
 
-定义 phases 配置格式：
+### 6.2 next 命令重写 ✅
 
-```jsonc
-{
-  "phases": {
-    "developing": {
-      "on_enter": {
-        "workflow": [
-          { "type": "script", "run": "npm install" },
-          { "type": "agent", "prompt": "@.wt/tasks/${task}.md" }
-        ]
-      },
-      "on_exit": {
-        "done": { "workflow": [...] },
-        "error": { "workflow": [...] }
-      }
-    },
-    "reviewing": {
-      "on_enter": {
-        "workflow": [
-          { "type": "agent", "prompt": "Review code for ${task}" }
-        ]
-      }
-    }
-  }
-}
-```
+已完成：
+- [x] 使用 config.phase_sequence() 而非硬编码枚举
+- [x] allocate_resources() 创建 worktree/branch/window
+- [x] start_agent_in_window() 启动交互式 agent
+- [x] AgentStep::default_develop() 默认开发 agent
 
-**任务**：
-- [ ] 在 `config.rs` 中定义 PhasesConfig 解析
-- [ ] 定义 WorkflowConfig 和 StepConfig
-- [ ] 添加配置验证
-
-### 6.2 next 命令重写
-
-重写 `wt next` 使用执行引擎：
-
-```rust
-// 伪代码
-fn execute(task_ref: String) -> Result<()> {
-    let ctx = TaskContext::load(&task_ref)?;
-    let config = ctx.config.phases()?;
-
-    // 获取当前/下一阶段
-    let (current_phase, next_phase) = get_phase_transition(&ctx);
-
-    // 执行 on_exit workflow
-    if let Some(exit_workflow) = current_phase.on_exit.get(&exit_reason) {
-        executor.execute(exit_workflow, &ctx)?;
-    }
-
-    // 执行 on_enter workflow
-    if let Some(enter_workflow) = next_phase.on_enter {
-        executor.execute(enter_workflow, &ctx)?;
-    }
-
-    // 更新状态
-    ctx.set_phase(next_phase);
-    ctx.save()?;
-}
-```
-
-**任务**：
-- [ ] 重写 `next.rs` 使用 PhaseExecutor
-- [ ] 处理 worktree/branch 创建（首次进入 developing）
-- [ ] 处理 multiplexer 窗口创建/切换
-- [ ] 实现 agent 进程启动
+待做：
+- [ ] prev.rs 同步更新使用配置
 
 ### 6.3 Observer 集成
 
-集成观测系统：
-
-**任务**：
+待做：
 - [ ] 在 step 执行时触发 observer
 - [ ] 实现 terminal observer 输出
 - [ ] 实现 log observer 日志记录
@@ -102,7 +45,8 @@ fn execute(task_ref: String) -> Result<()> {
 ### 7.1 prev 命令
 
 **任务**：
-- [ ] 实现 prev 的 workflow 执行
+- [ ] 使用配置中的 phase sequence
+- [ ] 实现 on_exit workflow 执行
 - [ ] 处理资源清理（从 reviewing 退回 developing）
 
 ### 7.2 stop 命令
@@ -132,7 +76,7 @@ fn execute(task_ref: String) -> Result<()> {
 ### 8.2 交互更新
 
 **任务**：
-- [ ] 更新快捷键（删除旧的 r/c 等）
+- [ ] 更新快捷键
 - [ ] 添加 workflow 控制（暂停/继续/取消）
 
 ---
@@ -162,22 +106,21 @@ fn execute(task_ref: String) -> Result<()> {
 
 ## 优先级建议
 
-| 优先级 | Phase | 说明 |
-|--------|-------|------|
-| P0 | 6.1-6.2 | 让 next 命令可用（MVP） |
-| P1 | 6.3 | 有输出反馈 |
-| P1 | 7.1-7.3 | 完整的阶段控制 |
-| P2 | 8.x | 更好的用户体验 |
-| P3 | 9.x | 高级功能 |
+| 优先级 | Phase | 说明 | 状态 |
+|--------|-------|------|------|
+| P0 | 6.1-6.2 | next 命令可用 | ✅ |
+| P1 | 6.3 | 有输出反馈 | 待做 |
+| P1 | 7.1-7.3 | 完整的阶段控制 | 待做 |
+| P2 | 8.x | 更好的用户体验 | 待做 |
+| P3 | 9.x | 高级功能 | 待做 |
 
 ---
 
 ## Session 规划
 
-| Session | 目标 |
-|---------|------|
-| 34 | Phase 6.1 - 配置格式定义 |
-| 35 | Phase 6.2 - next 命令重写 (worktree/branch 创建) |
-| 36 | Phase 6.2 - next 命令重写 (agent 启动) |
-| 37 | Phase 6.3 + 7.x - Observer + 其他命令 |
-| 38 | Phase 8.x - TUI 更新 |
+| Session | 目标 | 状态 |
+|---------|------|------|
+| 34 | Phase 6.2a/b - next 连接执行引擎 + agent 启动 | ✅ |
+| 35 | Phase 6.2c + 6.3 - prev 更新 + Observer 集成 | 下一步 |
+| 36 | Phase 7.x - 完善命令 | 待做 |
+| 37 | Phase 8.x - TUI 更新 | 待做 |
