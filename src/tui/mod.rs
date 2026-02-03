@@ -275,7 +275,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                         KeyCode::Char('l') => {
                             if let Some(task) = app.selected_task() {
                                 if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
-                                    if let Some(ref worktree) = task.worktree_path {
+                                    if task.worktree_path.is_some() {
                                         // Find log file
                                         let log_dir = format!(".wt/logs/{}", task.name);
                                         let phase = task.phase.as_deref().unwrap_or("developing");

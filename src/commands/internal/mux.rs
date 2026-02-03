@@ -1,4 +1,4 @@
-//! Multiplexer atomic operations for hooks.
+//! Multiplexer atomic operations for workflows.
 //!
 //! Usage:
 //!   wt internal mux:create-window <session> <window> <cwd> <command>

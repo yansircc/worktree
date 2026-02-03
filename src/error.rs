@@ -17,9 +17,6 @@ pub enum WtError {
     #[error("Dependency '{0}' not found")]
     DependencyNotFound(String),
 
-    #[error("Cannot start task '{task}': dependency '{dep}' is not completed")]
-    DependencyNotCompleted { task: String, dep: String },
-
     #[error("Git command failed: {0}")]
     Git(String),
 
@@ -31,9 +28,6 @@ pub enum WtError {
 
     #[error("Multiplexer '{0}' is not installed. Please install it first.")]
     MultiplexerNotInstalled(String),
-
-    #[error("Task '{0}' is already running")]
-    AlreadyActive(String),
 
     #[error(
         "Branch '{0}' already exists.\nHint: Run `git branch -D {0}` to delete it, then retry."
@@ -55,9 +49,6 @@ pub enum WtError {
         path: String,
         message: String,
     },
-
-    #[error("Failed to execute script '{script}': {message}")]
-    Script { script: String, message: String },
 
     #[error("Invalid state transition: cannot change task from {from} to {to}")]
     InvalidStateTransition { from: String, to: String },
@@ -86,13 +77,6 @@ pub enum WtError {
 
     #[error("JSON serialization failed: {0}")]
     JsonSerialize(#[from] serde_json::Error),
-
-    #[error("Hook '{hook}' failed: {message}")]
-    HookFailed {
-        hook: String,
-        message: String,
-        exit_code: Option<i32>,
-    },
 }
 
 pub type Result<T> = std::result::Result<T, WtError>;

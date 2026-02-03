@@ -1,7 +1,6 @@
-//! Execution context for Phases v2.
+//! Execution context for step/workflow/phase execution.
 //!
 //! Provides variable expansion and environment setup for step/workflow/phase execution.
-//! Extended from hooks/context.rs with additional variables for the new model.
 
 use std::collections::HashMap;
 

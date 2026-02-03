@@ -42,44 +42,50 @@ fn generate_config(project_name: &str) -> String {
   // "worktree_dir": ".wt/worktrees",
 
   // ============================================
-  // Hooks - 每个命令的行为定义
+  // Phases - 任务生命周期定义
   // ============================================
-  // 支持的 step 类型:
-  // - script: 执行 shell 脚本
-  // - agent: 运行 Claude agent
-  // - internal: 调用 wt 内置操作
-  // - condition: 条件判断
+  // 任务按阶段推进: pending → developing → reviewing → completed
+  // 每个阶段可以定义 on_enter (进入时执行) 和 on_exit (退出时执行) 工作流
   //
   // 支持模板变量: ${{task}}, ${{branch}}, ${{worktree}}, ${{session}}, ${{window}}
 
-  "hooks": {{
-    // wt next: 启动开发
-    "run": [
-      // {{ "type": "script", "run": "npm install" }},
-      {{
-        "type": "agent",
-        "interactive": true,
-        "model": "sonnet",
-        "prompt": "@.wt/tasks/${{task}}.md 请完成这个任务"
+  "phases": {{
+    // 阶段序列（默认）
+    "sequence": ["pending", "developing", "reviewing", "completed"],
+
+    // 阶段定义
+    "definitions": {{
+      // developing 阶段 - 需要资源（worktree, branch, window）
+      "developing": {{
+        "resources": "full",
+        "on_enter": [
+          {{
+            "agent": {{
+              "prompt": "@.wt/tasks/${{task}}.md 请完成这个任务",
+              "model": "sonnet"
+            }}
+          }}
+        ]
+      }},
+
+      // reviewing 阶段 - 需要资源
+      "reviewing": {{
+        "resources": "full",
+        "on_enter": [
+          {{
+            "agent": {{
+              "prompt": "审查代码质量和安全性",
+              "model": "sonnet"
+            }}
+          }}
+        ]
+      }},
+
+      // completed 阶段 - 不需要资源
+      "completed": {{
+        "resources": "none"
       }}
-    ]
-
-    // wt review: 进入审核阶段
-    // "review": [
-    //   {{ "type": "script", "run": "npm run lint && npm run test" }}
-    // ],
-
-    // wt complete: 完成任务
-    // "complete": [
-    //   {{ "type": "script", "run": "npm run build" }},
-    //   {{ "type": "internal", "run": "branch:merge" }},
-    //   {{ "type": "internal", "run": "worktree:destroy" }}
-    // ],
-
-    // wt delete/reset: 删除或重置任务
-    // "delete": [
-    //   {{ "type": "script", "run": "rm -rf node_modules/" }}
-    // ]
+    }}
   }}
 }}
 "#,
@@ -219,7 +225,7 @@ mod tests {
         let config = generate_config("test");
         assert!(config.contains("\"multiplexer\":"));
         assert!(config.contains("\"session_name\":"));
-        assert!(config.contains("\"hooks\":"));
+        assert!(config.contains("\"phases\":"));
     }
 
     #[test]
@@ -229,10 +235,11 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_config_has_hooks() {
+    fn test_generate_config_has_phases() {
         let config = generate_config("test");
-        assert!(config.contains("\"run\":"));
-        assert!(config.contains("\"type\": \"agent\""));
+        assert!(config.contains("\"sequence\":"));
+        assert!(config.contains("\"definitions\":"));
+        assert!(config.contains("\"developing\":"));
     }
 
     #[test]

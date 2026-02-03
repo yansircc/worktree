@@ -220,7 +220,7 @@ pub fn get_last_activity(worktree_path: &str) -> Option<SystemTime> {
 }
 
 // ============================================================================
-// Atomic Git Operations (for hooks)
+// Atomic Git Operations (for workflows)
 // ============================================================================
 
 /// Fetch from a remote repository.

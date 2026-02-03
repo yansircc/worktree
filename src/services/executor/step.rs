@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use crate::error::Result;
 use crate::models::step::{Step, StepResult, StepState, StepVerify};
 use crate::models::WtConfig;
 use crate::services::claude::ClaudeCommandBuilder;

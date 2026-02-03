@@ -378,3 +378,13 @@ Phase 5: 清理
 - [x] 全量测试通过 (lib: 228, cli: 106, integration: 46)
 
 **注意：** `agent_step.rs` 保留，因为仍被新的 step.rs 和 claude.rs 使用
+
+### Phase 5b: 清理遗留代码 (Session 38) ✅
+
+- [x] 删除 `config.rs` 中的 `Step`, `HookDef`, `HooksConfig`, `PipelinesConfig`
+- [x] 删除 `WtConfig.hooks` 和 `WtConfig.pipelines` 字段
+- [x] 删除 `get_hook()`, `get_pipeline()`, `resolve_hook()`, `has_custom_complete_hook()` 方法
+- [x] 更新 `models/mod.rs` 移除 `HookDef` 和 `Step` 导出
+- [x] 更新所有注释中的 "hooks" 引用
+- [x] 更新 `init.rs` 生成 phases 配置而非 hooks 配置
+- [x] 全量测试通过 (lib: 214, cli: 106, integration: 46)

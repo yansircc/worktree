@@ -1,4 +1,4 @@
-//! File operations for hooks system.
+//! File operations for wt.
 
 use std::fs;
 use std::path::Path;

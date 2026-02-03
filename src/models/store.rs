@@ -7,11 +7,6 @@ use crate::error::{Result, WtError};
 use crate::models::{task_parser, Instance, StatusStore, Task, TaskInput, TaskStatus};
 use crate::services::multiplexer::create_multiplexer;
 
-// Phases v2 imports
-use crate::models::config::WtConfig;
-use crate::models::project::ProjectStatus;
-use crate::models::state::DerivedTaskStatus;
-
 #[derive(Debug, Default)]
 pub struct TaskStore {
     pub tasks: HashMap<String, Task>,
@@ -176,63 +171,6 @@ impl TaskStore {
     /// Save status to .wt/status.json
     pub fn save_status(&self) -> Result<()> {
         self.status.save()
-    }
-
-    // ==================== Phases v2 Support ====================
-
-    /// Get derived task status for a task (v2)
-    pub fn get_derived_status(&self, name: &str) -> DerivedTaskStatus {
-        self.status.get_derived_status(name)
-    }
-
-    /// Get project status (aggregated from all tasks) (v2)
-    pub fn project_status(&self) -> ProjectStatus {
-        let (pending, active, idle, completed) = self.status.count_by_derived_status();
-        ProjectStatus::new(pending, active, idle, completed)
-    }
-
-    /// Get project status with task file count (v2)
-    ///
-    /// This includes tasks defined in files even if they don't have status entries yet.
-    pub fn full_project_status(&self) -> ProjectStatus {
-        let task_names: HashSet<_> = self.tasks.keys().cloned().collect();
-        let status_names: HashSet<_> = self.status.tasks.keys().cloned().collect();
-        let all_names: HashSet<_> = task_names.union(&status_names).collect();
-
-        let mut pending = 0;
-        let mut active = 0;
-        let mut idle = 0;
-        let mut completed = 0;
-
-        for name in all_names {
-            match self.status.get_derived_status(name) {
-                DerivedTaskStatus::Pending => pending += 1,
-                DerivedTaskStatus::Active => active += 1,
-                DerivedTaskStatus::Idle => idle += 1,
-                DerivedTaskStatus::Completed => completed += 1,
-            }
-        }
-
-        ProjectStatus::new(pending, active, idle, completed)
-    }
-
-    /// Check if phases v2 mode is enabled in config (v2)
-    pub fn is_phases_v2_enabled() -> bool {
-        WtConfig::load()
-            .map(|c| c.is_phases_v2())
-            .unwrap_or(false)
-    }
-
-    /// Get phase sequence from config (v2)
-    pub fn phase_sequence() -> Vec<String> {
-        WtConfig::load()
-            .map(|c| c.phase_sequence())
-            .unwrap_or_else(|_| {
-                crate::models::phase::DEFAULT_PHASE_SEQUENCE
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            })
     }
 
     /// Check if a task should be auto-marked as Idle.
@@ -810,83 +748,4 @@ mod tests {
         assert!(err.contains("valid range is 1-0"));
     }
 
-    // ==================== Phases v2 Tests ====================
-
-    #[test]
-    fn test_get_derived_status() {
-        let mut store = TaskStore::default();
-        store.set_status("task1", TaskStatus::Active);
-        store.set_status("task2", TaskStatus::Completed);
-
-        assert_eq!(
-            store.get_derived_status("task1"),
-            DerivedTaskStatus::Active
-        );
-        assert_eq!(
-            store.get_derived_status("task2"),
-            DerivedTaskStatus::Completed
-        );
-        assert_eq!(
-            store.get_derived_status("nonexistent"),
-            DerivedTaskStatus::Pending
-        );
-    }
-
-    #[test]
-    fn test_project_status_empty() {
-        let store = TaskStore::default();
-        let status = store.project_status();
-        assert_eq!(status.total, 0);
-        assert_eq!(status.progress, 0.0);
-    }
-
-    #[test]
-    fn test_project_status_with_tasks() {
-        let mut store = TaskStore::default();
-        store.set_status("task1", TaskStatus::Pending);
-        store.set_status("task2", TaskStatus::Active);
-        store.set_status("task3", TaskStatus::Idle);
-        store.set_status("task4", TaskStatus::Completed);
-        store.set_status("task5", TaskStatus::Completed);
-
-        let status = store.project_status();
-        assert_eq!(status.total, 5);
-        assert_eq!(status.pending, 1);
-        assert_eq!(status.active, 1);
-        assert_eq!(status.idle, 1);
-        assert_eq!(status.completed, 2);
-        assert!((status.progress - 0.4).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_full_project_status() {
-        let mut store = TaskStore::default();
-        // Add some tasks (these would normally come from .wt/tasks/*.md)
-        store
-            .tasks
-            .insert("task1".to_string(), create_test_task("task1", vec![]));
-        store
-            .tasks
-            .insert("task2".to_string(), create_test_task("task2", vec![]));
-        // Only task1 has status
-        store.set_status("task1", TaskStatus::Active);
-
-        let status = store.full_project_status();
-        // task1 is Active, task2 is Pending (no status entry)
-        assert_eq!(status.total, 2);
-        assert_eq!(status.active, 1);
-        assert_eq!(status.pending, 1);
-    }
-
-    #[test]
-    fn test_project_status_all_completed() {
-        let mut store = TaskStore::default();
-        store.set_status("task1", TaskStatus::Completed);
-        store.set_status("task2", TaskStatus::Completed);
-        store.set_status("task3", TaskStatus::Completed);
-
-        let status = store.project_status();
-        assert!(status.is_all_completed());
-        assert_eq!(status.progress, 1.0);
-    }
 }

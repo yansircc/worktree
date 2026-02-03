@@ -124,7 +124,7 @@ pub enum Commands {
         action: CompletionsAction,
     },
 
-    /// Internal commands for hooks (not for direct user use)
+    /// Internal commands for workflows (not for direct user use)
     #[command(hide = true)]
     Internal {
         /// Operation in format "category:action" (e.g., "mux:focus-window", "git:fetch")

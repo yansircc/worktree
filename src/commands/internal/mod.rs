@@ -1,7 +1,7 @@
-//! Internal commands for hooks.
+//! Internal commands for wt.
 //!
-//! These commands are not intended for direct user use, but for use in hooks
-//! scripts. They provide atomic operations that can be composed together.
+//! These commands are not intended for direct user use, but for use in
+//! workflows. They provide atomic operations that can be composed together.
 
 pub mod git;
 pub mod misc;

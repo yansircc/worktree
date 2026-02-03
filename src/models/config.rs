@@ -1,19 +1,10 @@
-//! JSONC configuration parser for wt (supports both legacy hooks and phases-v2)
+//! JSONC configuration parser for wt.
 //!
 //! Parses `.wt/config.jsonc` with support for comments.
 //!
-//! ## Configuration Modes
+//! ## Configuration
 //!
-//! **Legacy (hooks):** Commands are defined by hook pipelines
-//! ```jsonc
-//! {
-//!   "hooks": {
-//!     "run": [{ "type": "agent", "prompt": "..." }]
-//!   }
-//! }
-//! ```
-//!
-//! **Phases v2:** Task lifecycle defined by phases with on_enter/on_exit workflows
+//! Task lifecycle is defined by phases with on_enter/on_exit workflows:
 //! ```jsonc
 //! {
 //!   "phases": {
@@ -28,120 +19,16 @@ use std::path::Path;
 
 use crate::constants::DEFAULT_SESSION_NAME;
 use crate::error::{Result, WtError};
-// builtin_pipelines removed in phases-v2
-use crate::models::AgentStep;
 use crate::services::multiplexer::{create_multiplexer, Multiplexer, MultiplexerType};
 
 // Re-export from project.rs for phases v2 support
 pub use crate::models::project::{ConcurrencyConfig, PhasesConfig, ProjectObserve};
 
-/// Path to the new JSONC config file
+/// Path to the JSONC config file
 pub const CONFIG_FILE: &str = ".wt/config.jsonc";
 
 /// Default worktree directory
 const DEFAULT_WORKTREE_DIR: &str = ".wt/worktrees";
-
-// ============================================================================
-// Step Types
-// ============================================================================
-
-/// A single step in a hook pipeline
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum Step {
-    /// Execute a shell script
-    Script {
-        run: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        on_error: Option<Box<Step>>,
-    },
-
-    /// Run a Claude agent
-    Agent {
-        #[serde(flatten)]
-        agent: AgentStep,
-    },
-
-    /// Call wt internal operation
-    Internal {
-        run: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        on_conflict: Option<Box<Step>>,
-    },
-
-    /// Conditional execution
-    Condition {
-        #[serde(rename = "if")]
-        if_: String,
-        then: Box<Step>,
-        #[serde(rename = "else", default, skip_serializing_if = "Option::is_none")]
-        else_: Option<Box<Step>>,
-    },
-}
-
-// ============================================================================
-// Hook Configuration
-// ============================================================================
-
-/// Hook definition - either a list of steps, a pipeline, or a reference to predefined pipeline
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum HookDef {
-    /// Reference to a predefined pipeline by name
-    PipelineRef { use_pipeline: String },
-    /// Sequential steps
-    Steps(Vec<Step>),
-    /// Inline pipeline mode (agents chained via stream-json)
-    Pipeline { pipeline: Vec<Step> },
-}
-
-impl Default for HookDef {
-    fn default() -> Self {
-        HookDef::Steps(Vec::new())
-    }
-}
-
-
-/// Hooks configuration for all commands
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct HooksConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub run: Option<HookDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub review: Option<HookDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resume: Option<HookDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub complete: Option<HookDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delete: Option<HookDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reset: Option<HookDef>,
-}
-
-impl HooksConfig {
-    pub fn is_empty(&self) -> bool {
-        self.run.is_none()
-            && self.review.is_none()
-            && self.resume.is_none()
-            && self.complete.is_none()
-            && self.delete.is_none()
-            && self.reset.is_none()
-    }
-
-    /// Get hook by name
-    pub fn get(&self, name: &str) -> Option<&HookDef> {
-        match name {
-            "run" => self.run.as_ref(),
-            "review" => self.review.as_ref(),
-            "resume" => self.resume.as_ref(),
-            "complete" => self.complete.as_ref(),
-            "delete" => self.delete.as_ref(),
-            "reset" => self.reset.as_ref(),
-            _ => None,
-        }
-    }
-}
 
 // ============================================================================
 // Main Configuration
@@ -156,13 +43,7 @@ pub struct LogsConfig {
     pub exclude_fields: Vec<String>,
 }
 
-/// Predefined pipelines configuration
-pub type PipelinesConfig = std::collections::HashMap<String, Vec<Step>>;
-
 /// Main configuration structure for wt
-///
-/// Supports both legacy hooks mode and phases v2 mode.
-/// When both are present, phases takes precedence for task lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WtConfig {
     /// Terminal multiplexer: tmux or zellij
@@ -181,40 +62,32 @@ pub struct WtConfig {
     #[serde(default = "default_worktree_dir")]
     pub worktree_dir: String,
 
-    /// Start arguments for Claude (v1 compat)
+    /// Start arguments for Claude
     #[serde(default = "default_start_args")]
     pub start_args: String,
 
-    /// Files to copy to worktree (v1 compat)
+    /// Files to copy to worktree
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub copy_files: Vec<String>,
 
-    /// Logs configuration (v1 compat)
+    /// Logs configuration
     #[serde(default)]
     pub logs: LogsConfig,
 
-    /// Predefined pipelines (can be referenced by name in hooks)
-    #[serde(default, skip_serializing_if = "PipelinesConfig::is_empty")]
-    pub pipelines: PipelinesConfig,
-
-    /// Hooks configuration (legacy mode)
-    #[serde(default, skip_serializing_if = "HooksConfig::is_empty")]
-    pub hooks: HooksConfig,
-
     // ============================================================================
-    // Phases v2 configuration
+    // Phases configuration
     // ============================================================================
 
-    /// Phases configuration (v2 mode)
-    /// When present, task lifecycle is controlled by phases instead of hooks
+    /// Phases configuration
+    /// Task lifecycle is controlled by phases
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phases: Option<PhasesConfig>,
 
-    /// Concurrency configuration (v2 mode)
+    /// Concurrency configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub concurrency: Option<ConcurrencyConfig>,
 
-    /// Observation/notification configuration (v2 mode)
+    /// Observation/notification configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observe: Option<ProjectObserve>,
 }
@@ -249,9 +122,6 @@ impl Default for WtConfig {
             start_args: default_start_args(),
             copy_files: Vec::new(),
             logs: LogsConfig::default(),
-            pipelines: PipelinesConfig::new(),
-            hooks: HooksConfig::default(),
-            // Phases v2 fields
             phases: None,
             concurrency: None,
             observe: None,
@@ -313,41 +183,6 @@ impl WtConfig {
         create_multiplexer(self.multiplexer_type())
     }
 
-    /// Get hook definition by command name
-    pub fn get_hook(&self, name: &str) -> Option<&HookDef> {
-        self.hooks.get(name)
-    }
-
-    /// Get a pipeline by name (user-defined only in phases-v2)
-    pub fn get_pipeline(&self, name: &str) -> Option<Vec<Step>> {
-        self.pipelines.get(name).cloned()
-    }
-
-    /// Resolve a HookDef, expanding pipeline references
-    pub fn resolve_hook(&self, hook: &HookDef) -> Option<HookDef> {
-        match hook {
-            HookDef::PipelineRef { use_pipeline } => {
-                self.get_pipeline(use_pipeline)
-                    .map(|steps| HookDef::Pipeline { pipeline: steps })
-            }
-            other => Some(other.clone()),
-        }
-    }
-
-    /// Check if user has defined a custom complete hook (v1 compat)
-    pub fn has_custom_complete_hook(&self) -> bool {
-        self.hooks.complete.is_some()
-    }
-
-    // ============================================================================
-    // Phases v2 Methods
-    // ============================================================================
-
-    /// Check if phases v2 mode is enabled
-    pub fn is_phases_v2(&self) -> bool {
-        self.phases.is_some()
-    }
-
     /// Get phase sequence or default
     pub fn phase_sequence(&self) -> Vec<String> {
         self.phases
@@ -362,26 +197,10 @@ impl WtConfig {
     }
 
     /// Get phase definition by ID
-    pub fn get_phase(&self, phase_id: &str) -> Option<&crate::models::Phase> {
+    pub fn get_phase(&self, phase_id: &str) -> Option<&crate::models::phase::Phase> {
         self.phases
             .as_ref()
             .and_then(|p| p.definitions.get(phase_id))
-    }
-
-    /// Get max active tasks (v2)
-    pub fn max_active_tasks(&self) -> usize {
-        self.concurrency
-            .as_ref()
-            .map(|c| c.max_active_tasks)
-            .unwrap_or(5)
-    }
-
-    /// Get max agents (v2)
-    pub fn max_agents(&self) -> usize {
-        self.concurrency
-            .as_ref()
-            .map(|c| c.max_agents)
-            .unwrap_or(3)
     }
 }
 
@@ -400,7 +219,6 @@ mod tests {
         assert_eq!(config.session_name, "wt");
         assert_eq!(config.claude_command, "claude");
         assert_eq!(config.worktree_dir, ".wt/worktrees");
-        assert!(config.hooks.is_empty());
     }
 
     #[test]
@@ -431,21 +249,13 @@ mod tests {
             "multiplexer": "zellij",
             "session_name": "test-project",
             "claude_command": "claude --model opus",
-            "worktree_dir": "/custom/worktrees",
-            "hooks": {
-                "run": [
-                    { "type": "internal", "run": "worktree:create" },
-                    { "type": "script", "run": "npm install" },
-                    { "type": "agent", "interactive": true, "prompt": "Do the task" }
-                ]
-            }
+            "worktree_dir": "/custom/worktrees"
         }"#;
         let config = WtConfig::from_str(jsonc).unwrap();
         assert_eq!(config.multiplexer, "zellij");
         assert_eq!(config.session_name, "test-project");
         assert_eq!(config.claude_command, "claude --model opus");
         assert_eq!(config.worktree_dir, "/custom/worktrees");
-        assert!(config.hooks.run.is_some());
     }
 
     #[test]
@@ -453,7 +263,10 @@ mod tests {
         let json = r#"{"multiplexer": "invalid"}"#;
         let result = WtConfig::from_str(json);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid multiplexer"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid multiplexer"));
     }
 
     #[test]
@@ -461,155 +274,6 @@ mod tests {
         let json = r#"{"session_name": ""}"#;
         let result = WtConfig::from_str(json);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_step_script() {
-        let json = r#"{"type": "script", "run": "npm test"}"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Script { run, on_error } => {
-                assert_eq!(run, "npm test");
-                assert!(on_error.is_none());
-            }
-            _ => panic!("Expected Script step"),
-        }
-    }
-
-    #[test]
-    fn test_step_script_with_on_error() {
-        let json = r#"{
-            "type": "script",
-            "run": "npm test",
-            "on_error": { "type": "script", "run": "echo failed" }
-        }"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Script { run, on_error } => {
-                assert_eq!(run, "npm test");
-                assert!(on_error.is_some());
-            }
-            _ => panic!("Expected Script step"),
-        }
-    }
-
-    #[test]
-    fn test_step_agent_minimal() {
-        let json = r#"{"type": "agent", "prompt": "Do something"}"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Agent { agent } => {
-                assert!(!agent.print); // default is REPL mode
-                assert_eq!(agent.model, "sonnet"); // default
-                assert_eq!(agent.prompt, "Do something");
-            }
-            _ => panic!("Expected Agent step"),
-        }
-    }
-
-    #[test]
-    fn test_step_agent_full() {
-        let json = r#"{
-            "type": "agent",
-            "print": true,
-            "model": "opus",
-            "prompt": "Review code",
-            "tools": ["Read", "Edit"],
-            "allowed_tools": ["Bash(npm *)"],
-            "skip_permissions": true,
-            "output_format": "stream-json",
-            "window": "new"
-        }"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Agent { agent } => {
-                assert!(agent.print);
-                assert_eq!(agent.model, "opus");
-                assert_eq!(agent.prompt, "Review code");
-                assert_eq!(agent.tools, vec!["Read", "Edit"]);
-                assert_eq!(agent.allowed_tools, vec!["Bash(npm *)"]);
-                assert!(agent.skip_permissions);
-                assert_eq!(agent.output_format, "stream-json");
-                assert_eq!(agent.window, Some("new".to_string()));
-            }
-            _ => panic!("Expected Agent step"),
-        }
-    }
-
-    #[test]
-    fn test_step_internal() {
-        let json = r#"{"type": "internal", "run": "worktree:create"}"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Internal { run, on_conflict } => {
-                assert_eq!(run, "worktree:create");
-                assert!(on_conflict.is_none());
-            }
-            _ => panic!("Expected Internal step"),
-        }
-    }
-
-    #[test]
-    fn test_step_condition() {
-        let json = r#"{
-            "type": "condition",
-            "if": "wt internal git:has-changes",
-            "then": { "type": "script", "run": "git commit -m 'auto'" },
-            "else": { "type": "script", "run": "echo no changes" }
-        }"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Condition { if_, then, else_ } => {
-                assert_eq!(if_, "wt internal git:has-changes");
-                assert!(matches!(*then, Step::Script { .. }));
-                assert!(else_.is_some());
-            }
-            _ => panic!("Expected Condition step"),
-        }
-    }
-
-    #[test]
-    fn test_hook_def_steps() {
-        let json = r#"[
-            { "type": "script", "run": "npm install" },
-            { "type": "agent", "prompt": "code" }
-        ]"#;
-        let hook: HookDef = serde_json::from_str(json).unwrap();
-        match hook {
-            HookDef::Steps(steps) => assert_eq!(steps.len(), 2),
-            _ => panic!("Expected Steps"),
-        }
-    }
-
-    #[test]
-    fn test_hook_def_pipeline() {
-        let json = r#"{
-            "pipeline": [
-                { "type": "agent", "model": "haiku", "prompt": "list files" },
-                { "type": "agent", "model": "sonnet", "prompt": "idle" }
-            ]
-        }"#;
-        let hook: HookDef = serde_json::from_str(json).unwrap();
-        match hook {
-            HookDef::Pipeline { pipeline } => assert_eq!(pipeline.len(), 2),
-            _ => panic!("Expected Pipeline"),
-        }
-    }
-
-    #[test]
-    fn test_hooks_config_get() {
-        let json = r#"{
-            "hooks": {
-                "run": [{ "type": "script", "run": "echo run" }],
-                "review": [{ "type": "script", "run": "echo review" }]
-            }
-        }"#;
-        let config: WtConfig = serde_json::from_str(json).unwrap();
-
-        assert!(config.get_hook("run").is_some());
-        assert!(config.get_hook("review").is_some());
-        assert!(config.get_hook("complete").is_none());
-        assert!(config.get_hook("unknown").is_none());
     }
 
     #[test]
@@ -634,176 +298,7 @@ mod tests {
         // json_comments strips comments but doesn't fix trailing commas
         // This test documents the behavior
         let result = WtConfig::from_str(jsonc);
-        // If this fails, we might need a different JSONC parser
         assert!(result.is_err() || result.is_ok());
     }
 
-    #[test]
-    fn test_step_agent_all_new_params() {
-        let json = r#"{
-            "type": "agent",
-            "prompt": "test",
-            "include_partial_messages": true,
-            "json_schema": "{\"type\":\"object\"}",
-            "session_id": "abc-123",
-            "fork_session": true,
-            "no_session_persistence": true,
-            "fallback_model": "haiku",
-            "allow_skip_permissions": true,
-            "permission_prompt_tool": "mcp_auth",
-            "agents": {"reviewer": {"description": "Review", "prompt": "You are a reviewer"}},
-            "agent": "reviewer",
-            "strict_mcp_config": true,
-            "debug": "api,hooks",
-            "settings": "./settings.json",
-            "setting_sources": "user,project",
-            "plugin_dir": ["./plugins"],
-            "betas": ["interleaved-thinking"],
-            "chrome": true,
-            "ide": true,
-            "disable_slash_commands": true
-        }"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Agent { agent } => {
-                assert!(agent.include_partial_messages);
-                assert_eq!(agent.json_schema, Some("{\"type\":\"object\"}".to_string()));
-                assert_eq!(agent.session_id, Some("abc-123".to_string()));
-                assert!(agent.fork_session);
-                assert!(agent.no_session_persistence);
-                assert_eq!(agent.fallback_model, Some("haiku".to_string()));
-                assert!(agent.allow_skip_permissions);
-                assert_eq!(agent.permission_prompt_tool, Some("mcp_auth".to_string()));
-                assert!(agent.agents.is_some());
-                assert_eq!(agent.agent, Some("reviewer".to_string()));
-                assert!(agent.strict_mcp_config);
-                assert_eq!(agent.debug, Some("api,hooks".to_string()));
-                assert_eq!(agent.settings, Some("./settings.json".to_string()));
-                assert_eq!(agent.setting_sources, Some("user,project".to_string()));
-                assert_eq!(agent.plugin_dir, vec!["./plugins"]);
-                assert_eq!(agent.betas, vec!["interleaved-thinking"]);
-                assert_eq!(agent.chrome, Some(true));
-                assert!(agent.ide);
-                assert!(agent.disable_slash_commands);
-            }
-            _ => panic!("Expected Agent step"),
-        }
-    }
-
-    #[test]
-    fn test_step_agent_chrome_false() {
-        let json = r#"{"type": "agent", "prompt": "test", "chrome": false}"#;
-        let step: Step = serde_json::from_str(json).unwrap();
-        match step {
-            Step::Agent { agent } => {
-                assert_eq!(agent.chrome, Some(false));
-            }
-            _ => panic!("Expected Agent step"),
-        }
-    }
-
-    #[test]
-    fn test_pipeline_unknown() {
-        let config = WtConfig::default();
-        let pipeline = config.get_pipeline("unknown");
-        assert!(pipeline.is_none());
-    }
-
-    #[test]
-    fn test_hook_def_pipeline_ref() {
-        let json = r#"{"use_pipeline": "code-review"}"#;
-        let hook: HookDef = serde_json::from_str(json).unwrap();
-        match hook {
-            HookDef::PipelineRef { use_pipeline } => {
-                assert_eq!(use_pipeline, "code-review");
-            }
-            _ => panic!("Expected PipelineRef"),
-        }
-    }
-
-    #[test]
-    fn test_user_defined_pipeline() {
-        let json = r#"{
-            "pipelines": {
-                "my-review": [
-                    {"type": "agent", "prompt": "custom review"}
-                ]
-            }
-        }"#;
-        let config = WtConfig::from_str(json).unwrap();
-        let pipeline = config.get_pipeline("my-review");
-        assert!(pipeline.is_some());
-        assert_eq!(pipeline.unwrap().len(), 1);
-    }
-
-    // ==================== Phases v2 Tests ====================
-
-    #[test]
-    fn test_config_phases_v2_not_enabled_by_default() {
-        let config = WtConfig::default();
-        assert!(!config.is_phases_v2());
-        assert!(config.phases.is_none());
-    }
-
-    #[test]
-    fn test_config_phases_v2_enabled() {
-        let json = r#"{
-            "phases": {
-                "sequence": ["pending", "developing", "completed"]
-            }
-        }"#;
-        let config = WtConfig::from_str(json).unwrap();
-        assert!(config.is_phases_v2());
-        assert_eq!(
-            config.phase_sequence(),
-            vec!["pending", "developing", "completed"]
-        );
-    }
-
-    #[test]
-    fn test_config_phases_v2_default_sequence() {
-        let json = r#"{ "phases": {} }"#;
-        let config = WtConfig::from_str(json).unwrap();
-        assert!(config.is_phases_v2());
-        assert_eq!(
-            config.phase_sequence(),
-            vec!["pending", "developing", "reviewing", "completed"]
-        );
-    }
-
-    #[test]
-    fn test_config_concurrency() {
-        let json = r#"{
-            "concurrency": {
-                "max_active_tasks": 10,
-                "max_agents": 5
-            }
-        }"#;
-        let config = WtConfig::from_str(json).unwrap();
-        assert_eq!(config.max_active_tasks(), 10);
-        assert_eq!(config.max_agents(), 5);
-    }
-
-    #[test]
-    fn test_config_concurrency_defaults() {
-        let config = WtConfig::default();
-        assert_eq!(config.max_active_tasks(), 5);
-        assert_eq!(config.max_agents(), 3);
-    }
-
-    #[test]
-    fn test_config_phases_and_hooks_coexist() {
-        // Both can exist - phases takes precedence for lifecycle
-        let json = r#"{
-            "phases": {
-                "sequence": ["pending", "developing", "completed"]
-            },
-            "hooks": {
-                "run": [{ "type": "script", "run": "echo hello" }]
-            }
-        }"#;
-        let config = WtConfig::from_str(json).unwrap();
-        assert!(config.is_phases_v2());
-        assert!(config.hooks.run.is_some());
-    }
 }

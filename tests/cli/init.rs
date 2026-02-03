@@ -122,18 +122,19 @@ fn test_init_config_has_required_fields() {
 
     assert!(config.contains("\"multiplexer\":"));
     assert!(config.contains("\"session_name\":"));
-    assert!(config.contains("\"hooks\":"));
+    assert!(config.contains("\"phases\":"));
 }
 
 #[test]
-fn test_init_config_has_hooks() {
+fn test_init_config_has_phases() {
     let dir = setup_bare_git_repo();
     run_wt(dir.path(), &["init"]);
 
     let config = fs::read_to_string(dir.path().join(".wt/config.jsonc")).unwrap();
 
-    assert!(config.contains("\"run\":"));
-    assert!(config.contains("\"type\": \"agent\""));
+    assert!(config.contains("\"sequence\":"));
+    assert!(config.contains("\"definitions\":"));
+    assert!(config.contains("\"developing\":"));
 }
 
 #[test]
