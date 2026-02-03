@@ -28,7 +28,8 @@
 |------|------|------|
 | status.rs 拆分 | 592行，可考虑拆分 | 可选 |
 | artifacts 收集 | step 输出文件收集 | Phase 9 |
-| agent verification | 使用 agent 验证 step 结果 | Phase 9 |
+| agent verification | Stop hook 自验证机制 | ✅ Session 42 |
+| 默认启用自验证 | AgentStep 默认使用 verify-settings | 可选 |
 
 ---
 

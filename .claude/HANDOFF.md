@@ -1,44 +1,26 @@
 # Handoff 文档 - wt 开发进度
 
-## Session 41 完成的工作 (2026-02-04)
+## Session 42 完成的工作 (2026-02-04)
 
-### 1. Phase 9.1 并发执行 ✅
-- 添加 `rayon = "1.10"` 依赖
-- `execute_parallel()` 使用 rayon 线程池真正并行
-- `execute_dag()` 批次内 steps 并行执行
-- 添加 `max_parallel: Option<usize>` 配置限制线程数
-- 创建 `SyncObservers` 线程安全观察者包装
+### Agent 自验证机制 ✅
 
-### 2. Phase 9.2 条件分支 ✅
-- 创建 `ConditionEvaluator` 增强条件表达式系统
-- 支持逻辑运算: `&&`, `||`, `!`
-- 支持比较运算: `==`, `!=`, `>`, `<`, `>=`, `<=`
-- 支持函数: `contains()`, `startsWith()`, `endsWith()`, `empty()`, `defined()`
-- Shell 命令回退
+实现了 agent 退出前自动验证的 Stop hook 机制：
 
-### 3. condition 模块重构 ✅
-拆分 854 行单文件为清晰的模块结构:
-```
-src/services/executor/condition/
-├── mod.rs        # 374 行 - ConditionEvaluator + 测试
-├── tokenizer.rs  # 318 行 - 词法分析 + 测试
-├── parser.rs     # 226 行 - 语法分析 + 测试
-├── ast.rs        #  46 行 - AST 定义
-└── error.rs      #  20 行 - 错误类型
-```
+**文件**:
+- `.wt/hooks/verify-stop.cjs` - Stop hook 脚本
+- `.wt/verify.md` - 验证文档模板
+- `.wt/templates/verify-settings.json` - Claude settings 模板
 
-### 4. Dead Code 清理 ✅
-- 删除 `phase.rs:deallocate_resources()` 未使用方法
-- `Task::content` 现在用于 `wt list --json` 输出 description
-- 0 个编译警告
+**工作流程**:
+1. Agent 完成任务尝试退出
+2. Stop hook 触发，检测是否已执行 `wt step done/block/fail`
+3. 如未执行，提示 agent 阅读 verify.md 并自检
+4. Agent 执行 wt step 命令标记状态
+5. 再次退出时检测到 wt step 调用，放行
 
-### 测试结果
-```
-lib: 264 passed ✅
-cli: 106 passed ✅
-integration: 45 passed ✅
-总计: 415 tests
-```
+**防无限循环机制**: 使用 `lastPromptedLine` 追踪 transcript 位置
+
+**使用方式**: 在 agent step 中设置 `settings: ".wt/templates/verify-settings.json"`
 
 ---
 
@@ -51,6 +33,12 @@ integration: 45 passed ✅
 | on_error 配置 | step 失败时的处理策略 |
 | 重试机制 | 自动重试失败的 step |
 | 断点续执行 | 从失败点恢复执行 |
+
+### 可选: 默认启用 agent 自验证
+
+当前需要手动在 phase 配置中设置 `settings` 字段。可考虑：
+- 在 `AgentStep::default_develop()` 中默认启用
+- 或在配置系统中添加全局开关
 
 详见 `.claude/specs/roadmap.md`
 
@@ -91,10 +79,11 @@ wt logs              # 生成日志
 
 | 功能 | 文件 |
 |------|------|
+| Agent 自验证 | `.wt/hooks/verify-stop.cjs` |
+| 验证模板 | `.wt/verify.md`, `.wt/templates/verify-settings.json` |
 | 并发执行 | `services/executor/workflow.rs` |
 | 条件表达式 | `services/executor/condition/` |
 | 线程安全观察者 | `services/observer/sync.rs` |
-| 任务描述输出 | `commands/list.rs` |
 
 ---
 
@@ -102,6 +91,7 @@ wt logs              # 生成日志
 
 | Session | 主要工作 |
 |---------|----------|
+| 42 | Agent 自验证机制 (Stop hook) |
 | 41 | Phase 9.1 并发 + 9.2 条件 + condition 重构 |
 | 40-41 | 代码质量改进 (TUI unwrap, store 拆分) |
 | 38-39 | Hooks 清理 + Dead Code Cleanup |
