@@ -6,11 +6,8 @@ use crate::constants::IDLE_THRESHOLD_SECS;
 use crate::display::format_duration;
 use crate::error::Result;
 use crate::models::{TaskStatus, TaskStore, WtConfig};
-use crate::services::{
-    git,
-    multiplexer::{create_multiplexer, MultiplexerType},
-    transcript,
-};
+use crate::services::{git, multiplexer::MultiplexerType, transcript};
+use crate::services::multiplexer::create_multiplexer;
 
 /// Action to perform after TUI exits or during TUI
 #[derive(Debug, Clone)]
@@ -45,6 +42,7 @@ pub struct TaskDisplay {
     pub index: usize,
     pub name: String,
     pub status: TaskStatus,
+    pub phase: Option<String>,
     pub duration: Option<String>,
     pub context_percent: u8,
     pub additions: i32,
@@ -59,20 +57,25 @@ pub struct TaskDisplay {
     pub commit_count: i32,
     pub has_conflict: bool,
     pub current_tool: Option<String>,
+    pub latest_message: Option<String>,
+    pub idle_reason: Option<String>,
+    pub dependencies: Vec<(String, TaskStatus)>,
 }
 
 /// Application state
 pub struct App {
     pub tasks: Vec<TaskDisplay>,
     pub selected: usize,
+    pub show_all: bool,
 }
 
 impl App {
     /// Create new app and load initial data
-    pub fn new() -> Result<Self> {
+    pub fn new(show_all: bool) -> Result<Self> {
         let mut app = Self {
             tasks: Vec::new(),
             selected: 0,
+            show_all,
         };
         app.refresh()?;
         Ok(app)
@@ -96,6 +99,12 @@ impl App {
             .map(|(i, name)| (name.as_str(), i + 1))
             .collect();
 
+        // Build status map for dependency display
+        let status_map: HashMap<String, TaskStatus> = task_names
+            .iter()
+            .map(|name| (name.clone(), store.get_status(name)))
+            .collect();
+
         for task_name in &task_names {
             // Auto-mark as Idle if Active but multiplexer window is closed
             if store.auto_mark_idle_if_needed(task_name)? {
@@ -104,14 +113,28 @@ impl App {
 
             let status = store.get_status(task_name);
 
-            // Show Active and Idle tasks
-            if status != TaskStatus::Active && status != TaskStatus::Idle {
+            // TUI v2: Show all non-completed tasks (filter completed unless --all)
+            if !self.show_all && status == TaskStatus::Completed {
                 continue;
             }
 
             let task = store.get(task_name).unwrap();
             let instance = store.get_instance(task.name());
             let worktree_path = instance.map(|i| i.worktree_path.clone());
+
+            // Get phase and idle_reason from status store
+            let phase = store.get_phase(task_name).map(|p| p.display_name().to_string());
+            let idle_reason = store.get_idle_reason(task_name).map(|r| r.display_name().to_string());
+
+            // Get dependencies with their statuses
+            let dependencies: Vec<(String, TaskStatus)> = task
+                .depends()
+                .iter()
+                .map(|dep| {
+                    let dep_status = status_map.get(dep).copied().unwrap_or(TaskStatus::Pending);
+                    (dep.clone(), dep_status)
+                })
+                .collect();
 
             // Multiplexer status
             let mux_alive = if let Some(inst) = instance {
@@ -123,10 +146,18 @@ impl App {
 
             let final_status = status;
 
+            // Find transcript path for metrics and latest message
+            let transcript_path = instance.and_then(transcript::find_transcript_for_instance);
+
             // Parse transcript for metrics (duration, context, etc.)
-            let transcript_metrics = instance
-                .and_then(transcript::find_transcript_for_instance)
-                .and_then(|p| transcript::parse_transcript(&p));
+            let transcript_metrics = transcript_path
+                .as_ref()
+                .and_then(|p| transcript::parse_transcript(p));
+
+            // Get latest message for TUI display
+            let latest_message = transcript_path
+                .as_ref()
+                .and_then(|p| transcript::get_latest_message(p, 50));
 
             // Duration from transcript timestamps
             let duration = transcript_metrics
@@ -188,6 +219,7 @@ impl App {
                 index: index_map[task_name.as_str()],
                 name: task.name().to_string(),
                 status: final_status,
+                phase,
                 duration,
                 context_percent,
                 additions,
@@ -202,6 +234,9 @@ impl App {
                 commit_count,
                 has_conflict,
                 current_tool,
+                latest_message,
+                idle_reason,
+                dependencies,
             });
         }
 
@@ -237,73 +272,6 @@ impl App {
         if !self.tasks.is_empty() {
             self.selected = self.selected.checked_sub(1).unwrap_or(self.tasks.len() - 1);
         }
-    }
-
-    /// Check if selected task can be marked as idle (Active status)
-    pub fn can_mark_idle(&self) -> bool {
-        self.selected_task()
-            .map(|t| t.status == TaskStatus::Active)
-            .unwrap_or(false)
-    }
-
-    /// Check if selected task can be resumed (Idle status)
-    pub fn can_resume(&self) -> bool {
-        self.selected_task()
-            .map(|t| t.status == TaskStatus::Idle)
-            .unwrap_or(false)
-    }
-
-    /// Check if selected task can be completed (Idle status)
-    pub fn can_complete(&self) -> bool {
-        self.selected_task()
-            .map(|t| t.status == TaskStatus::Idle)
-            .unwrap_or(false)
-    }
-
-    /// Mark selected task as idle (closes multiplexer window if still running)
-    pub fn mark_idle(&mut self) -> Result<()> {
-        if let Some(task) = self.selected_task() {
-            if task.status == TaskStatus::Active {
-                let name = task.name.clone();
-
-                // Close multiplexer window if still alive
-                if let (Some(mux_type), Some(session), Some(window)) =
-                    (task.multiplexer, &task.session_name, &task.window_name)
-                {
-                    let mux = create_multiplexer(mux_type);
-                    mux.kill_window_if_exists(session, window).ok();
-                }
-
-                let mut store = TaskStore::load()?;
-                store.set_status(&name, TaskStatus::Idle);
-                store.save_status()?;
-                self.refresh()?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Mark selected task as completed (closes multiplexer window, cleans up resources)
-    pub fn mark_completed(&mut self) -> Result<()> {
-        if let Some(task) = self.selected_task() {
-            if task.status == TaskStatus::Idle {
-                let name = task.name.clone();
-
-                // Close multiplexer window if still alive
-                if let (Some(mux_type), Some(session), Some(window)) =
-                    (task.multiplexer, &task.session_name, &task.window_name)
-                {
-                    let mux = create_multiplexer(mux_type);
-                    mux.kill_window_if_exists(session, window).ok();
-                }
-
-                let mut store = TaskStore::load()?;
-                store.set_status(&name, TaskStatus::Completed);
-                store.save_status()?;
-                self.refresh()?;
-            }
-        }
-        Ok(())
     }
 
     /// Check if running inside a multiplexer

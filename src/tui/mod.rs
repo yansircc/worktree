@@ -17,10 +17,11 @@ use crossterm::{
 use ratatui::prelude::*;
 
 use crate::error::Result;
+use crate::models::TaskStatus;
 use crate::services::multiplexer::MultiplexerType;
 
 /// Run the TUI application and return the action to perform
-pub fn run() -> Result<TuiAction> {
+pub fn run(show_all: bool) -> Result<TuiAction> {
     // Setup terminal
     enable_raw_mode().map_err(|e| crate::error::WtError::Io {
         operation: "enable raw mode".to_string(),
@@ -45,7 +46,7 @@ pub fn run() -> Result<TuiAction> {
     })?;
 
     // Create app and run
-    let mut app = App::new()?;
+    let mut app = App::new(show_all)?;
     let result = run_app(&mut terminal, &mut app);
 
     // Restore terminal
@@ -161,29 +162,69 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                             }
                         }
 
-                        // Mark as idle (Active only)
-                        KeyCode::Char('r') => {
-                            if app.can_mark_idle() {
-                                app.mark_idle()?;
-                            }
-                        }
-
-                        // Resume (Idle only) - uses next command in v2
-                        KeyCode::Char('u') => {
-                            if app.can_resume() {
-                                // Call next command (v2: next advances from idle)
-                                if let Some(task) = app.selected_task() {
+                        // Next (Pending/Active/Idle) - advance phase
+                        KeyCode::Char('n') => {
+                            if let Some(task) = app.selected_task() {
+                                if task.status != TaskStatus::Completed {
                                     let name = task.name.clone();
-                                    crate::commands::next::execute(name)?;
+                                    // Temporarily leave TUI to show output
+                                    disable_raw_mode().ok();
+                                    let mut stdout = io::stdout();
+                                    execute!(stdout, LeaveAlternateScreen, DisableMouseCapture).ok();
+
+                                    // Execute wt next
+                                    let result = crate::commands::next::execute(name);
+                                    if let Err(e) = &result {
+                                        eprintln!("Error: {}", e);
+                                    }
+
+                                    // Brief pause to see output
+                                    std::thread::sleep(std::time::Duration::from_millis(500));
+
+                                    // Re-enter TUI
+                                    enable_raw_mode().ok();
+                                    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).ok();
                                     app.refresh()?;
                                 }
                             }
                         }
 
-                        // Complete (Idle only)
-                        KeyCode::Char('c') => {
-                            if app.can_complete() {
-                                app.mark_completed()?;
+                        // Stop (Active only)
+                        KeyCode::Char('s') => {
+                            if let Some(task) = app.selected_task() {
+                                if task.status == TaskStatus::Active {
+                                    let name = task.name.clone();
+                                    // Execute wt stop (don't need to leave TUI)
+                                    crate::commands::stop::execute(name, false)?;
+                                    app.refresh()?;
+                                }
+                            }
+                        }
+
+                        // Log (Active or Idle) - open in new tmux window
+                        KeyCode::Char('l') => {
+                            if let Some(task) = app.selected_task() {
+                                if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
+                                    if let Some(ref worktree) = task.worktree_path {
+                                        // Find log file
+                                        let log_dir = format!(".wt/logs/{}", task.name);
+                                        let phase = task.phase.as_deref().unwrap_or("developing");
+                                        let log_path = format!("{}/{}/workflow.log", log_dir, phase);
+
+                                        // Open in new tmux window
+                                        if std::env::var("TMUX").is_ok() {
+                                            Command::new("tmux")
+                                                .args([
+                                                    "new-window",
+                                                    "-n",
+                                                    &format!("log:{}", task.name),
+                                                    &format!("less +F {} 2>/dev/null || echo 'No log file found' && read", log_path),
+                                                ])
+                                                .status()
+                                                .ok();
+                                        }
+                                    }
+                                }
                             }
                         }
 

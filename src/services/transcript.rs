@@ -366,6 +366,94 @@ pub fn log_path(task_name: &str, session_id: &str) -> PathBuf {
         .join(format!("{}.jsonl", short_session))
 }
 
+/// Get the latest assistant message from a transcript, truncated for TUI display.
+/// Returns a short summary like "> Editing src/main.rs..." or "> I'll implement..."
+pub fn get_latest_message(path: &Path, max_len: usize) -> Option<String> {
+    let file = File::open(path).ok()?;
+    let reader = BufReader::new(file);
+
+    let mut latest_text: Option<String> = None;
+    let mut latest_tool: Option<String> = None;
+
+    for line in reader.lines() {
+        let line = line.ok()?;
+        if line.is_empty() {
+            continue;
+        }
+
+        if let Ok(entry) = serde_json::from_str::<TranscriptEntry>(&line) {
+            if entry.r#type == "assistant" {
+                if let Some(msg) = entry.message {
+                    if let Some(content) = msg.content {
+                        for item in content {
+                            if item.r#type == "text" {
+                                if let Some(text) = item.text {
+                                    // Get first non-empty line
+                                    let first_line = text
+                                        .lines()
+                                        .find(|l| !l.trim().is_empty())
+                                        .unwrap_or(&text);
+                                    latest_text = Some(first_line.to_string());
+                                }
+                            } else if item.r#type == "tool_use" {
+                                if let Some(name) = &item.name {
+                                    latest_tool = Some(name.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Prefer tool use description, fall back to text
+    let message = if let Some(tool) = latest_tool {
+        format_tool_message(&tool)
+    } else if let Some(text) = latest_text {
+        text
+    } else {
+        return None;
+    };
+
+    // Truncate to max_len
+    Some(truncate_message(&message, max_len))
+}
+
+/// Format a tool use into a human-readable message
+fn format_tool_message(tool: &str) -> String {
+    match tool {
+        "Read" => "Reading file...".to_string(),
+        "Write" => "Writing file...".to_string(),
+        "Edit" => "Editing file...".to_string(),
+        "Bash" => "Running command...".to_string(),
+        "Glob" => "Searching files...".to_string(),
+        "Grep" => "Searching content...".to_string(),
+        "Task" => "Running sub-agent...".to_string(),
+        "WebFetch" => "Fetching web content...".to_string(),
+        "WebSearch" => "Searching web...".to_string(),
+        other => {
+            if other.starts_with("mcp__") {
+                let short = other.rsplit("__").next().unwrap_or(other);
+                format!("Using {}...", short)
+            } else {
+                format!("Using {}...", other)
+            }
+        }
+    }
+}
+
+/// Truncate message to max length, adding ellipsis if needed
+fn truncate_message(s: &str, max_len: usize) -> String {
+    let s = s.trim();
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_len - 3).collect();
+        format!("{}...", truncated.trim_end())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

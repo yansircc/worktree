@@ -130,7 +130,7 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
         Err(e) => respond_and_exit(error_response_no_task(action, &e.to_string())),
     };
 
-    let mut app = match App::new() {
+    let mut app = match App::new(false) {
         Ok(app) => app,
         Err(e) => respond_and_exit(error_response_no_task(
             action,
@@ -147,9 +147,8 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
 
     let response = match action {
         "list" => handle_list_action(&app, &task_name),
-        "review" | "done" => handle_review_action(&mut app, &task_name),
-        "resume" => handle_resume_action(&mut app, &task_name),
-        "complete" | "merged" | "archive" => handle_complete_action(&mut app, &task_name),
+        "stop" | "review" | "done" => handle_stop_action(&task_name),
+        "next" | "resume" => handle_next_action(&task_name),
         "enter" => handle_enter_action(&app, &task_name),
         "tail" => handle_tail_action(&task_name),
         _ => ActionResponse {
@@ -206,33 +205,23 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
         );
     }
 
-    // review check
-    if app.can_mark_idle() {
-        available.push("review".to_string());
+    // stop available for Active
+    if task.status == TaskStatus::Active {
+        available.push("stop".to_string());
     } else {
         unavailable.insert(
-            "idle".to_string(),
+            "stop".to_string(),
             format!("task is {} (need active)", task.status.display_name()),
         );
     }
 
-    // resume check
-    if app.can_resume() {
-        available.push("resume".to_string());
+    // next available for non-Completed
+    if task.status != TaskStatus::Completed {
+        available.push("next".to_string());
     } else {
         unavailable.insert(
-            "resume".to_string(),
-            format!("task is {} (need review)", task.status.display_name()),
-        );
-    }
-
-    // complete check
-    if app.can_complete() {
-        available.push("complete".to_string());
-    } else {
-        unavailable.insert(
-            "complete".to_string(),
-            format!("task is {} (need review)", task.status.display_name()),
+            "next".to_string(),
+            "task is already completed".to_string(),
         );
     }
 
@@ -242,7 +231,7 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
         error: None,
         task: Some(TaskInfo {
             name: task_name.to_string(),
-            status: Some(task.status.clone()),
+            status: Some(task.status),
             status_before: None,
             status_after: None,
             mux_alive: Some(task.mux_alive),
@@ -253,43 +242,27 @@ fn handle_list_action(app: &App, task_name: &str) -> ActionResponse {
     }
 }
 
-fn handle_review_action(app: &mut App, task_name: &str) -> ActionResponse {
-    let task = app.selected_task().unwrap();
-    let status_before = task.status.clone();
-    let mux_alive = task.mux_alive;
+fn handle_stop_action(task_name: &str) -> ActionResponse {
+    let store = match TaskStore::load() {
+        Ok(s) => s,
+        Err(e) => {
+            return error_response(
+                "stop",
+                &format!("Failed to load tasks: {}", e),
+                task_name,
+                None,
+                None,
+            )
+        }
+    };
 
-    if !app.can_mark_idle() {
+    let status_before = store.get_status(task_name);
+
+    if status_before != TaskStatus::Active {
         return error_response(
-            "idle",
-            "Cannot mark for review: task is not running",
-            task_name,
-            Some(status_before),
-            Some(mux_alive),
-        );
-    }
-
-    if let Err(e) = app.mark_idle() {
-        return error_response(
-            "idle",
-            &format!("Failed to mark for review: {}", e),
-            task_name,
-            Some(status_before),
-            None,
-        );
-    }
-
-    success_response("review", task_name, status_before, TaskStatus::Idle)
-}
-
-fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
-    let task = app.selected_task().unwrap();
-    let status_before = task.status.clone();
-
-    if !app.can_resume() {
-        return error_response(
-            "resume",
+            "stop",
             &format!(
-                "Cannot resume: task is {} (need idle)",
+                "Cannot stop: task is {} (need active)",
                 status_before.display_name()
             ),
             task_name,
@@ -298,48 +271,64 @@ fn handle_resume_action(app: &mut App, task_name: &str) -> ActionResponse {
         );
     }
 
-    // Resume by calling the next command (v2: next advances from idle)
+    // Execute wt stop
+    if let Err(e) = crate::commands::stop::execute(task_name.to_string(), false) {
+        return error_response(
+            "stop",
+            &format!("Failed to stop: {}", e),
+            task_name,
+            Some(status_before),
+            None,
+        );
+    }
+
+    success_response("stop", task_name, status_before, TaskStatus::Idle)
+}
+
+fn handle_next_action(task_name: &str) -> ActionResponse {
+    let store = match TaskStore::load() {
+        Ok(s) => s,
+        Err(e) => {
+            return error_response(
+                "next",
+                &format!("Failed to load tasks: {}", e),
+                task_name,
+                None,
+                None,
+            )
+        }
+    };
+
+    let status_before = store.get_status(task_name);
+
+    if status_before == TaskStatus::Completed {
+        return error_response(
+            "next",
+            "Cannot advance: task is already completed",
+            task_name,
+            Some(status_before),
+            None,
+        );
+    }
+
+    // Execute wt next
     if let Err(e) = crate::commands::next::execute(task_name.to_string()) {
         return error_response(
-            "resume",
-            &format!("Failed to resume: {}", e),
+            "next",
+            &format!("Failed to advance: {}", e),
             task_name,
             Some(status_before),
             None,
         );
     }
 
-    success_response("resume", task_name, status_before, TaskStatus::Active)
-}
+    // Reload to get new status
+    let new_store = TaskStore::load().ok();
+    let status_after = new_store
+        .map(|s| s.get_status(task_name))
+        .unwrap_or(TaskStatus::Active);
 
-fn handle_complete_action(app: &mut App, task_name: &str) -> ActionResponse {
-    let task = app.selected_task().unwrap();
-    let status_before = task.status.clone();
-
-    if !app.can_complete() {
-        return error_response(
-            "complete",
-            &format!(
-                "Cannot complete: task is {} (need review)",
-                status_before.display_name()
-            ),
-            task_name,
-            Some(status_before),
-            None,
-        );
-    }
-
-    if let Err(e) = app.mark_completed() {
-        return error_response(
-            "complete",
-            &format!("Failed to complete: {}", e),
-            task_name,
-            Some(status_before),
-            None,
-        );
-    }
-
-    success_response("complete", task_name, status_before, TaskStatus::Completed)
+    success_response("next", task_name, status_before, status_after)
 }
 
 fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
@@ -405,7 +394,7 @@ fn handle_enter_action(app: &App, task_name: &str) -> ActionResponse {
             error: Some("Cannot enter: no multiplexer info available".to_string()),
             task: Some(TaskInfo {
                 name: task_name.to_string(),
-                status: Some(task.status.clone()),
+                status: Some(task.status),
                 status_before: None,
                 status_after: None,
                 mux_alive: Some(task.mux_alive),

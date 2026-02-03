@@ -32,7 +32,7 @@ pub const STATUS_FILE: &str = ".wt/status.json";
 // ============================================================================
 
 /// Task status reflecting resource state
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     /// Task defined but resources not created (no worktree, no branch)
@@ -391,6 +391,16 @@ impl StatusStore {
     /// Set status for a task (v1 compat)
     pub fn set_status(&mut self, name: &str, status: TaskStatus) {
         self.get_mut(name).status = status;
+    }
+
+    /// Get phase for a task
+    pub fn get_phase(&self, name: &str) -> Option<&TaskPhase> {
+        self.tasks.get(name).map(|s| &s.phase)
+    }
+
+    /// Get idle reason for a task
+    pub fn get_idle_reason(&self, name: &str) -> Option<&IdleReason> {
+        self.tasks.get(name).and_then(|s| s.idle_reason.as_ref())
     }
 
     // ========================================================================

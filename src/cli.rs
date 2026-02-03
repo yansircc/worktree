@@ -82,6 +82,10 @@ pub enum Commands {
         #[arg(long, short)]
         verbose: bool,
 
+        /// Show all tasks including completed
+        #[arg(long, short)]
+        all: bool,
+
         /// Execute action on task (list, review, resume, complete, enter, tail)
         #[arg(long, value_name = "ACTION")]
         action: Option<String>,

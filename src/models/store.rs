@@ -163,6 +163,16 @@ impl TaskStore {
         self.status.tasks.contains_key(name)
     }
 
+    /// Get phase for a task
+    pub fn get_phase(&self, name: &str) -> Option<&crate::models::TaskPhase> {
+        self.status.get_phase(name)
+    }
+
+    /// Get idle reason for a task
+    pub fn get_idle_reason(&self, name: &str) -> Option<&crate::models::IdleReason> {
+        self.status.get_idle_reason(name)
+    }
+
     /// Save status to .wt/status.json
     pub fn save_status(&self) -> Result<()> {
         self.status.save()

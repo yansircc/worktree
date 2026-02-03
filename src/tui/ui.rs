@@ -1,4 +1,4 @@
-//! UI rendering for TUI.
+//! UI rendering for TUI v2 - Left/Right split layout.
 
 use ratatui::{prelude::*, widgets::Paragraph};
 
@@ -6,70 +6,63 @@ use crate::models::TaskStatus;
 
 use super::app::{App, TaskDisplay};
 
+/// Minimum terminal size
+const MIN_WIDTH: u16 = 60;
+const MIN_HEIGHT: u16 = 10;
+
+/// Left panel width (fixed)
+const LEFT_WIDTH: u16 = 25;
+
 /// Main draw function
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
-    // Layout: header, task list, footer
-    let chunks = Layout::default()
+    // Check minimum size
+    if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
+        draw_size_warning(frame, area);
+        return;
+    }
+
+    // Layout: main content + footer
+    let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // Header
-            Constraint::Min(1),    // Task list
+            Constraint::Min(1),    // Main content
             Constraint::Length(2), // Footer
         ])
         .split(area);
 
-    draw_header(frame, chunks[0], app);
-    draw_tasks(frame, chunks[1], app);
-    draw_footer(frame, chunks[2], app);
+    // Main content: left panel + right panel
+    let content_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(LEFT_WIDTH), // Left: task list
+            Constraint::Min(1),             // Right: details
+        ])
+        .split(main_chunks[0]);
+
+    draw_left_panel(frame, content_chunks[0], app);
+    draw_right_panel(frame, content_chunks[1], app);
+    draw_footer(frame, main_chunks[1], app);
 }
 
-fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
-    let active = app
-        .tasks
-        .iter()
-        .filter(|t| t.status == TaskStatus::Active)
-        .count();
-    let idle = app
-        .tasks
-        .iter()
-        .filter(|t| t.status == TaskStatus::Idle)
-        .count();
-
-    let mut spans = vec![
-        Span::styled(" wt status", Style::default().fg(Color::Cyan).bold()),
-        Span::raw("                              "),
-        Span::styled(
-            format!("{} active", active),
-            Style::default().fg(Color::Green),
-        ),
+/// Draw terminal size warning
+fn draw_size_warning(frame: &mut Frame, area: Rect) {
+    let text = vec![
+        Line::from("Terminal too small"),
+        Line::from(format!("Need at least {}x{}", MIN_WIDTH, MIN_HEIGHT)),
+        Line::from(format!("Current: {}x{}", area.width, area.height)),
     ];
-    if idle > 0 {
-        spans.push(Span::raw(" · "));
-        spans.push(Span::styled(
-            format!("{} idle", idle),
-            Style::default().fg(Color::Yellow),
-        ));
-    }
-    let text = Line::from(spans);
-
-    frame.render_widget(Paragraph::new(text), area);
-
-    // Draw separator line
-    if area.height > 1 {
-        let sep_area = Rect::new(area.x, area.y + 1, area.width, 1);
-        let sep = "─".repeat(area.width as usize);
-        frame.render_widget(
-            Paragraph::new(sep).style(Style::default().fg(Color::DarkGray)),
-            sep_area,
-        );
-    }
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().fg(Color::Red))
+        .alignment(Alignment::Center);
+    frame.render_widget(paragraph, area);
 }
 
-fn draw_tasks(frame: &mut Frame, area: Rect, app: &App) {
+/// Draw left panel: task list
+fn draw_left_panel(frame: &mut Frame, area: Rect, app: &App) {
     if app.tasks.is_empty() {
-        let text = Paragraph::new(" No active or idle tasks.")
+        let text = Paragraph::new(" (no active tasks)")
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(text, area);
         return;
@@ -79,7 +72,7 @@ fn draw_tasks(frame: &mut Frame, area: Rect, app: &App) {
 
     for (i, task) in app.tasks.iter().enumerate() {
         let is_selected = i == app.selected;
-        let line = format_task_line(task, is_selected, area.width as usize);
+        let line = format_task_line(task, is_selected);
         lines.push(line);
     }
 
@@ -87,50 +80,51 @@ fn draw_tasks(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(text), area);
 }
 
-fn format_task_line(task: &TaskDisplay, selected: bool, _width: usize) -> Line<'static> {
+/// Format a single task line for left panel
+fn format_task_line(task: &TaskDisplay, selected: bool) -> Line<'static> {
     let mut spans = Vec::new();
 
     // Selection indicator
     if selected {
-        spans.push(Span::styled(" ▸ ", Style::default().fg(Color::Yellow)));
+        spans.push(Span::styled(" ", Style::default().fg(Color::Yellow)));
     } else {
-        spans.push(Span::raw("   "));
+        spans.push(Span::raw(" "));
     }
 
-    // Index (gray color - auxiliary info)
+    // Index
     spans.push(Span::styled(
         format!("{:>2}", task.index),
         Style::default().fg(Color::DarkGray),
     ));
     spans.push(Span::raw(" "));
 
-    // Status icon with color (conflict overrides normal status)
-    let (icon, icon_color) = if task.has_conflict {
-        ("⚠", Color::Red)
-    } else {
-        get_status_icon(task)
-    };
+    // Status icon with color
+    let (icon, icon_color) = get_status_icon(task);
     spans.push(Span::styled(icon, Style::default().fg(icon_color)));
     spans.push(Span::raw(" "));
 
-    // Task name (fixed width)
-    let name = format!("{:<12}", truncate(&task.name, 12));
+    // Task name (fixed width 10)
+    let name = truncate(&task.name, 10);
     let name_style = if selected {
         Style::default().fg(Color::White).bold()
     } else {
         Style::default().fg(Color::White)
     };
-    spans.push(Span::styled(name, name_style));
+    spans.push(Span::styled(format!("{:<10}", name), name_style));
+    spans.push(Span::raw(" "));
 
-    // Duration
-    let duration = task
-        .duration
+    // Phase abbreviation (3 chars)
+    let phase_abbr = task
+        .phase
         .as_ref()
-        .map(|d| format!("{:>6}", d))
-        .unwrap_or_else(|| "     -".to_string());
-    spans.push(Span::styled(duration, Style::default().fg(Color::DarkGray)));
+        .map(|p| abbreviate_phase(p))
+        .unwrap_or("pnd".to_string());
+    spans.push(Span::styled(
+        format!("{:<3}", phase_abbr),
+        Style::default().fg(Color::DarkGray),
+    ));
 
-    // Context percent (colored by usage level)
+    // Context percentage with color
     let ctx_color = if task.context_percent >= 95 {
         Color::Red
     } else if task.context_percent >= 80 {
@@ -138,83 +132,27 @@ fn format_task_line(task: &TaskDisplay, selected: bool, _width: usize) -> Line<'
     } else {
         Color::Cyan
     };
-    spans.push(Span::styled(
-        format!(" {:>3}%", task.context_percent),
-        Style::default().fg(ctx_color),
-    ));
 
-    // Commit count
-    let commit_str = if task.commit_count > 0 {
-        format!(" {:>2}c", task.commit_count)
-    } else {
-        "   -".to_string()
-    };
-    spans.push(Span::styled(
-        commit_str,
-        Style::default().fg(Color::Magenta),
-    ));
-
-    // Changes (compact format)
-    let changes = if task.additions > 0 || task.deletions > 0 {
-        format!(" +{}/-{}", task.additions, task.deletions)
-    } else {
-        " -".to_string()
-    };
-    let changes_color = if task.additions > 0 || task.deletions > 0 {
-        Color::Gray
-    } else {
-        Color::DarkGray
-    };
-    spans.push(Span::styled(
-        format!("{:<12}", changes),
-        Style::default().fg(changes_color),
-    ));
-
-    // Conflict or current tool
-    if task.has_conflict {
+    if task.context_percent > 0 {
         spans.push(Span::styled(
-            " ⚡CONFLICT",
-            Style::default().fg(Color::Red).bold(),
+            format!("{:>3}%", task.context_percent),
+            Style::default().fg(ctx_color),
         ));
-    } else if let Some(tool) = &task.current_tool {
-        let tool_display = format_tool_name(tool);
-        spans.push(Span::styled(
-            format!(" {}", tool_display),
-            Style::default().fg(Color::DarkGray),
-        ));
+    } else {
+        spans.push(Span::styled("   -", Style::default().fg(Color::DarkGray)));
     }
 
     Line::from(spans)
 }
 
-fn format_tool_name(tool: &str) -> String {
-    // Shorten common tool names for display
-    let short = match tool {
-        "Read" => "Read",
-        "Write" => "Write",
-        "Edit" => "Edit",
-        "Bash" => "Bash",
-        "Glob" => "Glob",
-        "Grep" => "Grep",
-        "Task" => "Task",
-        "WebFetch" => "Web",
-        "WebSearch" => "Search",
-        other => {
-            // Handle MCP tools like mcp__server__tool
-            if other.starts_with("mcp__") {
-                other.rsplit("__").next().unwrap_or(other)
-            } else {
-                other
-            }
-        }
-    };
-    truncate(short, 12)
-}
-
+/// Get status icon and color for a task
 fn get_status_icon(task: &TaskDisplay) -> (&'static str, Color) {
+    if task.has_conflict {
+        return ("⚠", Color::Red);
+    }
+
     match task.status {
-        TaskStatus::Idle => ("?", Color::Yellow),
-        TaskStatus::Completed => ("✓", Color::Magenta),
+        TaskStatus::Pending => ("○", Color::White),
         TaskStatus::Active => {
             if !task.mux_alive {
                 ("⚠", Color::Yellow)
@@ -224,10 +162,292 @@ fn get_status_icon(task: &TaskDisplay) -> (&'static str, Color) {
                 ("●", Color::Yellow)
             }
         }
-        _ => ("○", Color::White),
+        TaskStatus::Idle => ("◐", Color::Yellow),
+        TaskStatus::Completed => ("✓", Color::Magenta),
     }
 }
 
+/// Abbreviate phase name to 3 characters
+fn abbreviate_phase(phase: &str) -> String {
+    match phase {
+        "developing" => "dev".to_string(),
+        "reviewing" => "rev".to_string(),
+        "pending" | "none" => "pnd".to_string(),
+        "completed" => "don".to_string(),
+        "merging" => "mrg".to_string(),
+        other => other.chars().take(3).collect(),
+    }
+}
+
+/// Draw right panel: task details
+fn draw_right_panel(frame: &mut Frame, area: Rect, app: &App) {
+    // Vertical border on the left
+    let border_area = Rect::new(area.x, area.y, 1, area.height);
+    let border = "│".repeat(area.height as usize);
+    frame.render_widget(
+        Paragraph::new(border).style(Style::default().fg(Color::DarkGray)),
+        border_area,
+    );
+
+    // Content area (after border)
+    let content_area = Rect::new(area.x + 2, area.y, area.width.saturating_sub(3), area.height);
+
+    match app.selected_task() {
+        Some(task) => draw_task_details(frame, content_area, task),
+        None => draw_help(frame, content_area),
+    }
+}
+
+/// Draw task details in right panel
+fn draw_task_details(frame: &mut Frame, area: Rect, task: &TaskDisplay) {
+    let mut lines = Vec::new();
+
+    // Header: task name + phase + status
+    let status_suffix = match task.status {
+        TaskStatus::Idle => {
+            let reason = task.idle_reason.as_deref().unwrap_or("idle");
+            format!(" ({})", reason)
+        }
+        _ => String::new(),
+    };
+
+    let phase_display = task.phase.as_deref().unwrap_or("pending");
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("{}: {}", task.name, phase_display),
+            Style::default().fg(Color::Cyan).bold(),
+        ),
+        Span::styled(status_suffix, Style::default().fg(Color::Yellow)),
+    ]));
+
+    // Separator
+    lines.push(Line::from(Span::styled(
+        "─".repeat(area.width as usize),
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    // Content based on status
+    match task.status {
+        TaskStatus::Pending => draw_pending_details(&mut lines, task, area.width),
+        TaskStatus::Active | TaskStatus::Idle => draw_active_details(&mut lines, task, area.width),
+        TaskStatus::Completed => draw_completed_details(&mut lines, task),
+    }
+
+    let text = Text::from(lines);
+    frame.render_widget(Paragraph::new(text), area);
+}
+
+/// Draw details for pending task
+fn draw_pending_details(lines: &mut Vec<Line<'static>>, task: &TaskDisplay, _width: u16) {
+    lines.push(Line::from("No resources allocated"));
+    lines.push(Line::from(""));
+
+    if !task.dependencies.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "Dependencies:",
+            Style::default().fg(Color::White),
+        )));
+
+        for (dep_name, dep_status) in &task.dependencies {
+            let (icon, color) = match dep_status {
+                TaskStatus::Completed => ("✓", Color::Green),
+                TaskStatus::Active => ("●", Color::Yellow),
+                TaskStatus::Idle => ("◐", Color::Yellow),
+                TaskStatus::Pending => ("○", Color::DarkGray),
+            };
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(icon, Style::default().fg(color)),
+                Span::raw(" "),
+                Span::raw(dep_name.clone()),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press [n] to start",
+        Style::default().fg(Color::DarkGray),
+    )));
+}
+
+/// Draw details for active/idle task
+fn draw_active_details(lines: &mut Vec<Line<'static>>, task: &TaskDisplay, width: u16) {
+    // Workflow/Step progress (placeholder - will be enhanced later)
+    lines.push(Line::from(Span::styled(
+        "on_enter workflow",
+        Style::default().fg(Color::White),
+    )));
+
+    let duration_str = task.duration.clone().unwrap_or_else(|| "-".to_string());
+    lines.push(Line::from(vec![
+        Span::raw("└─ "),
+        Span::styled("agent", Style::default().fg(Color::White)),
+        Span::raw("  "),
+        Span::styled(
+            if task.status == TaskStatus::Active {
+                "●"
+            } else {
+                "◐"
+            },
+            Style::default().fg(if task.status == TaskStatus::Active {
+                Color::Green
+            } else {
+                Color::Yellow
+            }),
+        ),
+        Span::raw("  "),
+        Span::styled(duration_str, Style::default().fg(Color::DarkGray)),
+    ]));
+
+    lines.push(Line::from(""));
+
+    // Context progress bar
+    let bar_width = (width as usize).saturating_sub(15).min(20);
+    let filled = (task.context_percent as usize * bar_width) / 100;
+    let empty = bar_width - filled;
+    let bar = format!("{}{}",
+        "█".repeat(filled),
+        "░".repeat(empty)
+    );
+
+    let ctx_color = if task.context_percent >= 95 {
+        Color::Red
+    } else if task.context_percent >= 80 {
+        Color::Yellow
+    } else {
+        Color::Cyan
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled("Context   ", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("[{}]", bar), Style::default().fg(ctx_color)),
+        Span::raw("  "),
+        Span::styled(format!("{}%", task.context_percent), Style::default().fg(ctx_color)),
+    ]));
+
+    // Duration
+    let duration_display = task.duration.clone().unwrap_or_else(|| "-".to_string());
+    lines.push(Line::from(vec![
+        Span::styled("Duration  ", Style::default().fg(Color::DarkGray)),
+        Span::raw(duration_display),
+    ]));
+
+    // Git stats
+    if task.commit_count > 0 || task.additions > 0 || task.deletions > 0 {
+        lines.push(Line::from(vec![
+            Span::styled("Git       ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{} commits", task.commit_count),
+                Style::default().fg(Color::Magenta),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("+{}/-{}", task.additions, task.deletions),
+                Style::default().fg(Color::Gray),
+            ),
+        ]));
+    }
+
+    // Current tool
+    if let Some(ref tool) = task.current_tool {
+        let tool_str = tool.clone();
+        lines.push(Line::from(vec![
+            Span::styled("Tool      ", Style::default().fg(Color::DarkGray)),
+            Span::raw(tool_str),
+        ]));
+    }
+
+    // Conflict warning
+    if task.has_conflict {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "⚠ CONFLICT - merge conflict detected",
+            Style::default().fg(Color::Red).bold(),
+        )));
+    }
+
+    // Latest message separator
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "─".repeat(width as usize),
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    // Latest message
+    let msg_display = task
+        .latest_message
+        .as_ref()
+        .map(|m| format!("> {}", m))
+        .unwrap_or_else(|| "> (waiting for output...)".to_string());
+    lines.push(Line::from(Span::styled(
+        msg_display,
+        Style::default().fg(Color::DarkGray).italic(),
+    )));
+}
+
+/// Draw details for completed task
+fn draw_completed_details(lines: &mut Vec<Line<'static>>, task: &TaskDisplay) {
+    lines.push(Line::from("Task completed"));
+    lines.push(Line::from(""));
+
+    if task.commit_count > 0 {
+        lines.push(Line::from(vec![
+            Span::styled("Commits   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{}", task.commit_count),
+                Style::default().fg(Color::Magenta),
+            ),
+        ]));
+    }
+
+    if task.additions > 0 || task.deletions > 0 {
+        lines.push(Line::from(vec![
+            Span::styled("Changes   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("+{}/-{}", task.additions, task.deletions),
+                Style::default().fg(Color::Gray),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press [l] to view logs",
+        Style::default().fg(Color::DarkGray),
+    )));
+}
+
+/// Draw help when no task selected
+fn draw_help(frame: &mut Frame, area: Rect) {
+    let lines = vec![
+        Line::from(Span::styled(
+            "wt - Worktree Task Manager",
+            Style::default().fg(Color::Cyan).bold(),
+        )),
+        Line::from(Span::styled(
+            "─".repeat(area.width as usize),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from("No tasks selected"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Keyboard shortcuts:",
+            Style::default().fg(Color::White),
+        )),
+        Line::from("  j/k     Navigate tasks"),
+        Line::from("  Enter   Attach to agent window"),
+        Line::from("  n       Next phase (wt next)"),
+        Line::from("  s       Stop task (wt stop)"),
+        Line::from("  l       View logs"),
+        Line::from("  q       Quit"),
+    ];
+
+    let text = Text::from(lines);
+    frame.render_widget(Paragraph::new(text), area);
+}
+
+/// Draw footer: keybindings
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     // Separator
     let sep = "─".repeat(area.width as usize);
@@ -236,36 +456,46 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         Rect::new(area.x, area.y, area.width, 1),
     );
 
-    // Keybindings - context sensitive
+    // Keybindings
     if area.height > 1 {
         let help_area = Rect::new(area.x, area.y + 1, area.width, 1);
 
         let mut spans = vec![
             Span::raw(" "),
-            Span::styled("↑↓", Style::default().fg(Color::Yellow)),
-            Span::raw(" navigate  "),
-            Span::styled("⏎", Style::default().fg(Color::Yellow)),
-            Span::raw(" cd  "),
+            Span::styled("j/k", Style::default().fg(Color::Yellow)),
+            Span::raw(" select  "),
         ];
 
-        // Context-sensitive actions based on selected task
+        // Context-sensitive actions
         if let Some(task) = app.selected_task() {
-            // t (tail) available for Active and Idle
+            // Enter
+            if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
+                spans.push(Span::styled("⏎", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" attach  "));
+            }
+
+            // n (next) - available for all non-completed
+            if task.status != TaskStatus::Completed {
+                spans.push(Span::styled("n", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" next  "));
+            }
+
+            // s (stop) - only for Active
+            if task.status == TaskStatus::Active {
+                spans.push(Span::styled("s", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" stop  "));
+            }
+
+            // l (log) - available for Active and Idle
+            if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
+                spans.push(Span::styled("l", Style::default().fg(Color::Yellow)));
+                spans.push(Span::raw(" log  "));
+            }
+
+            // t (tail) - available for Active and Idle
             if task.status == TaskStatus::Active || task.status == TaskStatus::Idle {
                 spans.push(Span::styled("t", Style::default().fg(Color::Yellow)));
                 spans.push(Span::raw(" tail  "));
-            }
-
-            if task.status == TaskStatus::Active {
-                // Active: r (idle)
-                spans.push(Span::styled("r", Style::default().fg(Color::Yellow)));
-                spans.push(Span::raw(" idle  "));
-            } else if task.status == TaskStatus::Idle {
-                // Idle: u (resume) and c (complete)
-                spans.push(Span::styled("u", Style::default().fg(Color::Yellow)));
-                spans.push(Span::raw(" resume  "));
-                spans.push(Span::styled("c", Style::default().fg(Color::Yellow)));
-                spans.push(Span::raw(" complete  "));
             }
         }
 
@@ -276,10 +506,12 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
+/// Truncate string to max length
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}…", &s[..max_len - 1])
+        let truncated: String = s.chars().take(max_len - 1).collect();
+        format!("{}…", truncated)
     }
 }

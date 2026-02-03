@@ -9,7 +9,7 @@ use crate::models::WtConfig;
 use crate::services::multiplexer::MultiplexerType;
 use crate::tui::TuiAction;
 
-pub fn execute(json: bool, verbose: bool, action: Option<String>, task: Option<String>) -> Result<()> {
+pub fn execute(json: bool, verbose: bool, all: bool, action: Option<String>, task: Option<String>) -> Result<()> {
     // Verify we're in a wt project directory
     WtConfig::load()?;
 
@@ -27,7 +27,7 @@ pub fn execute(json: bool, verbose: bool, action: Option<String>, task: Option<S
         display::display_status(false, true)
     } else if atty::is(atty::Stream::Stdout) {
         // Interactive TUI mode (default for humans)
-        let tui_action = crate::tui::run()?;
+        let tui_action = crate::tui::run(all)?;
         handle_tui_action(tui_action)
     } else {
         // Non-TTY: auto-degrade to JSON

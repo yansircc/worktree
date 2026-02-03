@@ -21,7 +21,7 @@ fn main() {
         Commands::Delete { name, force } => commands::delete::execute(name, force),
         Commands::Next { task } => commands::next::execute(task),
         Commands::Reset { name, to } => commands::reset::execute(name, to),
-        Commands::Status { json, verbose, action, task } => commands::status::execute(json, verbose, action, task),
+        Commands::Status { json, verbose, all, action, task } => commands::status::execute(json, verbose, all, action, task),
         Commands::Tail { name, count } => commands::tail::execute(name, count),
         Commands::Logs => commands::logs::execute(),
         Commands::New { name, print_path } => commands::new::execute(name, print_path),
