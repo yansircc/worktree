@@ -5,32 +5,30 @@
 **已完成**:
 - Phases v2 重构 (Phase 1-7) ✅
 - TUI v2 重构 (Phase 8) ✅
-- Dead Code Cleanup ✅ (Session 39 完成，0 warnings)
-- 文档更新 ✅
+- Dead Code Cleanup ✅
+- Phase 9.1 并发执行 ✅
+- Phase 9.2 条件分支 ✅
+- 代码质量改进 ✅ (评分: A)
 
 ---
 
 ## 下一步工作
 
-### 1. 代码质量改进
+### Phase 9.3: 错误恢复 (待做)
 
-**Spec**: `.claude/specs/code-quality-improvements.md`
+| 功能 | 说明 | 优先级 |
+|------|------|--------|
+| on_error 配置 | step 失败时的处理策略 | 高 |
+| 重试机制 | 自动重试失败的 step | 中 |
+| 断点续执行 | 从失败点恢复执行 | 低 |
 
-**高优先级**:
-- 修复 TUI 中的 unsafe unwrap
-- 完善 executor 模块 TODO
+### 可选改进
 
-**中优先级**:
-- 拆分大模块 (store.rs, status.rs)
-- 增加 services 层测试
-
-### 2. Phase 9: 高级功能 (待做)
-
-| 子阶段 | 目标 | 状态 |
-|--------|------|------|
-| 9.1 | 并发执行 - DAG 并行、多任务并行 | 待做 |
-| 9.2 | 条件分支 - condition step | 待做 |
-| 9.3 | 错误恢复 - on_error、重试、断点续执行 | 待做 |
+| 项目 | 说明 | 状态 |
+|------|------|------|
+| status.rs 拆分 | 592行，可考虑拆分 | 可选 |
+| artifacts 收集 | step 输出文件收集 | Phase 9 |
+| agent verification | 使用 agent 验证 step 结果 | Phase 9 |
 
 ---
 
@@ -43,3 +41,7 @@
 | 7 | prev/stop/step 命令完善 | 35 |
 | 8 | TUI v2 重构 | 36-37 |
 | - | Hooks 清理 + Dead Code Cleanup | 38-39 |
+| - | 代码质量改进 (TUI unwrap, store 拆分) | 40-41 |
+| 9.1 | 并发执行 (rayon 线程池) | 41 |
+| 9.2 | 条件分支 (ConditionEvaluator 模块) | 41 |
+| - | condition 模块重构 (拆分为 5 文件) | 41 |

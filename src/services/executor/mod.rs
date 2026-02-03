@@ -2,6 +2,7 @@
 //!
 //! Provides execution infrastructure for steps, workflows, and phase transitions.
 
+pub mod condition;
 pub mod context;
 pub mod phase;
 pub mod step;

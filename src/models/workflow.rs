@@ -161,6 +161,9 @@ pub struct ExecutionConfig {
     /// Retry configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<WorkflowRetry>,
+    /// Maximum parallel threads (0 or None = use all available)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_parallel: Option<usize>,
 }
 
 // ============================================================================

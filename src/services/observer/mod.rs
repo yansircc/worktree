@@ -3,4 +3,5 @@
 //! Provides observation infrastructure for monitoring step/workflow execution.
 
 pub mod log;
+pub mod sync;
 pub mod terminal;

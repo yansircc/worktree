@@ -14,6 +14,7 @@ use std::time::Instant;
 use crate::models::step::{Step, StepResult, StepState, StepVerify};
 use crate::models::WtConfig;
 use crate::services::claude::ClaudeCommandBuilder;
+use crate::services::executor::condition::ConditionEvaluator;
 use crate::services::executor::context::ExecutionContext;
 
 /// Step executor
@@ -44,9 +45,16 @@ impl<'a> StepExecutor<'a> {
         let start = Instant::now();
         let step_id = step.id.clone();
 
-        // Check condition
+        // Check condition using enhanced evaluator
         if let Some(ref condition) = step.condition {
-            if !self.evaluate_condition(condition) {
+            let context = self.context.clone();
+            let working_dir = self.context.working_dir().to_string();
+            let evaluator = ConditionEvaluator::new(
+                move |s| context.expand(s),
+                &working_dir,
+            );
+
+            if !evaluator.evaluate(condition) {
                 return StepResult {
                     step_id,
                     state: StepState::Skipped,
@@ -96,37 +104,6 @@ impl<'a> StepExecutor<'a> {
         }
     }
 
-    /// Evaluate a condition expression.
-    fn evaluate_condition(&self, condition: &str) -> bool {
-        let expanded = self.context.expand(condition);
-
-        // Simple expression evaluation
-        // Supports: "value1 == value2", "value1 != value2", shell command
-        if expanded.contains("==") {
-            let parts: Vec<&str> = expanded.split("==").map(|s| s.trim()).collect();
-            if parts.len() == 2 {
-                return parts[0].trim_matches('\'').trim_matches('"')
-                    == parts[1].trim_matches('\'').trim_matches('"');
-            }
-        }
-        if expanded.contains("!=") {
-            let parts: Vec<&str> = expanded.split("!=").map(|s| s.trim()).collect();
-            if parts.len() == 2 {
-                return parts[0].trim_matches('\'').trim_matches('"')
-                    != parts[1].trim_matches('\'').trim_matches('"');
-            }
-        }
-
-        // Fall back to shell command
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(&expanded);
-        cmd.current_dir(self.context.working_dir());
-        cmd.stdout(Stdio::null());
-        cmd.stderr(Stdio::null());
-
-        cmd.status().map(|s| s.success()).unwrap_or(false)
-    }
-
     /// Get output file path for this step.
     fn get_output_file(&self, step_id: &Option<String>) -> PathBuf {
         if let Some(ref dir) = self.log_dir {
@@ -141,6 +118,51 @@ impl<'a> StepExecutor<'a> {
         }
     }
 
+    /// Write command output to log file.
+    fn write_output_log(output_file: &PathBuf, output: &std::process::Output) {
+        if output_file.as_os_str().is_empty() {
+            return;
+        }
+        if let Some(parent) = output_file.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(mut file) = std::fs::File::create(output_file) {
+            let _ = file.write_all(&output.stdout);
+            let _ = file.write_all(&output.stderr);
+        }
+    }
+
+    /// Process command output into step result.
+    fn process_output(
+        output: &std::process::Output,
+        error_prefix: &str,
+    ) -> (StepState, Option<i32>, Option<String>) {
+        let exit_code = output.status.code();
+        if output.status.success() {
+            (StepState::Success, exit_code, None)
+        } else {
+            (
+                StepState::Failed,
+                exit_code,
+                Some(format!("{}: {}", error_prefix, exit_code.unwrap_or(-1))),
+            )
+        }
+    }
+
+    /// Configure command with context environment and output handling.
+    fn configure_command(&self, cmd: &mut Command, output_file: &PathBuf, capture: bool) {
+        for (key, value) in self.context.to_env_vars() {
+            cmd.env(key, value);
+        }
+        if output_file.as_os_str().is_empty() || !capture {
+            cmd.stdout(Stdio::inherit());
+            cmd.stderr(Stdio::inherit());
+        } else {
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+        }
+    }
+
     /// Execute a shell script.
     fn execute_script(
         &self,
@@ -148,51 +170,16 @@ impl<'a> StepExecutor<'a> {
         output_file: &PathBuf,
     ) -> (StepState, Option<i32>, Option<String>) {
         let expanded = self.context.expand(script);
-        let working_dir = self.context.working_dir();
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(&expanded);
-        cmd.current_dir(working_dir);
-
-        // Set environment variables
-        for (key, value) in self.context.to_env_vars() {
-            cmd.env(key, value);
-        }
-
-        // Configure output
-        if output_file.as_os_str().is_empty() {
-            // Stream to terminal
-            cmd.stdout(Stdio::inherit());
-            cmd.stderr(Stdio::inherit());
-        } else {
-            // Capture output
-            cmd.stdout(Stdio::piped());
-            cmd.stderr(Stdio::piped());
-        }
+        cmd.current_dir(self.context.working_dir());
+        self.configure_command(&mut cmd, output_file, true);
 
         match cmd.spawn().and_then(|child| child.wait_with_output()) {
             Ok(output) => {
-                // Write to log file if configured
-                if !output_file.as_os_str().is_empty() {
-                    if let Some(parent) = output_file.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    if let Ok(mut file) = std::fs::File::create(output_file) {
-                        let _ = file.write_all(&output.stdout);
-                        let _ = file.write_all(&output.stderr);
-                    }
-                }
-
-                let exit_code = output.status.code();
-                if output.status.success() {
-                    (StepState::Success, exit_code, None)
-                } else {
-                    (
-                        StepState::Failed,
-                        exit_code,
-                        Some(format!("Exit code: {}", exit_code.unwrap_or(-1))),
-                    )
-                }
+                Self::write_output_log(output_file, &output);
+                Self::process_output(&output, "Exit code")
             }
             Err(e) => (
                 StepState::Failed,
@@ -209,7 +196,6 @@ impl<'a> StepExecutor<'a> {
         output_file: &PathBuf,
     ) -> (StepState, Option<i32>, Option<String>) {
         let expanded_prompt = self.context.expand(&agent.prompt);
-        let working_dir = self.context.working_dir();
 
         // Build command
         let builder = ClaudeCommandBuilder::from_agent_step(agent, &self.context);
@@ -217,45 +203,15 @@ impl<'a> StepExecutor<'a> {
 
         let mut cmd = Command::new(&self.config.claude_command);
         cmd.args(&args);
-        cmd.current_dir(working_dir);
-
-        // Set environment variables
-        for (key, value) in self.context.to_env_vars() {
-            cmd.env(key, value);
-        }
-
-        // Configure output
-        if output_file.as_os_str().is_empty() || !agent.print {
-            cmd.stdout(Stdio::inherit());
-            cmd.stderr(Stdio::inherit());
-        } else {
-            cmd.stdout(Stdio::piped());
-            cmd.stderr(Stdio::piped());
-        }
+        cmd.current_dir(self.context.working_dir());
+        self.configure_command(&mut cmd, output_file, agent.print);
 
         match cmd.spawn().and_then(|child| child.wait_with_output()) {
             Ok(output) => {
-                // Write to log file if configured
-                if !output_file.as_os_str().is_empty() && agent.print {
-                    if let Some(parent) = output_file.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    if let Ok(mut file) = std::fs::File::create(output_file) {
-                        let _ = file.write_all(&output.stdout);
-                        let _ = file.write_all(&output.stderr);
-                    }
+                if agent.print {
+                    Self::write_output_log(output_file, &output);
                 }
-
-                let exit_code = output.status.code();
-                if output.status.success() {
-                    (StepState::Success, exit_code, None)
-                } else {
-                    (
-                        StepState::Failed,
-                        exit_code,
-                        Some(format!("Agent exited with code: {}", exit_code.unwrap_or(-1))),
-                    )
-                }
+                Self::process_output(&output, "Agent exited with code")
             }
             Err(e) => (
                 StepState::Failed,
@@ -402,15 +358,49 @@ mod tests {
     }
 
     #[test]
-    fn test_evaluate_condition_equality() {
-        let config = test_config();
+    fn test_condition_equality() {
         let mut context = test_context();
         context.prev_state = Some("success".to_string());
-        let executor = StepExecutor::new(&config, context);
+        let working_dir = context.working_dir().to_string();
 
-        assert!(executor.evaluate_condition("'success' == 'success'"));
-        assert!(!executor.evaluate_condition("'success' == 'failed'"));
-        assert!(executor.evaluate_condition("'success' != 'failed'"));
+        let evaluator = ConditionEvaluator::new(
+            move |s| context.expand(s),
+            &working_dir,
+        );
+
+        assert!(evaluator.evaluate("'success' == 'success'"));
+        assert!(!evaluator.evaluate("'success' == 'failed'"));
+        assert!(evaluator.evaluate("'success' != 'failed'"));
+    }
+
+    #[test]
+    fn test_condition_with_variables() {
+        let context = test_context();
+        let working_dir = context.working_dir().to_string();
+
+        let evaluator = ConditionEvaluator::new(
+            move |s| context.expand(s),
+            &working_dir,
+        );
+
+        // Test variable expansion in condition
+        assert!(evaluator.evaluate("\"${task}\" == \"auth\""));
+        assert!(evaluator.evaluate("\"${phase}\" == \"developing\""));
+    }
+
+    #[test]
+    fn test_condition_logical_operators() {
+        let context = test_context();
+        let working_dir = context.working_dir().to_string();
+
+        let evaluator = ConditionEvaluator::new(
+            move |s| context.expand(s),
+            &working_dir,
+        );
+
+        assert!(evaluator.evaluate("'a' == 'a' && 'b' == 'b'"));
+        assert!(evaluator.evaluate("'a' == 'x' || 'b' == 'b'"));
+        assert!(evaluator.evaluate("!'a' == 'b'"));
     }
 
     #[test]

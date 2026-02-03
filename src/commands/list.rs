@@ -11,6 +11,8 @@ use crate::models::{Task, TaskStatus, TaskStore};
 struct TaskJson {
     index: usize,
     name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
     status: TaskStatus,
     depends: Vec<String>,
 }
@@ -43,12 +45,28 @@ fn print_json(tasks: &[&Task], store: &TaskStore) {
             .map(|(i, t)| TaskJson {
                 index: i + 1,
                 name: t.name().to_string(),
+                description: extract_description(&t.content),
                 status: store.get_status(t.name()),
                 depends: t.depends().to_vec(),
             })
             .collect(),
     };
     println!("{}", serde_json::to_string(&output).unwrap_or_default());
+}
+
+/// Extract first non-empty line as description (max 80 chars).
+fn extract_description(content: &str) -> Option<String> {
+    content
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.len() > 80 {
+                format!("{}...", &trimmed[..77])
+            } else {
+                trimmed.to_string()
+            }
+        })
 }
 
 fn print_grouped(tasks: &[&Task], store: &TaskStore) {

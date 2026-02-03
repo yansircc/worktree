@@ -1,94 +1,64 @@
 # 代码质量改进计划
 
-## 评估时间: 2026-02-03 (Session 39)
-## 最后更新: 2026-02-04 (Session 40)
+## 最后更新: 2026-02-04 (Session 41)
 
-## 总体评分: A-
+## 总体评分: A
 
-| 方面 | 评分 | 变化 |
-|------|------|------|
-| 代码结构 | A | ↑ |
-| 错误处理 | A | - |
-| 测试覆盖 | A- | ↑ |
-| 代码复杂度 | B+ | ↑ |
-| 潜在问题 | A- | ↑ |
-
----
-
-## 已完成 ✅
-
-### Session 40 完成
-
-1. **TUI unsafe unwrap** - 已修复
-   - `store.get().unwrap()` → `match store.get()`
-   - 防止 TUI 崩溃
-
-2. **解耦 TUI-Status** - 已完成
-   - 抽取 `models/action.rs` (UserAction)
-   - 抽取 `services/action_resolver.rs`
-   - 命令层不再依赖 TUI 层
-
-3. **重复代码** - 已消除
-   - 4 个 response builder 合并为 `ActionResponse` impl 方法
-   - `actions.rs`: 440 → 296 行
-
-4. **拆分 store.rs** - 已完成
-   - 抽取 `models/validator.rs` (TaskValidator)
-   - 抽取 `models/task_resolver.rs` (TaskResolver)
-   - `store.rs`: 716 → 435 行
-
-5. **Services 层测试** - 已有充分覆盖
-   - `git.rs`: 13 tests
-   - `transcript.rs`: 22 tests
-   - `claude.rs`: 6 tests
-   - `multiplexer/`: 11 tests
-
----
-
-## 延期/低优先级
-
-### Executor 模块 TODO
-
-这些是 **Phase 9 高级功能** 的占位符，不是 bug：
-
-| 位置 | 内容 | 状态 |
-|------|------|------|
-| `phase.rs:183,196` | 资源分配/释放 | Phase 9 |
-| `workflow.rs:221` | 读取 step 输出 | Phase 9 |
-| `workflow.rs:246` | 并行执行线程池 | Phase 9.1 |
-| `step.rs:93,94` | artifacts/exports | Phase 9 |
-
-### 其他低优先级
-
-| 问题 | 说明 |
+| 方面 | 评分 |
 |------|------|
-| process::exit() 调用 | 10 处，可接受 |
-| 配置加载静默失败 | 影响较小 |
+| 代码结构 | A |
+| 错误处理 | A |
+| 测试覆盖 | A |
+| 代码复杂度 | A |
+| 潜在问题 | A |
 
 ---
 
-## 当前代码统计
+## 本次 Session 完成 ✅
 
-| 模块 | 行数 | 状态 |
-|------|------|------|
-| `models/store.rs` | 435 | ✅ 已拆分 |
-| `models/status.rs` | 592 | 可考虑拆分 |
-| `services/executor/workflow.rs` | 577 | 可接受 |
-| `tui/ui.rs` | 525 | 可接受 |
-| `services/claude.rs` | 497 | 可接受 |
-| `commands/status/actions.rs` | 296 | ✅ 已优化 |
+### 1. Phase 9.1 并发执行
+- 添加 `rayon` 依赖
+- `execute_parallel()` 使用 rayon 线程池并行执行
+- `execute_dag()` 批次内并行执行
+- 添加 `max_parallel` 配置
+- 创建 `SyncObservers` 线程安全观察者
+
+### 2. Phase 9.2 条件分支
+- 创建 `ConditionEvaluator` 模块
+- 支持: `&&`, `||`, `!`, `==`, `!=`, `>`, `<`, `>=`, `<=`
+- 支持函数: `contains()`, `startsWith()`, `endsWith()`, `empty()`, `defined()`
+- Shell 命令回退
+
+### 3. condition 模块重构
+- 从 854 行单文件拆分为 5 个文件:
+  - `mod.rs` (374行) - ConditionEvaluator
+  - `tokenizer.rs` (318行) - 词法分析
+  - `parser.rs` (226行) - 语法分析
+  - `ast.rs` (46行) - AST 定义
+  - `error.rs` (20行) - 错误类型
+
+### 4. Dead Code 清理
+- 删除 `phase.rs:deallocate_resources()` 未使用方法
+- `Task::content` 字段现在用于 `wt list --json` 输出
+- 0 个编译警告
 
 ---
 
 ## 测试覆盖情况
 
-### 单元测试
-- lib: 191+ passed
-- models: TaskStore, TaskParser, StatusStore, TaskResolver, TaskValidator
-- services: git, transcript, claude, multiplexer
+| 类型 | 数量 |
+|------|------|
+| 单元测试 (lib) | 264 |
+| CLI E2E | 106 |
+| 集成测试 | 45 |
+| **总计** | **415** |
 
-### CLI E2E
-- cli: 106 passed
+---
 
-### 集成测试
-- integration: 45 passed
+## 待处理 (可选)
+
+| 项目 | 说明 | 优先级 |
+|------|------|--------|
+| status.rs 拆分 | 592行，可考虑拆分 | 低 |
+| artifacts 收集 | step.rs TODO | Phase 9 |
+| agent verification | step.rs TODO | Phase 9 |

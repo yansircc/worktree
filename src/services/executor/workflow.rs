@@ -2,21 +2,24 @@
 //!
 //! Orchestrates step execution with support for:
 //! - Sequential execution
-//! - Parallel execution
-//! - DAG-based execution
+//! - Parallel execution (using rayon thread pool)
+//! - DAG-based execution (batches run in parallel)
 //! - Observer integration (terminal progress, file logging)
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::Utc;
+use rayon::prelude::*;
 
 use crate::error::Result;
-use crate::models::step::{StepResult, StepState};
+use crate::models::step::{Step, StepResult, StepState};
 use crate::models::workflow::{ExecutionMode, OnStepBlocked, OnStepFailure, Workflow, WorkflowState};
 use crate::models::WtConfig;
 use crate::services::executor::context::ExecutionContext;
 use crate::services::executor::step::StepExecutor;
 use crate::services::observer::log::{create_workflow_log_entry, LogObserver};
+use crate::services::observer::sync::SyncObservers;
 use crate::services::observer::terminal::{TerminalObserver, TerminalSettings};
 
 /// Result of workflow execution
@@ -78,7 +81,7 @@ impl<'a> WorkflowExecutor<'a> {
             None
         };
 
-        let mut log_observer = if let Some(ref dir) = self.log_dir {
+        let log_observer = if let Some(ref dir) = self.log_dir {
             let phase_name = if self.context.phase.is_empty() {
                 "unknown"
             } else {
@@ -117,24 +120,36 @@ impl<'a> WorkflowExecutor<'a> {
         let on_blocked = execution_config
             .map(|e| e.on_step_blocked.clone())
             .unwrap_or_default();
+        let max_parallel = execution_config
+            .and_then(|e| e.max_parallel);
+
+        // Create thread-safe observers for parallel execution
+        let sync_observers = SyncObservers::new(terminal_observer, log_observer);
 
         let step_results = match mode {
             ExecutionMode::Sequential => {
-                self.execute_sequential(workflow, &on_failure, &on_blocked, &terminal_observer, &mut log_observer)
+                self.execute_sequential(workflow, &on_failure, &on_blocked, &sync_observers)
             }
             ExecutionMode::Parallel => {
-                self.execute_parallel(workflow, &on_failure, &on_blocked, &terminal_observer, &mut log_observer)
+                self.execute_parallel(workflow, &on_failure, &on_blocked, max_parallel, &sync_observers)
             }
             ExecutionMode::Dag => {
-                self.execute_dag(workflow, &on_failure, &on_blocked, &terminal_observer, &mut log_observer)
+                self.execute_dag(workflow, &on_failure, &on_blocked, max_parallel, &sync_observers)
             }
         };
 
         let state = WorkflowState::derive(&step_results);
         let duration_ms = start.elapsed().as_millis() as u64;
 
-        // Notify workflow complete
-        if let Some(ref obs) = terminal_observer {
+        // Extract terminal observer for final notification
+        let log_observer = sync_observers.into_log_observer();
+
+        // Notify workflow complete (terminal observer was moved into sync_observers)
+        if self.show_progress {
+            let obs = TerminalObserver::new(TerminalSettings {
+                show_progress: true,
+                ..Default::default()
+            });
             obs.on_workflow_complete(&workflow_name, &state, duration_ms);
         }
 
@@ -158,14 +173,58 @@ impl<'a> WorkflowExecutor<'a> {
         })
     }
 
+    /// Execute a single step with thread-safe observer notifications.
+    ///
+    /// This method is safe to call from multiple threads concurrently.
+    fn execute_step_with_sync_observers(
+        &self,
+        step: &Step,
+        index: usize,
+        context: ExecutionContext,
+        observers: &SyncObservers,
+    ) -> StepResult {
+        let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", index));
+
+        // Notify step start (thread-safe)
+        observers.on_step_start(index, step.id.as_deref(), &step_name);
+
+        // Execute step
+        let mut executor = StepExecutor::new(self.config, context);
+        if let Some(ref dir) = self.log_dir {
+            executor = executor.with_log_dir(dir.clone());
+        }
+        let result = executor.execute(step);
+
+        // Notify step complete (thread-safe)
+        observers.on_step_complete(index, &step_name, &result);
+
+        result
+    }
+
+    /// Check if execution should abort based on step result.
+    fn should_abort(
+        result: &StepResult,
+        on_failure: &OnStepFailure,
+        on_blocked: &OnStepBlocked,
+    ) -> bool {
+        match result.state {
+            StepState::Failed | StepState::Timeout => {
+                matches!(on_failure, OnStepFailure::Abort)
+            }
+            StepState::Blocked => {
+                matches!(on_blocked, OnStepBlocked::Abort | OnStepBlocked::Pause)
+            }
+            _ => false,
+        }
+    }
+
     /// Execute steps sequentially.
     fn execute_sequential(
         &self,
         workflow: &Workflow,
         on_failure: &OnStepFailure,
         on_blocked: &OnStepBlocked,
-        terminal_observer: &Option<TerminalObserver>,
-        log_observer: &mut Option<LogObserver>,
+        observers: &SyncObservers,
     ) -> Vec<StepResult> {
         let mut results: Vec<StepResult> = Vec::new();
         let mut context = self.context.clone();
@@ -179,41 +238,9 @@ impl<'a> WorkflowExecutor<'a> {
                 context.prev_state = Some(format!("{:?}", prev.state).to_lowercase());
             }
 
-            let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", index));
-
-            // Notify step start
-            if let Some(ref obs) = terminal_observer {
-                obs.on_step_start(index, &step_name);
-            }
-            if let Some(ref mut obs) = log_observer {
-                let _ = obs.on_step_start(index, step.id.as_deref());
-            }
-
-            // Execute step
-            let mut executor = StepExecutor::new(self.config, context.clone());
-            if let Some(ref dir) = self.log_dir {
-                executor = executor.with_log_dir(dir.clone());
-            }
-            let result = executor.execute(step);
-
-            // Notify step complete
-            if let Some(ref obs) = terminal_observer {
-                obs.on_step_complete(index, &step_name, &result.state);
-            }
-            if let Some(ref mut obs) = log_observer {
-                let _ = obs.on_step_complete(&result);
-            }
-
-            // Check for early termination
-            let should_abort = match result.state {
-                StepState::Failed | StepState::Timeout => {
-                    matches!(on_failure, OnStepFailure::Abort)
-                }
-                StepState::Blocked => {
-                    matches!(on_blocked, OnStepBlocked::Abort | OnStepBlocked::Pause)
-                }
-                _ => false,
-            };
+            let result = self.execute_step_with_sync_observers(
+                step, index, context.clone(), observers
+            );
 
             // Store step output for later steps
             if let Some(ref id) = result.step_id {
@@ -223,6 +250,7 @@ impl<'a> WorkflowExecutor<'a> {
                 }
             }
 
+            let should_abort = Self::should_abort(&result, on_failure, on_blocked);
             results.push(result);
 
             if should_abort {
@@ -233,69 +261,83 @@ impl<'a> WorkflowExecutor<'a> {
         results
     }
 
-    /// Execute steps in parallel.
+    /// Execute steps in parallel using rayon thread pool.
+    ///
+    /// All steps run concurrently with optional thread limit via `max_parallel`.
+    /// Results are returned in original step order regardless of completion order.
     fn execute_parallel(
         &self,
         workflow: &Workflow,
-        _on_failure: &OnStepFailure,
-        _on_blocked: &OnStepBlocked,
-        terminal_observer: &Option<TerminalObserver>,
-        log_observer: &mut Option<LogObserver>,
+        on_failure: &OnStepFailure,
+        on_blocked: &OnStepBlocked,
+        max_parallel: Option<usize>,
+        observers: &SyncObservers,
     ) -> Vec<StepResult> {
-        // For now, execute sequentially but mark as parallel
-        // TODO: Use thread pool for true parallel execution
-        let mut results: Vec<StepResult> = Vec::new();
+        // Early abort flag for Abort mode
+        let aborted = AtomicBool::new(false);
 
-        for (index, step) in workflow.steps.iter().enumerate() {
-            let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", index));
+        // Build thread pool with optional parallelism limit
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(max_parallel.unwrap_or(0)) // 0 = use all available
+            .build()
+            .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
 
-            // Notify step start
-            if let Some(ref obs) = terminal_observer {
-                obs.on_step_start(index, &step_name);
-            }
-            if let Some(ref mut obs) = log_observer {
-                let _ = obs.on_step_start(index, step.id.as_deref());
-            }
+        pool.install(|| {
+            workflow.steps
+                .par_iter()
+                .enumerate()
+                .map(|(index, step)| {
+                    // Check if already aborted
+                    if aborted.load(Ordering::Relaxed) {
+                        return StepResult {
+                            step_id: step.id.clone(),
+                            state: StepState::Skipped,
+                            message: Some("Aborted due to earlier failure".to_string()),
+                            ..Default::default()
+                        };
+                    }
 
-            let context = self.context.clone().next_step(index, step.id.as_deref());
-            let mut executor = StepExecutor::new(self.config, context);
-            if let Some(ref dir) = self.log_dir {
-                executor = executor.with_log_dir(dir.clone());
-            }
-            let result = executor.execute(step);
+                    let context = self.context.clone().next_step(index, step.id.as_deref());
+                    let result = self.execute_step_with_sync_observers(step, index, context, observers);
 
-            // Notify step complete
-            if let Some(ref obs) = terminal_observer {
-                obs.on_step_complete(index, &step_name, &result.state);
-            }
-            if let Some(ref mut obs) = log_observer {
-                let _ = obs.on_step_complete(&result);
-            }
+                    // Signal abort if needed
+                    if Self::should_abort(&result, on_failure, on_blocked) {
+                        aborted.store(true, Ordering::Relaxed);
+                    }
 
-            results.push(result);
-        }
-
-        results
+                    result
+                })
+                .collect()
+        })
     }
 
-    /// Execute steps based on DAG.
+    /// Execute steps based on DAG with parallel batch execution.
+    ///
+    /// Steps are grouped into batches by dependency order. Within each batch,
+    /// steps run in parallel. Batches execute sequentially (later batches wait
+    /// for earlier ones to complete).
     fn execute_dag(
         &self,
         workflow: &Workflow,
         on_failure: &OnStepFailure,
         on_blocked: &OnStepBlocked,
-        terminal_observer: &Option<TerminalObserver>,
-        log_observer: &mut Option<LogObserver>,
+        max_parallel: Option<usize>,
+        observers: &SyncObservers,
     ) -> Vec<StepResult> {
         let mut results: Vec<Option<StepResult>> = vec![None; workflow.steps.len()];
         let execution_order = workflow.execution_order();
+
+        // Build thread pool with optional parallelism limit
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(max_parallel.unwrap_or(0))
+            .build()
+            .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
 
         for batch in execution_order {
             // Check if any dependency failed (for skip_dependents mode)
             let skip_indices: std::collections::HashSet<usize> = if matches!(on_failure, OnStepFailure::SkipDependents) {
                 batch.iter()
                     .filter(|&&idx| {
-                        // Check if any dependency failed
                         workflow.steps[idx].depends.iter().any(|dep_id| {
                             workflow.steps.iter().enumerate().any(|(i, s)| {
                                 s.id.as_deref() == Some(dep_id.as_str())
@@ -303,79 +345,75 @@ impl<'a> WorkflowExecutor<'a> {
                             })
                         })
                     })
-                    .cloned()
+                    .copied()
                     .collect()
             } else {
                 std::collections::HashSet::new()
             };
 
-            // Execute batch (could be parallelized)
-            for &idx in &batch {
-                let step = &workflow.steps[idx];
-                let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", idx));
+            // Early abort flag
+            let aborted = AtomicBool::new(false);
 
-                if skip_indices.contains(&idx) {
-                    let result = StepResult {
-                        step_id: workflow.steps[idx].id.clone(),
-                        state: StepState::Skipped,
-                        message: Some("Dependency failed".to_string()),
-                        ..Default::default()
-                    };
+            // Execute batch in parallel
+            let batch_results: Vec<(usize, StepResult)> = pool.install(|| {
+                batch.par_iter()
+                    .map(|&idx| {
+                        let step = &workflow.steps[idx];
+                        let step_name = step.id.clone().unwrap_or_else(|| format!("step-{}", idx));
 
-                    // Notify skipped step
-                    if let Some(ref obs) = terminal_observer {
-                        obs.on_step_complete(idx, &step_name, &result.state);
-                    }
-
-                    results[idx] = Some(result);
-                    continue;
-                }
-
-                // Notify step start
-                if let Some(ref obs) = terminal_observer {
-                    obs.on_step_start(idx, &step_name);
-                }
-                if let Some(ref mut obs) = log_observer {
-                    let _ = obs.on_step_start(idx, step.id.as_deref());
-                }
-
-                let context = self.context.clone().next_step(idx, step.id.as_deref());
-                let mut executor = StepExecutor::new(self.config, context);
-                if let Some(ref dir) = self.log_dir {
-                    executor = executor.with_log_dir(dir.clone());
-                }
-                let result = executor.execute(step);
-
-                // Notify step complete
-                if let Some(ref obs) = terminal_observer {
-                    obs.on_step_complete(idx, &step_name, &result.state);
-                }
-                if let Some(ref mut obs) = log_observer {
-                    let _ = obs.on_step_complete(&result);
-                }
-
-                // Check for abort
-                let should_abort = match result.state {
-                    StepState::Failed | StepState::Timeout => {
-                        matches!(on_failure, OnStepFailure::Abort)
-                    }
-                    StepState::Blocked => {
-                        matches!(on_blocked, OnStepBlocked::Abort | OnStepBlocked::Pause)
-                    }
-                    _ => false,
-                };
-
-                results[idx] = Some(result);
-
-                if should_abort {
-                    // Fill remaining with pending
-                    for r in results.iter_mut() {
-                        if r.is_none() {
-                            *r = Some(StepResult::default());
+                        // Check skip
+                        if skip_indices.contains(&idx) {
+                            let result = StepResult {
+                                step_id: step.id.clone(),
+                                state: StepState::Skipped,
+                                message: Some("Dependency failed".to_string()),
+                                ..Default::default()
+                            };
+                            observers.on_step_complete(idx, &step_name, &result);
+                            return (idx, result);
                         }
-                    }
-                    return results.into_iter().flatten().collect();
+
+                        // Check abort
+                        if aborted.load(Ordering::Relaxed) {
+                            let result = StepResult {
+                                step_id: step.id.clone(),
+                                state: StepState::Skipped,
+                                message: Some("Aborted due to earlier failure".to_string()),
+                                ..Default::default()
+                            };
+                            return (idx, result);
+                        }
+
+                        let context = self.context.clone().next_step(idx, step.id.as_deref());
+                        let result = self.execute_step_with_sync_observers(step, idx, context, observers);
+
+                        // Signal abort if needed
+                        if Self::should_abort(&result, on_failure, on_blocked) {
+                            aborted.store(true, Ordering::Relaxed);
+                        }
+
+                        (idx, result)
+                    })
+                    .collect()
+            });
+
+            // Store batch results
+            let mut should_abort_workflow = false;
+            for (idx, result) in batch_results {
+                if Self::should_abort(&result, on_failure, on_blocked) {
+                    should_abort_workflow = true;
                 }
+                results[idx] = Some(result);
+            }
+
+            // Abort remaining batches if needed
+            if should_abort_workflow {
+                for r in results.iter_mut() {
+                    if r.is_none() {
+                        *r = Some(StepResult::default());
+                    }
+                }
+                return results.into_iter().flatten().collect();
             }
         }
 
@@ -573,5 +611,211 @@ mod tests {
         let result = executor.execute(&workflow).unwrap();
 
         assert!(result.duration_ms >= 100);
+    }
+
+    // =========================================================================
+    // Parallel Execution Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parallel_execution_all_success() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("true"),
+                Step::script("true"),
+            ],
+            execution: Some(ExecutionConfig {
+                mode: ExecutionMode::Parallel,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Success);
+        assert_eq!(result.step_results.len(), 3);
+        assert!(result.step_results.iter().all(|r| r.state == StepState::Success));
+    }
+
+    #[test]
+    fn test_parallel_execution_maintains_order() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step {
+                    id: Some("step-a".to_string()),
+                    run: Some("true".to_string()),
+                    ..Step::script("")
+                },
+                Step {
+                    id: Some("step-b".to_string()),
+                    run: Some("true".to_string()),
+                    ..Step::script("")
+                },
+                Step {
+                    id: Some("step-c".to_string()),
+                    run: Some("true".to_string()),
+                    ..Step::script("")
+                },
+            ],
+            execution: Some(ExecutionConfig {
+                mode: ExecutionMode::Parallel,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        // Results should be in original step order
+        assert_eq!(result.step_results[0].step_id, Some("step-a".to_string()));
+        assert_eq!(result.step_results[1].step_id, Some("step-b".to_string()));
+        assert_eq!(result.step_results[2].step_id, Some("step-c".to_string()));
+    }
+
+    #[test]
+    fn test_parallel_execution_with_failure() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("exit 1"),
+                Step::script("true"),
+            ],
+            execution: Some(ExecutionConfig {
+                mode: ExecutionMode::Parallel,
+                on_step_failure: OnStepFailure::Continue,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Failed);
+        assert_eq!(result.step_results.len(), 3);
+        // All steps run in parallel, so all should have results
+        assert_eq!(result.step_results[0].state, StepState::Success);
+        assert_eq!(result.step_results[1].state, StepState::Failed);
+        assert_eq!(result.step_results[2].state, StepState::Success);
+    }
+
+    #[test]
+    fn test_parallel_execution_is_actually_parallel() {
+        // Test that parallel execution is faster than sequential for sleep commands
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // 3 steps that each sleep 0.1s
+        // Sequential would take ~0.3s, parallel should take ~0.1s
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("sleep 0.1"),
+                Step::script("sleep 0.1"),
+                Step::script("sleep 0.1"),
+            ],
+            execution: Some(ExecutionConfig {
+                mode: ExecutionMode::Parallel,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Success);
+        // Should be significantly faster than 300ms (sequential time)
+        // Allow some slack for test environment variance
+        assert!(
+            result.duration_ms < 250,
+            "Parallel execution took {}ms, expected < 250ms",
+            result.duration_ms
+        );
+    }
+
+    #[test]
+    fn test_parallel_with_max_parallel() {
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        let workflow = Workflow {
+            steps: vec![
+                Step::script("true"),
+                Step::script("true"),
+                Step::script("true"),
+            ],
+            execution: Some(ExecutionConfig {
+                mode: ExecutionMode::Parallel,
+                max_parallel: Some(2), // Limit to 2 threads
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Success);
+        assert_eq!(result.step_results.len(), 3);
+    }
+
+    #[test]
+    fn test_dag_batch_parallel_execution() {
+        // Test that DAG batches execute in parallel
+        let config = test_config();
+        let context = test_context();
+        let executor = WorkflowExecutor::new(&config, context);
+
+        // DAG: A -> B, C (B and C can run in parallel after A)
+        let workflow = Workflow {
+            steps: vec![
+                Step {
+                    id: Some("a".to_string()),
+                    run: Some("true".to_string()),
+                    depends: vec![],
+                    ..Step::script("")
+                },
+                Step {
+                    id: Some("b".to_string()),
+                    run: Some("sleep 0.1".to_string()),
+                    depends: vec!["a".to_string()],
+                    ..Step::script("")
+                },
+                Step {
+                    id: Some("c".to_string()),
+                    run: Some("sleep 0.1".to_string()),
+                    depends: vec!["a".to_string()],
+                    ..Step::script("")
+                },
+            ],
+            execution: Some(ExecutionConfig {
+                mode: ExecutionMode::Dag,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = executor.execute(&workflow).unwrap();
+
+        assert_eq!(result.state, WorkflowState::Success);
+        // B and C should run in parallel (~0.1s), not sequential (~0.2s)
+        assert!(
+            result.duration_ms < 180,
+            "DAG batch took {}ms, expected < 180ms (parallel b+c)",
+            result.duration_ms
+        );
     }
 }

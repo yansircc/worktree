@@ -187,18 +187,6 @@ impl<'a> PhaseTransition<'a> {
         }
     }
 
-    /// Deallocate resources from a phase.
-    #[allow(dead_code)]
-    fn deallocate_resources(&self, resources: &PhaseResources) -> Result<bool> {
-        match resources {
-            PhaseResources::None => Ok(false),
-            PhaseResources::Full => {
-                // TODO: Actually destroy worktree, window
-                Ok(true)
-            }
-        }
-    }
-
     /// Get log directory for a phase.
     fn get_phase_log_dir(&self, phase_id: &str) -> PathBuf {
         self.log_dir
@@ -271,7 +259,7 @@ pub fn prev_phase<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::phase::Phase;
+    use crate::models::phase::{Phase, PhasePrerequisites};
     use crate::models::workflow::Workflow;
 
     fn test_config() -> WtConfig {
@@ -393,5 +381,106 @@ mod tests {
         assert_eq!(prev_phase(Some("pending"), &sequence), None);
         assert_eq!(prev_phase(Some("developing"), &sequence), Some("pending"));
         assert_eq!(prev_phase(Some("completed"), &sequence), Some("reviewing"));
+    }
+
+    #[test]
+    fn test_enter_phase_prerequisite_wrong_phase() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        // Phase that requires coming from "pending"
+        let phase = Phase::new("developing")
+            .with_prerequisites(PhasePrerequisites {
+                phase: vec!["pending".to_string()],
+                ..Default::default()
+            });
+
+        // But runtime is at "reviewing" (not "pending")
+        let mut runtime = TaskRuntimeState::pending();
+        runtime.transition_to("reviewing");
+
+        let result = transition.enter(&phase, &mut runtime);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cannot transition"));
+    }
+
+    #[test]
+    fn test_enter_phase_prerequisite_condition_fails() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        // Phase with a failing condition
+        let phase = Phase::new("developing")
+            .with_prerequisites(PhasePrerequisites {
+                condition: Some("false".to_string()),
+                ..Default::default()
+            });
+        let mut runtime = TaskRuntimeState::pending();
+
+        let result = transition.enter(&phase, &mut runtime);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("condition not met"));
+    }
+
+    #[test]
+    fn test_exit_phase_on_exit_fails() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        let phase = Phase::new("developing")
+            .with_on_exit(Workflow::from_scripts(&["exit 1"]));
+        let mut runtime = TaskRuntimeState::pending();
+        runtime.transition_to("developing");
+
+        let result = transition.exit(&phase, ExitReason::Success, &mut runtime).unwrap();
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().state, WorkflowState::Failed);
+    }
+
+    #[test]
+    fn test_exit_phase_no_workflow() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        let phase = Phase::new("developing");
+        let mut runtime = TaskRuntimeState::pending();
+        runtime.transition_to("developing");
+
+        let result = transition.exit(&phase, ExitReason::Forced, &mut runtime).unwrap();
+
+        assert!(result.is_none());
+        assert_eq!(runtime.workflow_state, WorkflowState::Success);
+    }
+
+    #[test]
+    fn test_evaluate_condition_equality() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        assert!(transition.evaluate_condition("'a' == 'a'"));
+        assert!(!transition.evaluate_condition("'a' == 'b'"));
+        assert!(transition.evaluate_condition("'a' != 'b'"));
+        assert!(!transition.evaluate_condition("'a' != 'a'"));
+    }
+
+    #[test]
+    fn test_evaluate_condition_shell() {
+        let config = test_config();
+        let context = test_context();
+        let transition = PhaseTransition::new(&config, context);
+
+        assert!(transition.evaluate_condition("true"));
+        assert!(!transition.evaluate_condition("false"));
+        assert!(transition.evaluate_condition("test 1 -eq 1"));
     }
 }

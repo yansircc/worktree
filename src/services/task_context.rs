@@ -37,7 +37,10 @@ impl TaskContext {
     /// 3. Resolve task reference to actual name
     /// 4. Verify task exists (in tasks or status)
     pub fn load(task_ref: &str) -> Result<Self> {
-        let config = WtConfig::load().unwrap_or_default();
+        let config = WtConfig::load().unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to load config: {}", e);
+            WtConfig::default()
+        });
         let store = TaskStore::load()?;
         let task_name = store.resolve_task_ref(task_ref)?;
 

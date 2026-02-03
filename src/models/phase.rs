@@ -272,6 +272,12 @@ impl Phase {
         self.on_exit = Some(workflow);
         self
     }
+
+    #[cfg(test)]
+    pub fn with_prerequisites(mut self, prerequisites: PhasePrerequisites) -> Self {
+        self.prerequisites = Some(prerequisites);
+        self
+    }
 }
 
 // ============================================================================

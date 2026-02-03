@@ -40,7 +40,7 @@ pub struct TaskFrontmatter {
 #[derive(Debug, Clone)]
 pub struct Task {
     pub frontmatter: TaskFrontmatter,
-    #[allow(dead_code)]
+    /// Task description (markdown content after frontmatter)
     pub content: String,
     pub file_path: String,
 }
