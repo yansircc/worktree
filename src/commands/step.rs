@@ -21,7 +21,7 @@ use chrono::Utc;
 
 use crate::error::{Result, WtError};
 use crate::models::{StepResult, StatusStore, TaskStatus};
-use crate::services::git;
+use crate::services::{git, transcript};
 
 /// Step action type
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,7 +150,62 @@ pub fn execute(action: &str, message: Option<String>) -> Result<()> {
     // Save status
     status.save()?;
 
+    // Create symlink to agent transcript in log directory
+    link_agent_transcript(&task_name, &status, phase.as_deref(), step_index.as_deref());
+
     Ok(())
+}
+
+/// Create a symlink from the log directory to the agent's transcript file.
+fn link_agent_transcript(
+    task_name: &str,
+    status: &StatusStore,
+    phase: Option<&str>,
+    step_index: Option<&str>,
+) {
+    let phase_str = match phase {
+        Some(p) => p,
+        None => return,
+    };
+
+    // Find instance to get worktree path
+    let instance = match status.get_instance(task_name) {
+        Some(inst) => inst,
+        None => return,
+    };
+
+    let worktree_path = match instance.worktree_path.as_deref() {
+        Some(p) => p,
+        None => return,
+    };
+
+    // Find the latest transcript for this worktree
+    let transcript_path = match transcript::find_latest_transcript(worktree_path) {
+        Some(p) => p,
+        None => return,
+    };
+
+    // Build symlink path: .wt/logs/<task>/<phase>/step-<N>-agent.jsonl
+    let log_dir = format!(".wt/logs/{}/{}", task_name, phase_str);
+    let link_name = match step_index {
+        Some(idx) => format!("step-{}-agent.jsonl", idx),
+        None => "agent-transcript.jsonl".to_string(),
+    };
+    let link_path = std::path::PathBuf::from(&log_dir).join(&link_name);
+
+    // Remove existing symlink if present
+    if link_path.exists() || link_path.symlink_metadata().is_ok() {
+        let _ = std::fs::remove_file(&link_path);
+    }
+
+    // Create parent directory if needed
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    // Create symlink
+    #[cfg(unix)]
+    {
+        let _ = std::os::unix::fs::symlink(&transcript_path, &link_path);
+    }
 }
 
 /// Detect task name from current git branch
