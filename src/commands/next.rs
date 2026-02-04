@@ -166,6 +166,7 @@ pub fn execute(task_ref: String) -> Result<()> {
                                 inst,
                                 agent_step,
                                 &phase_def.id,
+                                Some(agent_idx),
                             )?;
 
                             // Update state
@@ -251,7 +252,7 @@ pub fn execute(task_ref: String) -> Result<()> {
             if let Some(ref inst) = instance {
                 // Start default development agent
                 let default_agent = crate::models::AgentStep::default_develop(&task_name);
-                start_agent_in_window(&ctx.config, &task_name, inst, &default_agent, next_id)?;
+                start_agent_in_window(&ctx.config, &task_name, inst, &default_agent, next_id, None)?;
 
                 let task_state = ctx.state_mut();
                 task_state.phase = Some(next_id.to_string());
@@ -290,6 +291,7 @@ fn start_agent_in_window(
     instance: &Instance,
     agent_step: &crate::models::AgentStep,
     phase_id: &str,
+    step_index: Option<usize>,
 ) -> Result<()> {
     let repo_root = git::get_repo_root()?;
     let default_branch = format!("wt/{}", task_name);
@@ -310,9 +312,11 @@ fn start_agent_in_window(
         .prompt_escaped(&expanded_prompt)
         .build_command_string(&config.claude_command);
 
-    // Wrap command with WT_TASK for explicit task context
-    // (wt step can auto-detect from branch, but explicit is faster)
-    let command = format!("WT_TASK={} {}", task_name, claude_command);
+    // Wrap command with environment variables for wt step command
+    let step_env = step_index
+        .map(|i| format!("WT_STEP={} ", i))
+        .unwrap_or_default();
+    let command = format!("WT_TASK={} WT_PHASE={} {}{}", task_name, phase_id, step_env, claude_command);
 
     // Send command to multiplexer window
     let mux = create_multiplexer(config.multiplexer_type());
