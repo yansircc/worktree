@@ -71,7 +71,30 @@ pub fn execute(task_ref: String) -> Result<()> {
                 resource_manager::stop_process(&ctx.config, &state)?;
             }
 
-            // Get phase definition (must be defined in config)
+            // Execute current phase's on_exit workflow (if any)
+            if let Some(current_phase_id) = current_phase_id {
+                if let Some(current_phase) = ctx.config.get_phase(current_phase_id) {
+                    if current_phase.on_exit.as_ref().map_or(false, |w| !w.is_empty()) {
+                        let result = execute_on_exit(
+                            &ctx.config,
+                            &task_name,
+                            current_phase,
+                            state.instance.as_ref(),
+                        )?;
+
+                        // If on_exit failed, don't proceed to next phase
+                        if result.workflow_state == WorkflowState::Failed {
+                            println!(
+                                "Phase '{}' on_exit workflow failed, cannot proceed to '{}'",
+                                current_phase_id, next_id
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
+            // Get next phase definition (must be defined in config)
             let phase_def = ctx
                 .config
                 .get_phase(next_id)
@@ -407,6 +430,56 @@ fn execute_on_enter_until(
 /// Result of on_enter workflow execution
 struct OnEnterResult {
     workflow_state: WorkflowState,
+}
+
+/// Result of on_exit workflow execution
+struct OnExitResult {
+    workflow_state: WorkflowState,
+}
+
+/// Execute on_exit workflow for current phase
+fn execute_on_exit(
+    config: &WtConfig,
+    task_name: &str,
+    phase: &Phase,
+    instance: Option<&Instance>,
+) -> Result<OnExitResult> {
+    let repo_root = git::get_repo_root()?;
+
+    // Build execution context
+    let default_branch = format!("wt/{}", task_name);
+    let branch = instance
+        .and_then(|i| i.branch.as_deref())
+        .unwrap_or(&default_branch);
+    let worktree = instance
+        .and_then(|i| i.worktree_path.as_deref())
+        .unwrap_or(&repo_root);
+    let session = instance
+        .map(|i| i.session_name.as_str())
+        .unwrap_or(&config.session_name);
+    let window = instance
+        .and_then(|i| i.window_name.as_deref())
+        .unwrap_or(task_name);
+
+    let context = ExecutionContext::new(task_name, branch, worktree, &repo_root)
+        .with_session(session)
+        .with_window(window)
+        .with_phase(&phase.id);
+
+    // Create runtime state
+    let mut runtime_state = TaskRuntimeState::pending();
+    runtime_state.transition_to(&phase.id);
+
+    // Execute phase exit with progress output
+    let transition = PhaseTransition::new(config, context)
+        .with_log_dir(PathBuf::from(".wt/logs"))
+        .with_progress(true);
+
+    let _result = transition.exit(phase, crate::models::phase::ExitReason::Success, &mut runtime_state)?;
+
+    Ok(OnExitResult {
+        workflow_state: runtime_state.workflow_state,
+    })
 }
 
 #[cfg(test)]
