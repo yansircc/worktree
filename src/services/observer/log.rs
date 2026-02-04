@@ -86,9 +86,13 @@ impl LogObserver {
         self.phase_log_dir().join("context.json")
     }
 
-    /// Initialize log directory.
+    /// Initialize log directory (clears previous logs).
     pub fn init(&mut self) -> io::Result<()> {
         let dir = self.phase_log_dir();
+        // Remove old logs from previous runs
+        if dir.exists() {
+            fs::remove_dir_all(&dir)?;
+        }
         fs::create_dir_all(&dir)?;
         Ok(())
     }
