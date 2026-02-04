@@ -119,15 +119,22 @@ impl<'a> StepExecutor<'a> {
         }
     }
 
-    /// Write command output to log file.
+    /// Write command output to log file (appends to existing file).
     fn write_output_log(output_file: &PathBuf, output: &std::process::Output) {
+        use std::fs::OpenOptions;
+
         if output_file.as_os_str().is_empty() {
             return;
         }
         if let Some(parent) = output_file.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        if let Ok(mut file) = std::fs::File::create(output_file) {
+        // Use append mode to preserve header written by LogObserver
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(output_file)
+        {
             let _ = file.write_all(&output.stdout);
             let _ = file.write_all(&output.stderr);
         }
