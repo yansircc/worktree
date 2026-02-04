@@ -70,12 +70,13 @@ impl LogObserver {
         self.log_dir.clone()
     }
 
-    /// Get the log file path for a step.
+    /// Get the log file path for a step (1-based index for human readability).
     pub fn step_log_path(&self, step_index: usize, step_id: Option<&str>) -> PathBuf {
+        let display_index = step_index + 1; // Convert to 1-based for filenames
         let filename = if let Some(id) = step_id {
-            format!("step-{}-{}.log", step_index, id)
+            format!("step-{}-{}.log", display_index, id)
         } else {
-            format!("step-{}.log", step_index)
+            format!("step-{}.log", display_index)
         };
         self.phase_log_dir().join(filename)
     }
@@ -107,9 +108,9 @@ impl LogObserver {
 
         self.writer = Some(BufWriter::new(file));
 
-        // Write header
+        // Write header (1-based index for human readability)
         if let Some(ref mut writer) = self.writer {
-            writeln!(writer, "# Step {} started at {}", step_index, Utc::now())?;
+            writeln!(writer, "# Step {} started at {}", step_index + 1, Utc::now())?;
             writeln!(writer, "# Step ID: {:?}", step_id)?;
             writeln!(writer, "---")?;
             writer.flush()?;
@@ -149,7 +150,7 @@ impl LogObserver {
     pub fn on_step_retry(&mut self, step_index: usize, attempt: u32, max_attempts: u32, delay_ms: u64) -> io::Result<()> {
         if let Some(ref mut writer) = self.writer {
             writeln!(writer, "---")?;
-            writeln!(writer, "# Step {} retry {}/{} at {}", step_index, attempt + 1, max_attempts, Utc::now())?;
+            writeln!(writer, "# Step {} retry {}/{} at {}", step_index + 1, attempt + 1, max_attempts, Utc::now())?;
             writeln!(writer, "# Waiting {}ms before retry", delay_ms)?;
             writeln!(writer, "---")?;
             writer.flush()?;
@@ -197,13 +198,14 @@ mod tests {
             observer.phase_log_dir(),
             PathBuf::from("/logs/auth/developing")
         );
+        // step_log_path uses 1-based index for human readability
         assert_eq!(
             observer.step_log_path(0, None),
-            PathBuf::from("/logs/auth/developing/step-0.log")
+            PathBuf::from("/logs/auth/developing/step-1.log")
         );
         assert_eq!(
             observer.step_log_path(1, Some("build")),
-            PathBuf::from("/logs/auth/developing/step-1-build.log")
+            PathBuf::from("/logs/auth/developing/step-2-build.log")
         );
     }
 

@@ -313,8 +313,9 @@ fn start_agent_in_window(
         .build_command_string(&config.claude_command);
 
     // Wrap command with environment variables for wt step command
+    // Use 1-based index for human readability in logs
     let step_env = step_index
-        .map(|i| format!("WT_STEP={} ", i))
+        .map(|i| format!("WT_STEP={} ", i + 1))
         .unwrap_or_default();
     let command = format!("WT_TASK={} WT_PHASE={} {}{}", task_name, phase_id, step_env, claude_command);
 

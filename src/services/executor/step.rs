@@ -105,13 +105,14 @@ impl<'a> StepExecutor<'a> {
         }
     }
 
-    /// Get output file path for this step.
+    /// Get output file path for this step (1-based index for human readability).
     fn get_output_file(&self, step_id: &Option<String>) -> PathBuf {
         if let Some(ref dir) = self.log_dir {
+            let display_index = self.context.step_index + 1; // Convert to 1-based
             let filename = if let Some(ref id) = step_id {
-                format!("step-{}-{}.log", self.context.step_index, id)
+                format!("step-{}-{}.log", display_index, id)
             } else {
-                format!("step-{}.log", self.context.step_index)
+                format!("step-{}.log", display_index)
             };
             dir.join(filename)
         } else {
