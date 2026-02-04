@@ -83,25 +83,6 @@ pub fn execute(task_ref: String) -> Result<()> {
                 })?
                 .clone();
 
-            // Check if this is a terminal phase (task becomes Completed)
-            if phase_def.terminal {
-                // Clean up resources if any
-                if let Some(ref inst) = state.instance {
-                    let _ = resource_manager::cleanup_instance(&ctx.config, inst);
-                }
-
-                let task_state = ctx.state_mut();
-                task_state.status = TaskStatus::Completed;
-                task_state.phase = Some(next_id.to_string());
-                task_state.step_result = None;
-                task_state.active_since = None;
-                task_state.instance = None;
-
-                ctx.save_status()?;
-                println!("Task '{}' marked as completed", task_name);
-                return Ok(());
-            }
-
             // Allocate resources based on phase requirements
             let needs_resources = !phase_def.resources.is_empty();
             let has_resources = state.instance.as_ref().map_or(false, |i| !i.is_empty());
@@ -197,14 +178,23 @@ pub fn execute(task_ref: String) -> Result<()> {
 
                     match result.workflow_state {
                         WorkflowState::Success => {
-                            task_state.status = TaskStatus::Idle;
-                            task_state.step_result = Some(StepResult::Done);
                             task_state.active_since = None;
-                            ctx.save_status()?;
-                            println!(
-                                "Task '{}' advanced to phase '{}' (workflow completed)",
-                                task_name, next_id
-                            );
+                            // Check if terminal phase - mark as Completed
+                            if phase_def.terminal {
+                                task_state.status = TaskStatus::Completed;
+                                task_state.step_result = None;
+                                task_state.instance = None;
+                                ctx.save_status()?;
+                                println!("Task '{}' marked as completed", task_name);
+                            } else {
+                                task_state.status = TaskStatus::Idle;
+                                task_state.step_result = Some(StepResult::Done);
+                                ctx.save_status()?;
+                                println!(
+                                    "Task '{}' advanced to phase '{}' (workflow completed)",
+                                    task_name, next_id
+                                );
+                            }
                         }
                         WorkflowState::Running => {
                             task_state.status = TaskStatus::Active;
@@ -267,16 +257,23 @@ pub fn execute(task_ref: String) -> Result<()> {
                     task_name, next_id
                 );
             } else {
-                // No resources, just mark as idle
+                // No resources - check if this is a terminal phase
                 let task_state = ctx.state_mut();
                 task_state.phase = Some(next_id.to_string());
-                task_state.instance = instance.clone();
-                task_state.status = TaskStatus::Idle;
-                task_state.step_result = Some(StepResult::Done);
+                task_state.instance = None;
                 task_state.active_since = None;
 
-                ctx.save_status()?;
-                println!("Task '{}' advanced to phase '{}'", task_name, next_id);
+                if phase_def.terminal {
+                    task_state.status = TaskStatus::Completed;
+                    task_state.step_result = None;
+                    ctx.save_status()?;
+                    println!("Task '{}' marked as completed", task_name);
+                } else {
+                    task_state.status = TaskStatus::Idle;
+                    task_state.step_result = Some(StepResult::Done);
+                    ctx.save_status()?;
+                    println!("Task '{}' advanced to phase '{}'", task_name, next_id);
+                }
             }
 
             Ok(())
