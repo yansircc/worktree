@@ -21,7 +21,9 @@ use chrono::Utc;
 
 use crate::error::{Result, WtError};
 use crate::models::{StepResult, StatusStore, TaskStatus};
+use crate::models::workflow::WorkflowState;
 use crate::services::{git, transcript};
+use crate::services::observer::log::WorkflowLogEntry;
 
 /// Step action type
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +154,9 @@ pub fn execute(action: &str, message: Option<String>) -> Result<()> {
 
     // Create symlink to agent transcript in log directory
     link_agent_transcript(&task_name, &status, phase.as_deref(), step_index.as_deref());
+
+    // Update context.json to include agent step result
+    update_workflow_context(&task_name, phase.as_deref(), &action_type);
 
     Ok(())
 }
@@ -302,6 +307,72 @@ fn save_step_message(task_name: &str, phase: Option<&str>, action: &StepAction, 
     };
     let content = format!("action: {}\nmessage: {}\n", action_str, message);
     let _ = fs::write(&result_path, content);
+}
+
+/// Update context.json to include the agent step result.
+/// Reads the existing context.json (written by workflow executor for script steps),
+/// increments step_count, updates success/fail/block counts and final state.
+fn update_workflow_context(task_name: &str, phase: Option<&str>, action: &StepAction) {
+    let phase_str = match phase {
+        Some(p) => p,
+        None => return,
+    };
+
+    let context_path = format!(".wt/logs/{}/{}/context.json", task_name, phase_str);
+
+    // Read existing context.json
+    let mut entry: WorkflowLogEntry = match fs::read_to_string(&context_path) {
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(e) => e,
+            Err(_) => return,
+        },
+        Err(_) => {
+            // No existing context.json (no script steps before agent),
+            // create a fresh one
+            WorkflowLogEntry {
+                workflow_id: None,
+                workflow_name: "workflow".to_string(),
+                state: WorkflowState::Pending,
+                step_count: 0,
+                steps_succeeded: 0,
+                steps_failed: 0,
+                steps_skipped: 0,
+                duration_ms: 0,
+                started_at: Utc::now(),
+                ended_at: Utc::now(),
+            }
+        }
+    };
+
+    // Add agent step result
+    entry.step_count += 1;
+    match action {
+        StepAction::Done => {
+            entry.steps_succeeded += 1;
+            // Only mark success if no previous failures
+            if entry.state != WorkflowState::Failed {
+                entry.state = WorkflowState::Success;
+            }
+        }
+        StepAction::Block => {
+            entry.steps_skipped += 1;
+            entry.state = WorkflowState::Blocked;
+        }
+        StepAction::Fail => {
+            entry.steps_failed += 1;
+            entry.state = WorkflowState::Failed;
+        }
+    }
+
+    // Update end time and duration
+    entry.ended_at = Utc::now();
+    let duration = entry.ended_at.signed_duration_since(entry.started_at);
+    entry.duration_ms = duration.num_milliseconds().max(0) as u64;
+
+    // Write back
+    if let Ok(json) = serde_json::to_string_pretty(&entry) {
+        let _ = fs::write(&context_path, json);
+    }
 }
 
 #[cfg(test)]
