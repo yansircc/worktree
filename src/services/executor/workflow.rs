@@ -81,13 +81,7 @@ impl<'a> WorkflowExecutor<'a> {
         };
 
         let log_observer = if let Some(ref dir) = self.log_dir {
-            let phase_name = if self.context.phase.is_empty() {
-                "unknown"
-            } else {
-                &self.context.phase
-            };
-            let mut obs = LogObserver::new(dir, &self.context.task, phase_name)
-                .with_stream(true);
+            let mut obs = LogObserver::new(dir).with_stream(true);
             let _ = obs.init();
             Some(obs)
         } else {

@@ -39,12 +39,8 @@ pub struct WorkflowLogEntry {
 
 /// Log observer for step/workflow execution
 pub struct LogObserver {
-    /// Base log directory
+    /// Log directory (should already include task/phase path)
     log_dir: PathBuf,
-    /// Task name
-    task: String,
-    /// Phase name
-    phase: String,
     /// Whether to stream logs in real-time
     stream: bool,
     /// Current log writer
@@ -53,11 +49,10 @@ pub struct LogObserver {
 
 impl LogObserver {
     /// Create a new log observer.
-    pub fn new(log_dir: impl Into<PathBuf>, task: &str, phase: &str) -> Self {
+    /// Note: log_dir should already include task/phase path (e.g., .wt/logs/task/phase)
+    pub fn new(log_dir: impl Into<PathBuf>) -> Self {
         Self {
             log_dir: log_dir.into(),
-            task: task.to_string(),
-            phase: phase.to_string(),
             stream: false,
             writer: None,
         }
@@ -70,8 +65,9 @@ impl LogObserver {
     }
 
     /// Get the log directory for current task/phase.
+    /// Note: log_dir is expected to already contain task/phase path
     pub fn phase_log_dir(&self) -> PathBuf {
-        self.log_dir.join(&self.task).join(&self.phase)
+        self.log_dir.clone()
     }
 
     /// Get the log file path for a step.
