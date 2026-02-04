@@ -107,18 +107,70 @@ pub fn execute(task_ref: String) -> Result<()> {
                 .clone();
 
             // Allocate resources based on phase requirements
-            let needs_resources = !phase_def.resources.is_empty();
-            let has_resources = state.instance.as_ref().map_or(false, |i| !i.is_empty());
+            // Check if we need to allocate additional resources
+            let current_instance = state.instance.as_ref();
+            let needs_window = phase_def.resources.window
+                && current_instance.map_or(true, |i| i.window_name.is_none());
+            let needs_worktree = phase_def.resources.worktree
+                && current_instance.map_or(true, |i| i.worktree_path.is_none());
+            let needs_branch = phase_def.resources.branch
+                && current_instance.map_or(true, |i| i.branch.is_none());
 
-            // Allocate resources if needed
-            let instance = if needs_resources && !has_resources {
-                Some(resource_manager::allocate_resources(
-                    &ctx.config,
-                    &task_name,
-                    &phase_def.resources,
-                )?)
+            // Allocate missing resources
+            let instance = if needs_branch || needs_worktree || needs_window {
+                // Start from existing instance or create new one
+                let mut inst = current_instance.cloned().unwrap_or_else(|| Instance {
+                    branch: None,
+                    worktree_path: None,
+                    session_name: ctx.config.session_name.clone(),
+                    window_name: None,
+                    session_id: None,
+                    multiplexer: ctx.config.multiplexer_type(),
+                });
+
+                // Allocate missing resources
+                if needs_branch && inst.branch.is_none() {
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() % 0xFFFFFF)
+                        .unwrap_or(0);
+                    let branch_name = format!("wt/{}-{:06x}", task_name, timestamp);
+                    inst.branch = Some(branch_name);
+                }
+
+                if needs_worktree && inst.worktree_path.is_none() {
+                    let branch_name = inst.branch.as_ref().ok_or_else(|| {
+                        WtError::InvalidInput("worktree requires branch".into())
+                    })?;
+                    let repo_root = git::get_repo_root()?;
+                    let worktree_path = format!("{}/{}", ctx.config.worktree_dir, task_name);
+                    let full_worktree_path = if worktree_path.starts_with('/') {
+                        worktree_path.clone()
+                    } else {
+                        format!("{}/{}", repo_root, worktree_path)
+                    };
+                    git::create_worktree(branch_name, &full_worktree_path)?;
+                    println!("Created worktree at {}", full_worktree_path);
+                    inst.worktree_path = Some(full_worktree_path);
+                }
+
+                if needs_window && inst.window_name.is_none() {
+                    let cwd = inst.worktree_path.as_deref().unwrap_or(".");
+                    let mux = create_multiplexer(ctx.config.multiplexer_type());
+                    let session_name = &ctx.config.session_name;
+
+                    if !mux.session_exists(session_name) {
+                        mux.create_session(session_name)?;
+                    }
+
+                    mux.create_window(session_name, &task_name, cwd, "")?;
+                    println!("Created window '{}' in session '{}'", task_name, session_name);
+                    inst.window_name = Some(task_name.clone());
+                }
+
+                Some(inst)
             } else {
-                state.instance.clone()
+                current_instance.cloned()
             };
 
             // Check if we should execute on_enter workflow
