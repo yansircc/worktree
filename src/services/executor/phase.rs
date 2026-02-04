@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use crate::error::{Result, WtError};
-use crate::models::phase::{ExitReason, Phase, PhaseResources, PhaseState};
+use crate::models::phase::{ExitReason, Phase, PhaseState};
 use crate::models::state::TaskRuntimeState;
 use crate::models::workflow::WorkflowState;
 use crate::models::WtConfig;
@@ -185,14 +185,12 @@ impl<'a> PhaseTransition<'a> {
     }
 
     /// Allocate resources for a phase.
-    fn allocate_resources(&self, resources: &PhaseResources) -> Result<bool> {
-        match resources {
-            PhaseResources::None => Ok(false),
-            PhaseResources::Full => {
-                // TODO: Actually create worktree, branch, window
-                // For now, just indicate resources are needed
-                Ok(true)
-            }
+    fn allocate_resources(&self, resources: &crate::models::phase::PhaseResources) -> Result<bool> {
+        if resources.is_empty() {
+            Ok(false)
+        } else {
+            // Stub: resource allocation is handled by the caller (next/create commands)
+            Ok(true)
         }
     }
 

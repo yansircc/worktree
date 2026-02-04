@@ -100,13 +100,6 @@ impl Default for StepResult {
     }
 }
 
-impl StepResult {
-    /// Create a result with a specific attempt number
-    pub fn with_attempt(mut self, attempt: u32) -> Self {
-        self.attempt = attempt;
-        self
-    }
-}
 
 // ============================================================================
 // Step Input
@@ -231,53 +224,66 @@ pub enum VerifyAction {
 }
 
 impl VerifyAction {
-    fn failed_default() -> Self {
-        VerifyAction::Failed
+    /// Default on_fail action: blocked
+    fn blocked_default() -> Self {
+        VerifyAction::Blocked
+    }
+
+    /// Convert to StepState
+    pub fn to_step_state(&self) -> StepState {
+        match self {
+            VerifyAction::Success => StepState::Success,
+            VerifyAction::Failed => StepState::Failed,
+            VerifyAction::Blocked => StepState::Blocked,
+            VerifyAction::Retry => StepState::Pending,
+        }
     }
 }
 
 /// Verification configuration for a step
+///
+/// Runs a shell command for verification:
+/// - exit 0 → on_pass action
+/// - non-zero → on_fail action
+///
+/// Special patterns:
+/// - Self-mark: `{ "run": "true" }` (no-op, agent calls `wt step done`)
+/// - Human review: `{ "run": "false", "on_fail": "blocked" }` (always blocked)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum StepVerify {
-    /// Agent self-marks
-    #[serde(rename = "self")]
-    SelfMark,
-    /// Script verification
-    Script {
-        /// Script to run
-        run: String,
-        /// Action on pass
-        #[serde(default)]
-        on_pass: VerifyAction,
-        /// Action on fail
-        #[serde(default = "VerifyAction::failed_default")]
-        on_fail: VerifyAction,
-    },
-    /// Agent verification
-    Agent {
-        /// Agent configuration
-        agent: AgentStep,
-    },
-    /// Human verification
-    Human {
-        /// Prompt to display
-        prompt: String,
-        /// Timeout duration
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        timeout: Option<String>,
-    },
-    /// Schema verification
-    Schema {
-        /// JSON schema to validate against
-        schema: String,
-    },
+pub struct StepVerify {
+    /// Shell command to run for verification
+    pub run: String,
+
+    /// Action on success (exit 0)
+    #[serde(default)]
+    pub on_pass: VerifyAction,
+
+    /// Action on failure (non-zero exit)
+    #[serde(default = "VerifyAction::blocked_default")]
+    pub on_fail: VerifyAction,
+
+    /// Timeout duration (e.g., "5m", "30s")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<String>,
 }
 
 impl Default for StepVerify {
     fn default() -> Self {
-        StepVerify::SelfMark
+        Self::self_mark()
     }
+}
+
+impl StepVerify {
+    /// Create self-mark verification (no-op, agent self-marks)
+    pub fn self_mark() -> Self {
+        Self {
+            run: "true".to_string(),
+            on_pass: VerifyAction::Success,
+            on_fail: VerifyAction::Success,
+            timeout: None,
+        }
+    }
+
 }
 
 // ============================================================================
@@ -403,7 +409,7 @@ pub struct Step {
     // ========== Verify ==========
     /// Verification configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Verification method: 'self', 'script', 'agent', 'human', or 'schema'")]
+    #[schemars(description = "Verification: { run, on_pass, on_fail, timeout }")]
     pub verify: Option<StepVerify>,
 
     // ========== Control ==========
@@ -537,9 +543,4 @@ mod tests {
         assert_eq!(parse_duration("10x"), None);
     }
 
-    #[test]
-    fn test_step_result_with_attempt() {
-        let result = StepResult::default().with_attempt(2);
-        assert_eq!(result.attempt, 2);
-    }
 }
