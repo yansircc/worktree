@@ -73,12 +73,14 @@ pub fn execute(action: &str, message: Option<String>) -> Result<()> {
         }
     })?;
 
-    // Get optional context from environment
-    let phase = std::env::var("WT_PHASE").ok();
-    let step_index = std::env::var("WT_STEP").ok();
-
     // Load status store (now from repo root)
     let mut status = StatusStore::load()?;
+
+    // Get phase from status store (environment variable as override)
+    let phase = std::env::var("WT_PHASE")
+        .ok()
+        .or_else(|| status.get_phase(&task_name).map(|p| p.to_string()));
+    let step_index = std::env::var("WT_STEP").ok();
 
     // Get current task state
     let state = status.get_mut(&task_name);

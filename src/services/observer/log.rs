@@ -191,7 +191,8 @@ mod tests {
 
     #[test]
     fn test_log_observer_paths() {
-        let observer = LogObserver::new("/logs", "auth", "developing");
+        // LogObserver now expects full path including task/phase
+        let observer = LogObserver::new("/logs/auth/developing");
         assert_eq!(
             observer.phase_log_dir(),
             PathBuf::from("/logs/auth/developing")
