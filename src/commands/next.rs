@@ -7,20 +7,22 @@
 //! Behavior:
 //! 1. Determines next phase from config sequence
 //! 2. Stops current process (if any)
-//! 3. Allocates resources if needed (worktree, branch, window)
-//! 4. Executes on_enter workflow (if configured)
-//! 5. Updates status
+//! 3. Executes current phase on_exit workflow (if any)
+//! 4. Creates Instance if entering from pending (first time)
+//! 5. Updates phase
+//! 6. Executes on_enter workflow (if configured)
 
 use std::path::PathBuf;
 
 use chrono::Utc;
 
+use crate::constants::branch_name;
 use crate::error::{Result, WtError};
 use crate::models::phase::Phase;
 use crate::models::state::TaskRuntimeState;
 use crate::models::step::ObserveMode;
 use crate::models::workflow::WorkflowState;
-use crate::models::{StepResult, Instance, TaskStatus, WtConfig};
+use crate::models::{Instance, StepResult, TaskStatus, WtConfig};
 use crate::services::claude::ClaudeCommandBuilder;
 use crate::services::executor::{next_phase, ExecutionContext, PhaseTransition};
 use crate::services::git;
@@ -106,71 +108,28 @@ pub fn execute(task_ref: String) -> Result<()> {
                 })?
                 .clone();
 
-            // Allocate resources based on phase requirements
-            // Check if we need to allocate additional resources
-            let current_instance = state.instance.as_ref();
-            let needs_window = phase_def.resources.window
-                && current_instance.map_or(true, |i| i.window_name.is_none());
-            let needs_worktree = phase_def.resources.worktree
-                && current_instance.map_or(true, |i| i.worktree_path.is_none());
-            let needs_branch = phase_def.resources.branch
-                && current_instance.map_or(true, |i| i.branch.is_none());
-
-            // Allocate missing resources
-            let instance = if needs_branch || needs_worktree || needs_window {
-                // Start from existing instance or create new one
-                let mut inst = current_instance.cloned().unwrap_or_else(|| Instance {
-                    branch: None,
-                    worktree_path: None,
-                    session_name: ctx.config.session_name.clone(),
-                    window_name: None,
-                    session_id: None,
-                    multiplexer: ctx.config.multiplexer_type(),
-                });
-
-                // Allocate missing resources
-                if needs_branch && inst.branch.is_none() {
-                    let timestamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() % 0xFFFFFF)
-                        .unwrap_or(0);
-                    let branch_name = format!("wt/{}-{:06x}", task_name, timestamp);
-                    inst.branch = Some(branch_name);
-                }
-
-                if needs_worktree && inst.worktree_path.is_none() {
-                    let branch_name = inst.branch.as_ref().ok_or_else(|| {
-                        WtError::InvalidInput("worktree requires branch".into())
-                    })?;
-                    let repo_root = git::get_repo_root()?;
-                    let worktree_path = format!("{}/{}", ctx.config.worktree_dir, task_name);
-                    let full_worktree_path = if worktree_path.starts_with('/') {
-                        worktree_path.clone()
-                    } else {
-                        format!("{}/{}", repo_root, worktree_path)
-                    };
-                    git::create_worktree(branch_name, &full_worktree_path)?;
-                    println!("Created worktree at {}", full_worktree_path);
-                    inst.worktree_path = Some(full_worktree_path);
-                }
-
-                if needs_window && inst.window_name.is_none() {
-                    let cwd = inst.worktree_path.as_deref().unwrap_or(".");
-                    let mux = create_multiplexer(ctx.config.multiplexer_type());
-                    let session_name = &ctx.config.session_name;
-
-                    if !mux.session_exists(session_name) {
-                        mux.create_session(session_name)?;
-                    }
-
-                    mux.create_window(session_name, &task_name, cwd, "")?;
-                    println!("Created window '{}' in session '{}'", task_name, session_name);
-                    inst.window_name = Some(task_name.clone());
-                }
-
+            // Create Instance if task is entering from pending (no instance yet)
+            // Instance contains derived values that are used throughout the task lifecycle
+            let instance = if let Some(inst) = state.instance.clone() {
                 Some(inst)
             } else {
-                current_instance.cloned()
+                // First time entering from pending - create Instance with derived values
+                let repo_root = git::get_repo_root()?;
+                let worktree_path = format!("{}/{}", ctx.config.worktree_dir, task_name);
+                let full_worktree_path = if worktree_path.starts_with('/') {
+                    worktree_path.clone()
+                } else {
+                    format!("{}/{}", repo_root, worktree_path)
+                };
+
+                Some(Instance {
+                    branch: Some(branch_name(&task_name)),
+                    worktree_path: Some(full_worktree_path),
+                    session_name: ctx.config.session_name.clone(),
+                    window_name: Some(task_name.clone()),
+                    session_id: None,
+                    multiplexer: ctx.config.multiplexer_type(),
+                })
             };
 
             // Check if we should execute on_enter workflow
@@ -313,42 +272,23 @@ pub fn execute(task_ref: String) -> Result<()> {
                 }
             }
 
-            // No on_enter workflow - check if we should start default agent
-            if let Some(ref inst) = instance {
-                // Start default development agent
-                let default_agent = crate::models::AgentStep::default_develop(&task_name);
-                start_agent_in_window(&ctx.config, &task_name, inst, &default_agent, next_id, None)?;
+            // No on_enter workflow - just advance phase
+            let task_state = ctx.state_mut();
+            task_state.phase = Some(next_id.to_string());
+            task_state.instance = instance.clone();
+            task_state.active_since = None;
 
-                let task_state = ctx.state_mut();
-                task_state.phase = Some(next_id.to_string());
-                task_state.instance = instance.clone();
-                task_state.status = TaskStatus::Active;
+            if phase_def.terminal {
+                task_state.status = TaskStatus::Completed;
                 task_state.step_result = None;
-                task_state.active_since = Some(Utc::now());
-
-                ctx.save_status()?;
-                println!(
-                    "Task '{}' advanced to phase '{}' (agent started)",
-                    task_name, next_id
-                );
-            } else {
-                // No resources - check if this is a terminal phase
-                let task_state = ctx.state_mut();
-                task_state.phase = Some(next_id.to_string());
                 task_state.instance = None;
-                task_state.active_since = None;
-
-                if phase_def.terminal {
-                    task_state.status = TaskStatus::Completed;
-                    task_state.step_result = None;
-                    ctx.save_status()?;
-                    println!("Task '{}' marked as completed", task_name);
-                } else {
-                    task_state.status = TaskStatus::Idle;
-                    task_state.step_result = Some(StepResult::Done);
-                    ctx.save_status()?;
-                    println!("Task '{}' advanced to phase '{}'", task_name, next_id);
-                }
+                ctx.save_status()?;
+                println!("Task '{}' marked as completed", task_name);
+            } else {
+                task_state.status = TaskStatus::Idle;
+                task_state.step_result = Some(StepResult::Done);
+                ctx.save_status()?;
+                println!("Task '{}' advanced to phase '{}'", task_name, next_id);
             }
 
             Ok(())
@@ -546,10 +486,7 @@ mod tests {
 
         let mut definitions = HashMap::new();
         definitions.insert("pending".to_string(), Phase::new("pending"));
-        definitions.insert(
-            "developing".to_string(),
-            Phase::with_resources("developing"),
-        );
+        definitions.insert("developing".to_string(), Phase::new("developing"));
         let mut completed = Phase::new("completed");
         completed.terminal = true;
         definitions.insert("completed".to_string(), completed);
@@ -565,18 +502,12 @@ mod tests {
         });
 
         let pending = config.get_phase("pending").unwrap();
-        assert!(pending.resources.is_empty());
         assert!(!pending.terminal);
 
         let developing = config.get_phase("developing").unwrap();
-        assert_eq!(
-            developing.resources,
-            crate::models::phase::PhaseResources::full()
-        );
         assert!(!developing.terminal);
 
         let completed = config.get_phase("completed").unwrap();
-        assert!(completed.resources.is_empty());
         assert!(completed.terminal);
     }
 }

@@ -17,13 +17,13 @@ use std::path::Path;
 
 use chrono::Utc;
 
-use crate::constants::{branch_pattern, BACKUPS_DIR};
+use crate::constants::{branch_name, BACKUPS_DIR};
 use crate::error::{Result, WtError};
 use crate::models::{TaskStatus, WtConfig};
 use crate::services::{dependency, git, multiplexer::create_multiplexer, TaskContext};
 
 /// Validate and normalize target phase from string.
-/// Returns None for "none" keyword or phases with no resources and not terminal,
+/// Returns None for "none" keyword or first phase in sequence,
 /// Some(phase_id) for other phases.
 fn validate_target_phase(phase_str: &str, config: &WtConfig) -> Result<Option<String>> {
     let normalized = phase_str.to_lowercase();
@@ -43,11 +43,9 @@ fn validate_target_phase(phase_str: &str, config: &WtConfig) -> Result<Option<St
         )));
     }
 
-    // Check phase definition: no resources + not terminal = back to initial state
-    if let Some(phase) = config.get_phase(&normalized) {
-        if phase.resources.is_empty() && !phase.terminal {
-            return Ok(None);
-        }
+    // First phase in sequence = back to initial state (pending)
+    if seq.first().map(|s| s.as_str()) == Some(normalized.as_str()) {
+        return Ok(None);
     }
 
     Ok(Some(normalized))
@@ -234,7 +232,13 @@ fn cleanup_orphaned_resources(task_name: &str, config: &WtConfig, repo_root: &st
         .to_string();
 
     let worktree_exists = Path::new(&worktree_path).exists();
-    let branches = git::find_branches(&branch_pattern(task_name));
+    // Use deterministic branch name for lookup
+    let expected_branch = branch_name(task_name);
+    let branches: Vec<String> = if git::branch_exists(&expected_branch) {
+        vec![expected_branch]
+    } else {
+        vec![]
+    };
 
     if !worktree_exists && branches.is_empty() {
         return Ok(false); // Nothing to clean up

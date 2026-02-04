@@ -29,11 +29,6 @@ impl Instance {
     pub fn multiplexer_type(&self) -> MultiplexerType {
         self.multiplexer
     }
-
-    /// Check if this instance has no resources allocated
-    pub fn is_empty(&self) -> bool {
-        self.branch.is_none() && self.worktree_path.is_none() && self.window_name.is_none()
-    }
 }
 
 /// Frontmatter of task markdown file (definition only, no runtime state)

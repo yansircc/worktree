@@ -86,19 +86,6 @@ pub fn branch_exists(branch: &str) -> bool {
     ])
 }
 
-/// Find branches matching a pattern (e.g., "wt/task-*")
-pub fn find_branches(pattern: &str) -> Vec<String> {
-    let output = CommandRunner::git().output(&["branch", "--list", pattern]);
-    match output {
-        Ok(stdout) => stdout
-            .lines()
-            .map(|line| line.trim().trim_start_matches("* ").to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
 /// Get diff stats (additions, deletions) for a worktree compared to main branch.
 /// Shows all changes on the branch, including committed ones.
 pub fn get_diff_stats(worktree_path: &str) -> Option<(i32, i32)> {

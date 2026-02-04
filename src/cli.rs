@@ -39,7 +39,7 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Delete a task's resources (worktree, branch)
+    /// Delete a task and clean up its resources
     Delete {
         /// Task name or index
         name: String,
@@ -59,8 +59,8 @@ pub enum Commands {
 
     /// Reset a task to a specific phase
     ///
-    /// By default, resets to initial state (cleans up all resources).
-    /// Use --to to reset to a different phase (keeps resources).
+    /// By default, resets to initial state (full cleanup).
+    /// Use --to to reset to a different phase (keeps instance).
     Reset {
         /// Task name to reset
         name: String,

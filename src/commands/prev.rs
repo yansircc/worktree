@@ -9,7 +9,7 @@
 //! 2. Stops current process (if any)
 //! 3. Executes on_exit workflow (if configured)
 //! 4. Updates phase to previous
-//! 5. Cleans up resources if returning to pending
+//! 5. Cleans up resources if returning to first phase (sequence[0])
 //! 6. Does NOT execute on_enter (rollback doesn't trigger entry workflow)
 
 use std::path::PathBuf;
@@ -71,24 +71,14 @@ pub fn execute(task_ref: String) -> Result<()> {
                 }
             }
 
-            // Get previous phase definition to check resource requirements
-            let prev_phase_def = ctx
-                .config
-                .get_phase(prev_id)
-                .ok_or_else(|| {
-                    WtError::InvalidInput(format!(
-                        "Phase '{}' not defined in config. Run 'wt validate' to check.",
-                        prev_id
-                    ))
-                })?
-                .clone();
-            let prev_needs_resources = !prev_phase_def.resources.is_empty();
+            // Check if prev_id is the first phase in sequence
+            let is_first_phase = phase_sequence.first().map(|s| s.as_str()) == Some(prev_id);
 
-            // Clean up resources if returning to a phase that doesn't need them
-            let instance = if !prev_needs_resources && state.instance.is_some() {
+            // Clean up resources if returning to first phase
+            let instance = if is_first_phase && state.instance.is_some() {
                 if let Some(ref inst) = state.instance {
                     resource_manager::cleanup_instance(&ctx.config, inst)?;
-                    println!("Cleaned up resources (worktree, window)");
+                    println!("Cleaned up resources (window, worktree, branch)");
                 }
                 None
             } else {
@@ -97,8 +87,8 @@ pub fn execute(task_ref: String) -> Result<()> {
 
             // Update state
             let task_state = ctx.state_mut();
-            // If returning to a phase with no resources, go back to pending state
-            if prev_phase_def.resources.is_empty() && !prev_phase_def.terminal {
+            // If returning to first phase, go back to pending state
+            if is_first_phase {
                 task_state.phase = None;
                 task_state.status = TaskStatus::Pending;
             } else {
@@ -168,16 +158,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_phase_resources_determines_pending() {
+    fn test_first_phase_determines_pending() {
         use crate::models::project::PhasesConfig;
         use std::collections::HashMap;
 
         let mut definitions = HashMap::new();
         definitions.insert("pending".to_string(), Phase::new("pending"));
-        definitions.insert(
-            "developing".to_string(),
-            Phase::with_resources("developing"),
-        );
+        definitions.insert("developing".to_string(), Phase::new("developing"));
 
         let mut config = WtConfig::default();
         config.phases = Some(PhasesConfig {
@@ -185,14 +172,14 @@ mod tests {
             definitions,
         });
 
+        // Verify first phase is "pending"
+        let seq = config.phase_sequence().unwrap();
+        assert_eq!(seq.first().map(|s| s.as_str()), Some("pending"));
+
         let pending = config.get_phase("pending").unwrap();
-        assert!(pending.resources.is_empty());
         assert!(!pending.terminal);
 
         let developing = config.get_phase("developing").unwrap();
-        assert_eq!(
-            developing.resources,
-            crate::models::phase::PhaseResources::full()
-        );
+        assert!(!developing.terminal);
     }
 }

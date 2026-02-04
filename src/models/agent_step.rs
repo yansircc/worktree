@@ -214,23 +214,14 @@ impl Default for AgentStep {
 }
 
 impl AgentStep {
-    /// Create a new agent step with just a prompt
+    // Test helpers - builder methods for test convenience
+    #[cfg(test)]
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
             ..Default::default()
         }
     }
-
-    /// Create a default development agent for a task
-    pub fn default_develop(task_name: &str) -> Self {
-        Self::new(format!(
-            "@.wt/tasks/{}.md 请完成这个任务。完成后运行 `wt step done` 标记完成。",
-            task_name
-        ))
-    }
-
-    // Test helpers - builder methods for test convenience
     #[cfg(test)]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();

@@ -3,7 +3,6 @@
 //! Phase represents a stage in the task lifecycle with:
 //! - on_enter: workflow to run when entering the phase
 //! - on_exit: workflow to run when leaving the phase
-//! - resources: whether worktree/branch are needed
 //! - prerequisites: conditions to enter this phase
 
 use schemars::JsonSchema;
@@ -44,42 +43,6 @@ impl PhaseState {
         }
     }
 }
-
-// ============================================================================
-// Resource Requirements
-// ============================================================================
-
-/// Resource requirements for a phase
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
-pub struct PhaseResources {
-    /// Whether to create a git branch
-    #[serde(default)]
-    pub branch: bool,
-    /// Whether to create a git worktree
-    #[serde(default)]
-    pub worktree: bool,
-    /// Whether to create a multiplexer window
-    #[serde(default)]
-    pub window: bool,
-}
-
-impl PhaseResources {
-    /// Check if no resources are needed
-    pub fn is_empty(&self) -> bool {
-        !self.branch && !self.worktree && !self.window
-    }
-
-    /// Full resources: branch, worktree, window (test only)
-    #[cfg(test)]
-    pub fn full() -> Self {
-        Self {
-            branch: true,
-            worktree: true,
-            window: true,
-        }
-    }
-}
-
 
 // ============================================================================
 // Prerequisites
@@ -226,11 +189,6 @@ pub struct Phase {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
 
-    /// Resource requirements
-    #[serde(default)]
-    #[schemars(description = "Resource requirements: { branch, worktree, window }")]
-    pub resources: PhaseResources,
-
     /// Prerequisites to enter this phase
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prerequisites: Option<PhasePrerequisites>,
@@ -267,23 +225,6 @@ impl Phase {
             id: id.into(),
             name: None,
             goal: None,
-            resources: PhaseResources::default(),
-            prerequisites: None,
-            on_enter: None,
-            on_exit: None,
-            observe: None,
-            timeout: None,
-            terminal: false,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn with_resources(id: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: None,
-            goal: None,
-            resources: PhaseResources::full(),
             prerequisites: None,
             on_enter: None,
             on_exit: None,
@@ -330,12 +271,6 @@ mod tests {
     fn test_phase_creation() {
         let phase = Phase::new("developing");
         assert_eq!(phase.id, "developing");
-        assert!(phase.resources.is_empty());
-        assert!(!phase.terminal);
-
-        let phase = Phase::with_resources("developing");
-        assert_eq!(phase.id, "developing");
-        assert_eq!(phase.resources, PhaseResources::full());
         assert!(!phase.terminal);
     }
 
@@ -345,34 +280,20 @@ mod tests {
         let phase: Phase = serde_json::from_str(json).unwrap();
         assert_eq!(phase.id, "completed");
         assert!(phase.terminal);
-        assert!(phase.resources.is_empty());
 
         // Default is false
-        let json = r#"{"id": "developing", "resources": {"branch": true, "worktree": true, "window": true}}"#;
+        let json = r#"{"id": "developing"}"#;
         let phase: Phase = serde_json::from_str(json).unwrap();
         assert!(!phase.terminal);
-        assert_eq!(phase.resources, PhaseResources::full());
     }
 
     #[test]
     fn test_phase_serialize() {
-        let phase = Phase::with_resources("developing");
+        let phase = Phase::new("developing");
         let json = serde_json::to_string(&phase).unwrap();
         assert!(json.contains("developing"));
-        assert!(json.contains("\"branch\":true"));
 
         let parsed: Phase = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, "developing");
-        assert_eq!(parsed.resources, PhaseResources::full());
-    }
-
-    #[test]
-    fn test_phase_resources_partial() {
-        let json = r#"{"id": "reviewing", "resources": {"branch": true}}"#;
-        let phase: Phase = serde_json::from_str(json).unwrap();
-        assert!(phase.resources.branch);
-        assert!(!phase.resources.worktree);
-        assert!(!phase.resources.window);
-        assert!(!phase.resources.is_empty());
     }
 }

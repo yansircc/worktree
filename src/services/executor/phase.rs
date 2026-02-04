@@ -26,8 +26,6 @@ pub struct PhaseTransitionResult {
     pub phase_state: PhaseState,
     /// on_enter workflow result (if any)
     pub on_enter_result: Option<WorkflowResult>,
-    /// Whether resources were allocated
-    pub resources_allocated: bool,
 }
 
 /// Phase transition manager
@@ -116,9 +114,6 @@ impl<'a> PhaseTransition<'a> {
             }
         }
 
-        // Allocate resources if needed
-        let resources_allocated = self.allocate_resources(&phase.resources)?;
-
         // Update runtime state
         runtime_state.transition_to(&phase.id);
 
@@ -154,7 +149,6 @@ impl<'a> PhaseTransition<'a> {
             phase_id: phase.id.clone(),
             phase_state,
             on_enter_result,
-            resources_allocated,
         })
     }
 
@@ -194,16 +188,6 @@ impl<'a> PhaseTransition<'a> {
         } else {
             runtime_state.workflow_state = WorkflowState::Success;
             Ok(None)
-        }
-    }
-
-    /// Allocate resources for a phase.
-    fn allocate_resources(&self, resources: &crate::models::phase::PhaseResources) -> Result<bool> {
-        if resources.is_empty() {
-            Ok(false)
-        } else {
-            // Stub: resource allocation is handled by the caller (next/create commands)
-            Ok(true)
         }
     }
 
@@ -307,21 +291,6 @@ mod tests {
         assert_eq!(result.phase_id, "developing");
         assert_eq!(result.phase_state, PhaseState::Success);
         assert!(result.on_enter_result.is_none());
-        assert!(!result.resources_allocated);
-    }
-
-    #[test]
-    fn test_enter_phase_with_resources() {
-        let config = test_config();
-        let context = test_context();
-        let transition = PhaseTransition::new(&config, context);
-
-        let phase = Phase::with_resources("developing");
-        let mut runtime = TaskRuntimeState::pending();
-
-        let result = transition.enter(&phase, &mut runtime).unwrap();
-
-        assert!(result.resources_allocated);
     }
 
     #[test]

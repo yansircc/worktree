@@ -238,7 +238,7 @@ fn draw_task_details(frame: &mut Frame, area: Rect, task: &TaskDisplay) {
 
 /// Draw details for pending task
 fn draw_pending_details(lines: &mut Vec<Line<'static>>, task: &TaskDisplay, _width: u16) {
-    lines.push(Line::from("No resources allocated"));
+    lines.push(Line::from("Task not started"));
     lines.push(Line::from(""));
 
     if !task.dependencies.is_empty() {

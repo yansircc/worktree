@@ -2,11 +2,9 @@
 //!
 //! Provides unified functions for:
 //! - Stopping processes in multiplexer windows
-//! - Allocating resources (branch, worktree, window)
-//! - Cleaning up resources (window, worktree)
+//! - Cleaning up resources (window, worktree, branch)
 
-use crate::error::{Result, WtError};
-use crate::models::phase::PhaseResources;
+use crate::error::Result;
 use crate::models::{Instance, TaskState, WtConfig};
 use crate::services::git;
 use crate::services::multiplexer::create_multiplexer;
@@ -38,10 +36,9 @@ pub fn stop_instance_process(config: &WtConfig, instance: &Instance) -> Result<(
     Ok(())
 }
 
-/// Clean up resources for an instance (window and worktree).
+/// Clean up resources for an instance (window, worktree, branch).
 ///
-/// Order: window → worktree (to avoid issues with cwd)
-/// Does not delete the branch (branch cleanup is handled separately).
+/// Order: window → worktree → branch (to avoid issues with cwd and refs)
 pub fn cleanup_instance(config: &WtConfig, instance: &Instance) -> Result<()> {
     // Close window first
     if let Some(ref window) = instance.window_name {
@@ -54,77 +51,15 @@ pub fn cleanup_instance(config: &WtConfig, instance: &Instance) -> Result<()> {
         let _ = git::remove_worktree(path);
     }
 
-    Ok(())
-}
-
-/// Allocate resources for a task based on phase requirements.
-///
-/// Creates branch, worktree, and/or multiplexer window as specified
-/// by the phase's resource requirements.
-pub fn allocate_resources(
-    config: &WtConfig,
-    task_name: &str,
-    resources: &PhaseResources,
-) -> Result<Instance> {
-    let repo_root = git::get_repo_root()?;
-
-    let mut instance = Instance {
-        branch: None,
-        worktree_path: None,
-        session_name: config.session_name.clone(),
-        window_name: None,
-        session_id: None,
-        multiplexer: config.multiplexer_type(),
-    };
-
-    // Create branch if needed
-    if resources.branch {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() % 0xFFFFFF)
-            .unwrap_or(0);
-        let branch_name = format!("wt/{}-{:06x}", task_name, timestamp);
-        instance.branch = Some(branch_name);
-    }
-
-    // Create worktree if needed (requires branch)
-    if resources.worktree {
-        let branch_name = instance
-            .branch
-            .as_ref()
-            .ok_or_else(|| WtError::InvalidInput("worktree requires branch".into()))?;
-
-        let worktree_path = format!("{}/{}", config.worktree_dir, task_name);
-        let full_worktree_path = if worktree_path.starts_with('/') {
-            worktree_path.clone()
-        } else {
-            format!("{}/{}", repo_root, worktree_path)
-        };
-
-        git::create_worktree(branch_name, &full_worktree_path)?;
-        println!("Created worktree at {}", full_worktree_path);
-        instance.worktree_path = Some(full_worktree_path);
-    }
-
-    // Create multiplexer window if needed
-    if resources.window {
-        let cwd = instance.worktree_path.as_deref().unwrap_or(".");
-        let mux = create_multiplexer(config.multiplexer_type());
-        let session_name = &config.session_name;
-
-        if !mux.session_exists(session_name) {
-            mux.create_session(session_name)?;
+    // Delete branch (after worktree is removed)
+    // Get repo root to run delete_branch from correct location
+    if let Some(ref branch) = instance.branch {
+        if let Ok(repo_root) = git::get_repo_root() {
+            let _ = git::delete_branch(&repo_root, branch);
         }
-
-        mux.create_window(session_name, task_name, cwd, "")?;
-        println!(
-            "Created window '{}' in session '{}'",
-            task_name, session_name
-        );
-        instance.window_name = Some(task_name.to_string());
     }
 
-    Ok(instance)
+    Ok(())
 }
 
 /// Kill the multiplexer window for an instance if the flag is set.
