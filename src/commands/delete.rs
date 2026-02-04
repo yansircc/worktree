@@ -110,7 +110,7 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
         println!("Scratch environment '{}' deleted.", name);
     } else {
         // Clear instance data
-        ctx.store.set_instance(&name, None);
+        ctx.store.status.set_instance(&name, None);
 
         // For non-completed tasks that were force-deleted, reset to Pending
         if current_status != TaskStatus::Completed {

@@ -64,23 +64,19 @@ pub struct PhaseResources {
 }
 
 impl PhaseResources {
-    /// No resources needed
-    pub fn none() -> Self {
-        Self::default()
+    /// Check if no resources are needed
+    pub fn is_empty(&self) -> bool {
+        !self.branch && !self.worktree && !self.window
     }
 
-    /// Full resources: branch, worktree, window
+    /// Full resources: branch, worktree, window (test only)
+    #[cfg(test)]
     pub fn full() -> Self {
         Self {
             branch: true,
             worktree: true,
             window: true,
         }
-    }
-
-    /// Check if no resources are needed
-    pub fn is_empty(&self) -> bool {
-        !self.branch && !self.worktree && !self.window
     }
 }
 
@@ -264,13 +260,14 @@ pub struct Phase {
 }
 
 impl Phase {
-    /// Create a new phase with just an ID (no resources)
+    // Test helper methods
+    #[cfg(test)]
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             name: None,
             goal: None,
-            resources: PhaseResources::none(),
+            resources: PhaseResources::default(),
             prerequisites: None,
             on_enter: None,
             on_exit: None,
@@ -280,7 +277,7 @@ impl Phase {
         }
     }
 
-    /// Create a phase that requires full resources
+    #[cfg(test)]
     pub fn with_resources(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -296,7 +293,6 @@ impl Phase {
         }
     }
 
-    // Test helper methods
     #[cfg(test)]
     pub fn with_on_enter(mut self, workflow: Workflow) -> Self {
         self.on_enter = Some(workflow);

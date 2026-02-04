@@ -168,7 +168,7 @@ pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
     } else if full_reset {
         // Full reset: reset to Pending and clear instance
         ctx.set_status(TaskStatus::Pending);
-        ctx.store.set_instance(&name, None);
+        ctx.store.status.set_instance(&name, None);
         ctx.state_mut().phase = None;
         ctx.save_status()?;
         println!("Task '{}' reset to pending.", name);
@@ -177,7 +177,7 @@ pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
         let phase_display = target_phase.clone().unwrap_or_else(|| "(initial)".to_string());
         ctx.state_mut().phase = target_phase;
         ctx.state_mut().status = TaskStatus::Idle;
-        ctx.state_mut().idle_reason = None;
+        ctx.state_mut().step_result = None;
         ctx.state_mut().active_since = None;
         ctx.save_status()?;
         println!(
@@ -206,7 +206,7 @@ fn update_status_only(
     let phase_display = target_phase.clone().unwrap_or_else(|| "(initial)".to_string());
     ctx.state_mut().phase = target_phase;
     ctx.state_mut().status = TaskStatus::Idle;
-    ctx.state_mut().idle_reason = None;
+    ctx.state_mut().step_result = None;
     ctx.state_mut().active_since = None;
     ctx.save_status()?;
 

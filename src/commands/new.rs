@@ -80,9 +80,9 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     mux.create_window(&config.session_name, &name, &worktree_path, "")?;
 
     // Update status.json with scratch=true
-    store.set_status(&name, TaskStatus::Active);
+    store.status.set_status(&name, TaskStatus::Active);
     store.set_scratch(&name, true);
-    store.set_instance(
+    store.status.set_instance(
         &name,
         Some(Instance {
             branch: Some(branch.clone()),
@@ -93,7 +93,7 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
             multiplexer: config.multiplexer_type(),
         }),
     );
-    store.save_status()?;
+    store.status.save()?;
 
     let relative_path = format!("{}/{}", config.worktree_dir, name);
 

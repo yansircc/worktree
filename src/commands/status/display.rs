@@ -36,7 +36,7 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
             status_changed = true;
         }
 
-        let status = store.get_status(task_name);
+        let status = store.status.get_status(task_name);
 
         // Only show Active and Idle tasks
         if status != TaskStatus::Active && status != TaskStatus::Idle {
@@ -46,10 +46,10 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
         // Get task state for verbose info
         let state = store.status.get(task_name);
         let phase = state.phase.clone();  // Already Option<String>
-        let idle_reason = state.idle_reason.clone();
+        let step_result = state.step_result.clone();
         let active_since = state.active_since.map(|dt| dt.to_rfc3339());
 
-        let instance = store.get_instance(task_name);
+        let instance = store.status.get_instance(task_name);
 
         // Check if multiplexer window is alive
         let mux_alive = instance
@@ -68,7 +68,7 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
             idle_count += 1;
         }
 
-        let instance = store.get_instance(task_name);
+        let instance = store.status.get_instance(task_name);
         let worktree_path = instance.and_then(|i| i.worktree_path.as_deref());
 
         // Get session_id and transcript path info
@@ -132,7 +132,7 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
             name: task_name.to_string(),
             status: final_status,
             phase,  // Already Option<String>
-            idle_reason,
+            step_result,
             active_since,
             duration_secs,
             duration_human,
@@ -149,7 +149,7 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
 
     // Save status if any task was auto-marked as Idle
     if status_changed {
-        store.save_status()?;
+        store.status.save()?;
     }
 
     let output = StatusOutput {
@@ -210,12 +210,12 @@ fn print_human_readable(output: &StatusOutput, verbose: bool) {
             status_suffix
         );
 
-        // Verbose mode: show phase, idle_reason, active_since
+        // Verbose mode: show phase, step_result, active_since
         if verbose {
             if let Some(ref phase) = task.phase {
                 println!("    Phase:    {}", phase);
             }
-            if let Some(ref reason) = task.idle_reason {
+            if let Some(ref reason) = task.step_result {
                 println!("    Reason:   {}", reason.display_name());
             }
             if let Some(ref since) = task.active_since {

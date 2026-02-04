@@ -22,7 +22,7 @@ pub fn execute_files(action: &str, args: Vec<String>) -> Result<()> {
             let task = &args[0];
             let store = TaskStore::load()?;
             let worktree_path = store
-                .get_instance(task)
+                .status.get_instance(task)
                 .and_then(|i| i.worktree_path.clone())
                 .ok_or_else(|| {
                     WtError::InvalidInput(format!("Task '{}' has no worktree instance", task))

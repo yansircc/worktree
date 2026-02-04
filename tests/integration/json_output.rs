@@ -70,7 +70,7 @@ fn test_list_json_schema_empty() {
         "tasks": tasks.iter().map(|t| {
             serde_json::json!({
                 "name": t.name(),
-                "status": store.get_status(t.name()),
+                "status": store.status.get_status(t.name()),
                 "depends": t.depends()
             })
         }).collect::<Vec<_>>()
@@ -89,14 +89,14 @@ fn test_list_json_schema_with_tasks() {
     store
         .tasks
         .insert("api".to_string(), make_task("api", vec!["auth"]));
-    store.set_status("auth", TaskStatus::Active);
+    store.status.set_status("auth", TaskStatus::Active);
 
     let tasks = store.list();
     let output = serde_json::json!({
         "tasks": tasks.iter().map(|t| {
             serde_json::json!({
                 "name": t.name(),
-                "status": store.get_status(t.name()),
+                "status": store.status.get_status(t.name()),
                 "depends": t.depends()
             })
         }).collect::<Vec<_>>()
@@ -160,7 +160,7 @@ fn test_json_handles_unicode_names() {
         "tasks": tasks.iter().map(|t| {
             serde_json::json!({
                 "name": t.name(),
-                "status": store.get_status(t.name()),
+                "status": store.status.get_status(t.name()),
                 "depends": t.depends()
             })
         }).collect::<Vec<_>>()

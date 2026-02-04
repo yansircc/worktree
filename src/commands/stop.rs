@@ -16,8 +16,9 @@ use std::io::Write;
 use chrono::Utc;
 
 use crate::error::{Result, WtError};
-use crate::models::{IdleReason, StatusStore, TaskStatus, TaskStore, WtConfig};
-use crate::services::multiplexer::create_multiplexer;
+use crate::models::{StepResult, TaskStatus};
+use crate::services::resource_manager;
+use crate::services::TaskContext;
 
 /// Execute the stop command
 ///
@@ -25,15 +26,11 @@ use crate::services::multiplexer::create_multiplexer;
 /// * `task_ref` - Task name or index
 /// * `kill_window` - Whether to also close the multiplexer window
 pub fn execute(task_ref: String, kill_window: bool) -> Result<()> {
-    let store = TaskStore::load()?;
-    let config = WtConfig::load()?;
+    let mut ctx = TaskContext::load(&task_ref)?;
+    let task_name = ctx.name().to_string();
 
-    // Resolve task reference
-    let task_name = store.resolve_task_ref(&task_ref)?;
-
-    // Get current state
-    let mut status_store = StatusStore::load()?;
-    let state = status_store.get(&task_name);
+    // Get current state (clone for immutable access)
+    let state = ctx.store.status.get(&task_name).clone();
 
     // Validate: must be Active
     if state.status != TaskStatus::Active {
@@ -51,39 +48,31 @@ pub fn execute(task_ref: String, kill_window: bool) -> Result<()> {
         ))
     })?;
 
-    let mux = create_multiplexer(config.multiplexer_type());
-
-    // Send Ctrl+C to stop the process
-    if let Some(ref window) = instance.window_name {
-        let _ = mux.send_keys(&instance.session_name, window, "C-c");
+    // Stop the process (sends Ctrl+C)
+    resource_manager::stop_instance_process(&ctx.config, &instance)?;
+    if instance.window_name.is_some() {
         println!(
             "Sent stop signal to window '{}:{}'",
-            instance.session_name, window
+            instance.session_name,
+            instance.window_name.as_deref().unwrap()
         );
-
-        // Optionally close the window
-        if kill_window {
-            if mux.kill_window_if_exists(&instance.session_name, window)? {
-                println!(
-                    "Closed window '{}:{}'",
-                    instance.session_name, window
-                );
-            }
-        }
     }
+
+    // Optionally close the window
+    resource_manager::kill_window_if_requested(&ctx.config, &instance, kill_window)?;
 
     // Log stop event
     log_stop_event(&task_name, state.phase.as_deref(), kill_window);
 
     // Update state
-    let task_state = status_store.get_mut(&task_name);
+    let task_state = ctx.state_mut();
     task_state.status = TaskStatus::Idle;
-    task_state.idle_reason = Some(IdleReason::Manual);
+    task_state.step_result = Some(StepResult::Manual);
     task_state.active_since = None;
     // Keep instance info for resume
 
     // Save status
-    status_store.save()?;
+    ctx.save_status()?;
 
     println!("Task '{}' stopped.", task_name);
     println!(

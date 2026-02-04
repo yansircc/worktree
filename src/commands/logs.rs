@@ -12,7 +12,7 @@ pub fn execute() -> Result<()> {
     let mut skipped = 0;
 
     for task in store.list() {
-        let status = store.get_status(task.name());
+        let status = store.status.get_status(task.name());
 
         // Skip pending tasks (no transcript)
         if status == TaskStatus::Pending {
@@ -20,7 +20,7 @@ pub fn execute() -> Result<()> {
         }
 
         // Get instance info
-        let instance = match store.get_instance(task.name()) {
+        let instance = match store.status.get_instance(task.name()) {
             Some(i) => i,
             None => {
                 skipped += 1;

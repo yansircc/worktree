@@ -1,21 +1,13 @@
-//! Status model for wt task management.
+//! Status types for task management.
 //!
-//! - Status: Pending / Active / Idle / Completed
-//! - Phase: Option<String> - arbitrary phase name from config sequence
-//! - IdleReason: Done / HumanReview / Error / Conflict / Timeout / Manual
-
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
+//! - TaskStatus: Pending / Active / Idle / Completed
+//! - StepResult: Done / HumanReview / Error / Conflict / Timeout / Manual
+//! - TaskState: Runtime state for a single task
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::error::{Result, WtError};
 use crate::models::Instance;
-
-/// Path to the v2 status file
-pub const STATUS_FILE: &str = ".wt/status.json";
 
 // ============================================================================
 // Task Status (reflects whether a process is running)
@@ -78,7 +70,7 @@ impl TaskStatus {
 /// Reason for being in Idle state
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum IdleReason {
+pub enum StepResult {
     /// Current phase completed normally, waiting for next step
     Done,
     /// Waiting for human review
@@ -93,16 +85,16 @@ pub enum IdleReason {
     Manual,
 }
 
-impl IdleReason {
+impl StepResult {
     /// Get display name
     pub fn display_name(&self) -> &'static str {
         match self {
-            IdleReason::Done => "done",
-            IdleReason::HumanReview => "human_review",
-            IdleReason::Error => "error",
-            IdleReason::Conflict => "conflict",
-            IdleReason::Timeout => "timeout",
-            IdleReason::Manual => "manual",
+            StepResult::Done => "done",
+            StepResult::HumanReview => "human_review",
+            StepResult::Error => "error",
+            StepResult::Conflict => "conflict",
+            StepResult::Timeout => "timeout",
+            StepResult::Manual => "manual",
         }
     }
 }
@@ -121,7 +113,7 @@ where
     Ok(opt.filter(|s| s != "none"))
 }
 
-/// Runtime state for a single task (v2)
+/// Runtime state for a single task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskState {
     /// Current status (process state)
@@ -135,7 +127,7 @@ pub struct TaskState {
 
     /// Reason for being idle (only when status is Idle)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idle_reason: Option<IdleReason>,
+    pub step_result: Option<StepResult>,
 
     /// Timestamp when entered Active state (for monitoring)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -145,7 +137,7 @@ pub struct TaskState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<Instance>,
 
-    /// Scratch environment flag (v1 compat)
+    /// Scratch environment flag
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scratch: Option<bool>,
 }
@@ -155,7 +147,7 @@ impl Default for TaskState {
         Self {
             status: TaskStatus::Pending,
             phase: None,
-            idle_reason: None,
+            step_result: None,
             active_since: None,
             instance: None,
             scratch: None,
@@ -164,129 +156,12 @@ impl Default for TaskState {
 }
 
 impl TaskState {
-    /// Transition to Active state (test only - production code sets fields directly)
-    #[cfg(test)]
-    pub fn to_active(&mut self, phase: Option<String>) {
-        self.status = TaskStatus::Active;
-        self.phase = phase;
-        self.idle_reason = None;
-        self.active_since = Some(Utc::now());
-    }
-
     /// Transition to Idle state
-    pub fn to_idle(&mut self, reason: IdleReason) {
+    pub fn to_idle(&mut self, reason: StepResult) {
         self.status = TaskStatus::Idle;
-        self.idle_reason = Some(reason);
+        self.step_result = Some(reason);
         self.active_since = None;
     }
-}
-
-// ============================================================================
-// Status Store
-// ============================================================================
-
-/// Store for all task runtime states (v2)
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct StatusStore {
-    pub tasks: HashMap<String, TaskState>,
-}
-
-impl StatusStore {
-    /// Load status from .wt/status.json
-    pub fn load() -> Result<Self> {
-        let path = Path::new(STATUS_FILE);
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-
-        let content = fs::read_to_string(path).map_err(|e| WtError::Io {
-            operation: "read status file".to_string(),
-            path: STATUS_FILE.to_string(),
-            message: e.to_string(),
-        })?;
-
-        serde_json::from_str(&content)
-            .map_err(|e| WtError::InvalidTaskFile(format!("Invalid status.json: {}", e)))
-    }
-
-    /// Save status to .wt/status.json (atomic write)
-    pub fn save(&self) -> Result<()> {
-        let path = Path::new(STATUS_FILE);
-
-        // Ensure parent directory exists
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent).map_err(|e| WtError::Io {
-                    operation: "create status directory".to_string(),
-                    path: parent.to_string_lossy().to_string(),
-                    message: e.to_string(),
-                })?;
-            }
-        }
-
-        let content = serde_json::to_string_pretty(&self)
-            .map_err(|e| WtError::InvalidTaskFile(format!("Failed to serialize status: {}", e)))?;
-
-        // Atomic write: temp file + rename
-        let temp_path = format!("{}.tmp", STATUS_FILE);
-        fs::write(&temp_path, &content).map_err(|e| WtError::Io {
-            operation: "write temp status file".to_string(),
-            path: temp_path.clone(),
-            message: e.to_string(),
-        })?;
-
-        fs::rename(&temp_path, path).map_err(|e| WtError::Io {
-            operation: "rename status file".to_string(),
-            path: STATUS_FILE.to_string(),
-            message: e.to_string(),
-        })?;
-
-        Ok(())
-    }
-
-    /// Get state for a task (default: Pending)
-    pub fn get(&self, name: &str) -> TaskState {
-        self.tasks.get(name).cloned().unwrap_or_default()
-    }
-
-    /// Get mutable reference to task state, creating default if not exists
-    pub fn get_mut(&mut self, name: &str) -> &mut TaskState {
-        self.tasks.entry(name.to_string()).or_default()
-    }
-
-    /// Get status for a task
-    pub fn get_status(&self, name: &str) -> TaskStatus {
-        self.tasks
-            .get(name)
-            .map(|s| s.status.clone())
-            .unwrap_or_default()
-    }
-
-    /// Get instance for a task
-    pub fn get_instance(&self, name: &str) -> Option<&Instance> {
-        self.tasks.get(name).and_then(|s| s.instance.as_ref())
-    }
-
-    /// Set instance for a task
-    pub fn set_instance(&mut self, name: &str, instance: Option<Instance>) {
-        self.get_mut(name).instance = instance;
-    }
-
-    /// Set status for a task (v1 compat)
-    pub fn set_status(&mut self, name: &str, status: TaskStatus) {
-        self.get_mut(name).status = status;
-    }
-
-    /// Get phase for a task
-    pub fn get_phase(&self, name: &str) -> Option<&str> {
-        self.tasks.get(name).and_then(|s| s.phase.as_deref())
-    }
-
-    /// Get idle reason for a task
-    pub fn get_idle_reason(&self, name: &str) -> Option<&IdleReason> {
-        self.tasks.get(name).and_then(|s| s.idle_reason.as_ref())
-    }
-
 }
 
 // ============================================================================
@@ -345,32 +220,32 @@ mod tests {
         );
     }
 
-    // ==================== IdleReason Tests ====================
+    // ==================== StepResult Tests ====================
 
     #[test]
-    fn test_idle_reason_serialize() {
+    fn test_step_result_serialize() {
         assert_eq!(
-            serde_json::to_string(&IdleReason::Done).unwrap(),
+            serde_json::to_string(&StepResult::Done).unwrap(),
             "\"done\""
         );
         assert_eq!(
-            serde_json::to_string(&IdleReason::HumanReview).unwrap(),
+            serde_json::to_string(&StepResult::HumanReview).unwrap(),
             "\"human_review\""
         );
         assert_eq!(
-            serde_json::to_string(&IdleReason::Error).unwrap(),
+            serde_json::to_string(&StepResult::Error).unwrap(),
             "\"error\""
         );
         assert_eq!(
-            serde_json::to_string(&IdleReason::Conflict).unwrap(),
+            serde_json::to_string(&StepResult::Conflict).unwrap(),
             "\"conflict\""
         );
         assert_eq!(
-            serde_json::to_string(&IdleReason::Timeout).unwrap(),
+            serde_json::to_string(&StepResult::Timeout).unwrap(),
             "\"timeout\""
         );
         assert_eq!(
-            serde_json::to_string(&IdleReason::Manual).unwrap(),
+            serde_json::to_string(&StepResult::Manual).unwrap(),
             "\"manual\""
         );
     }
@@ -382,31 +257,22 @@ mod tests {
         let state = TaskState::default();
         assert_eq!(state.status, TaskStatus::Pending);
         assert!(state.phase.is_none());
-        assert!(state.idle_reason.is_none());
+        assert!(state.step_result.is_none());
         assert!(state.active_since.is_none());
         assert!(state.instance.is_none());
     }
 
     #[test]
-    fn test_state_transitions() {
+    fn test_state_to_idle() {
         let mut state = TaskState::default();
+        state.status = TaskStatus::Active;
+        state.phase = Some("developing".to_string());
+        state.active_since = Some(Utc::now());
 
-        // Pending → Active
-        state.to_active(Some("developing".to_string()));
-        assert_eq!(state.status, TaskStatus::Active);
-        assert_eq!(state.phase, Some("developing".to_string()));
-        assert!(state.active_since.is_some());
-
-        // Active → Idle
-        state.to_idle(IdleReason::Done);
+        state.to_idle(StepResult::Done);
         assert_eq!(state.status, TaskStatus::Idle);
-        assert_eq!(state.idle_reason, Some(IdleReason::Done));
+        assert_eq!(state.step_result, Some(StepResult::Done));
         assert!(state.active_since.is_none());
-
-        // Idle → Active
-        state.to_active(Some("reviewing".to_string()));
-        assert_eq!(state.status, TaskStatus::Active);
-        assert_eq!(state.phase, Some("reviewing".to_string()));
     }
 
     #[test]
@@ -417,14 +283,16 @@ mod tests {
         // Should only have status, phase=None should be skipped
         assert!(json.contains("\"status\":\"pending\""));
         assert!(!json.contains("phase"));
-        assert!(!json.contains("idle_reason"));
+        assert!(!json.contains("step_result"));
         assert!(!json.contains("active_since"));
     }
 
     #[test]
     fn test_state_serialize_full() {
         let mut state = TaskState::default();
-        state.to_active(Some("developing".to_string()));
+        state.status = TaskStatus::Active;
+        state.phase = Some("developing".to_string());
+        state.active_since = Some(Utc::now());
         state.instance = Some(Instance {
             branch: Some("wt/test".to_string()),
             worktree_path: Some("/path".to_string()),
@@ -464,73 +332,5 @@ mod tests {
         let json = r#"{"status":"active","phase":"custom-phase"}"#;
         let state: TaskState = serde_json::from_str(json).unwrap();
         assert_eq!(state.phase, Some("custom-phase".to_string()));
-    }
-
-    // ==================== StatusStore Tests ====================
-
-    #[test]
-    fn test_store_default() {
-        let store = StatusStore::default();
-        assert!(store.tasks.is_empty());
-    }
-
-    #[test]
-    fn test_store_get_default() {
-        let store = StatusStore::default();
-        let state = store.get("nonexistent");
-        assert_eq!(state.status, TaskStatus::Pending);
-    }
-
-    #[test]
-    fn test_store_get_mut() {
-        let mut store = StatusStore::default();
-        {
-            let state = store.get_mut("test");
-            state.to_active(Some("developing".to_string()));
-        }
-
-        let got = store.get("test");
-        assert_eq!(got.status, TaskStatus::Active);
-    }
-
-    #[test]
-    fn test_store_serialize() {
-        let mut store = StatusStore::default();
-        store.get_mut("task1").to_active(Some("developing".to_string()));
-        store.get_mut("task2").to_idle(IdleReason::Done);
-
-        let json = serde_json::to_string(&store).unwrap();
-        assert!(json.contains("task1"));
-        assert!(json.contains("task2"));
-        assert!(json.contains("active"));
-        assert!(json.contains("idle"));
-    }
-
-    #[test]
-    fn test_store_deserialize() {
-        let json = r#"{
-            "tasks": {
-                "test": {
-                    "status": "active",
-                    "phase": "developing",
-                    "active_since": "2026-02-03T10:30:00Z"
-                }
-            }
-        }"#;
-        let store: StatusStore = serde_json::from_str(json).unwrap();
-
-        let state = store.get("test");
-        assert_eq!(state.status, TaskStatus::Active);
-        assert_eq!(state.phase, Some("developing".to_string()));
-        assert!(state.active_since.is_some());
-    }
-
-    #[test]
-    fn test_store_get_phase() {
-        let mut store = StatusStore::default();
-        store.get_mut("test").phase = Some("developing".to_string());
-
-        assert_eq!(store.get_phase("test"), Some("developing"));
-        assert_eq!(store.get_phase("nonexistent"), None);
     }
 }

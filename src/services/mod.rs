@@ -5,6 +5,7 @@ pub mod dependency;
 pub mod files;
 pub mod git;
 pub mod multiplexer;
+pub mod resource_manager;
 pub mod task_context;
 pub mod transcript;
 pub mod workspace;

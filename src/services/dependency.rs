@@ -10,7 +10,7 @@ pub fn find_non_pending_dependents(
 
     for task in store.list() {
         if task.depends().contains(&task_name.to_string()) {
-            let status = store.get_status(task.name());
+            let status = store.status.get_status(task.name());
             if status != TaskStatus::Pending {
                 result.push((task.name().to_string(), status));
             }

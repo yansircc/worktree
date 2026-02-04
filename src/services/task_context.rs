@@ -70,7 +70,7 @@ impl TaskContext {
 
     /// Get task status.
     pub fn status(&self) -> TaskStatus {
-        self.store.get_status(&self.task_name)
+        self.store.status.get_status(&self.task_name)
     }
 
     /// Get task state (mutable).
@@ -80,7 +80,7 @@ impl TaskContext {
 
     /// Get task instance (if started).
     pub fn instance(&self) -> Option<&Instance> {
-        self.store.get_instance(&self.task_name)
+        self.store.status.get_instance(&self.task_name)
     }
 
     /// Check if this is a scratch environment.
@@ -102,11 +102,11 @@ impl TaskContext {
 
     /// Set task status.
     pub fn set_status(&mut self, status: TaskStatus) {
-        self.store.set_status(&self.task_name, status);
+        self.store.status.set_status(&self.task_name, status);
     }
 
     /// Save status changes.
     pub fn save_status(&self) -> Result<()> {
-        self.store.save_status()
+        self.store.status.save()
     }
 }

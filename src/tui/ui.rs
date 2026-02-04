@@ -204,7 +204,7 @@ fn draw_task_details(frame: &mut Frame, area: Rect, task: &TaskDisplay) {
     // Header: task name + phase + status
     let status_suffix = match task.status {
         TaskStatus::Idle => {
-            let reason = task.idle_reason.as_deref().unwrap_or("idle");
+            let reason = task.step_result.as_deref().unwrap_or("idle");
             format!(" ({})", reason)
         }
         _ => String::new(),
@@ -272,32 +272,59 @@ fn draw_pending_details(lines: &mut Vec<Line<'static>>, task: &TaskDisplay, _wid
 
 /// Draw details for active/idle task
 fn draw_active_details(lines: &mut Vec<Line<'static>>, task: &TaskDisplay, width: u16) {
-    // Workflow/Step progress (placeholder - will be enhanced later)
-    lines.push(Line::from(Span::styled(
-        "on_enter workflow",
-        Style::default().fg(Color::White),
-    )));
+    // Workflow steps
+    if !task.workflow_steps.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "on_enter workflow",
+            Style::default().fg(Color::White),
+        )));
 
-    let duration_str = task.duration.clone().unwrap_or_else(|| "-".to_string());
-    lines.push(Line::from(vec![
-        Span::raw("└─ "),
-        Span::styled("agent", Style::default().fg(Color::White)),
-        Span::raw("  "),
-        Span::styled(
-            if task.status == TaskStatus::Active {
-                "●"
+        let step_count = task.workflow_steps.len();
+        for (i, step) in task.workflow_steps.iter().enumerate() {
+            let is_last = i == step_count - 1;
+            let prefix = if is_last { "└─ " } else { "├─ " };
+
+            // Script steps are shown as completed (✓), agent step shows current status
+            let (icon, icon_color) = if step.is_agent {
+                // Agent step - show based on status and step_result
+                if task.status == TaskStatus::Active {
+                    ("●", Color::Green)  // Running
+                } else if task.step_result.as_deref() == Some("done") {
+                    ("✓", Color::Green)  // Completed successfully
+                } else if task.step_result.as_deref() == Some("human_review") {
+                    ("⏸", Color::Yellow) // Blocked
+                } else if task.step_result.as_deref() == Some("error") {
+                    ("✗", Color::Red)    // Failed
+                } else {
+                    ("◐", Color::Yellow) // Other idle state
+                }
             } else {
-                "◐"
-            },
-            Style::default().fg(if task.status == TaskStatus::Active {
-                Color::Green
+                // Script step - assumed completed if we got to agent
+                ("✓", Color::Green)
+            };
+
+            // Show duration only for agent step
+            let duration_part = if step.is_agent {
+                let duration_str = task.duration.clone().unwrap_or_else(|| "-".to_string());
+                vec![
+                    Span::raw("  "),
+                    Span::styled(duration_str, Style::default().fg(Color::DarkGray)),
+                ]
             } else {
-                Color::Yellow
-            }),
-        ),
-        Span::raw("  "),
-        Span::styled(duration_str, Style::default().fg(Color::DarkGray)),
-    ]));
+                vec![]
+            };
+
+            let mut spans = vec![
+                Span::raw(prefix),
+                Span::styled(step.name.clone(), Style::default().fg(Color::White)),
+                Span::raw("  "),
+                Span::styled(icon, Style::default().fg(icon_color)),
+            ];
+            spans.extend(duration_part);
+
+            lines.push(Line::from(spans));
+        }
+    }
 
     lines.push(Line::from(""));
 

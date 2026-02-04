@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use crate::constants::TASKS_DIR;
 use crate::error::{Result, WtError};
 use crate::models::{
-    task_parser, task_resolver::TaskResolver, validator::TaskValidator, Instance, StatusStore,
-    Task, TaskInput, TaskStatus,
+    task_parser, task_resolver::TaskResolver, validator::TaskValidator, StatusStore, Task,
+    TaskInput, TaskStatus,
 };
 use crate::services::multiplexer::create_multiplexer;
 
@@ -85,28 +85,6 @@ impl TaskStore {
         tasks
     }
 
-    // ==================== Status Accessors ====================
-
-    /// Get status for a task (default: Pending)
-    pub fn get_status(&self, name: &str) -> TaskStatus {
-        self.status.get_status(name)
-    }
-
-    /// Set status for a task
-    pub fn set_status(&mut self, name: &str, status: TaskStatus) {
-        self.status.set_status(name, status);
-    }
-
-    /// Get instance for a task
-    pub fn get_instance(&self, name: &str) -> Option<&Instance> {
-        self.status.get_instance(name)
-    }
-
-    /// Set instance for a task
-    pub fn set_instance(&mut self, name: &str, instance: Option<Instance>) {
-        self.status.set_instance(name, instance);
-    }
-
     /// Check if a task is a scratch environment
     pub fn is_scratch(&self, name: &str) -> bool {
         self.status
@@ -130,26 +108,11 @@ impl TaskStore {
         self.status.tasks.contains_key(name)
     }
 
-    /// Get phase for a task
-    pub fn get_phase(&self, name: &str) -> Option<&str> {
-        self.status.get_phase(name)
-    }
-
-    /// Get idle reason for a task
-    pub fn get_idle_reason(&self, name: &str) -> Option<&crate::models::IdleReason> {
-        self.status.get_idle_reason(name)
-    }
-
-    /// Save status to .wt/status.json
-    pub fn save_status(&self) -> Result<()> {
-        self.status.save()
-    }
-
     /// Check if a task should be auto-marked as Idle.
     /// Condition: status is Active but multiplexer window is closed.
     /// Returns: whether auto-mark was performed.
     pub fn auto_mark_idle_if_needed(&mut self, task_name: &str) -> Result<bool> {
-        let status = self.get_status(task_name);
+        let status = self.status.get_status(task_name);
         if status != TaskStatus::Active {
             return Ok(false);
         }
@@ -175,7 +138,7 @@ impl TaskStore {
         }
 
         // Window closed, auto-mark as Idle
-        self.set_status(task_name, TaskStatus::Idle);
+        self.status.set_status(task_name, TaskStatus::Idle);
         Ok(true)
     }
 
@@ -235,7 +198,7 @@ impl TaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::TaskFrontmatter;
+    use crate::models::{Instance, TaskFrontmatter};
 
     fn create_test_task(name: &str, depends: Vec<&str>) -> Task {
         Task {
@@ -338,14 +301,14 @@ mod tests {
     #[test]
     fn test_store_get_status_default() {
         let store = TaskStore::default();
-        assert_eq!(store.get_status("any"), TaskStatus::Pending);
+        assert_eq!(store.status.get_status("any"), TaskStatus::Pending);
     }
 
     #[test]
     fn test_store_set_and_get_status() {
         let mut store = TaskStore::default();
-        store.set_status("test", TaskStatus::Active);
-        assert_eq!(store.get_status("test"), TaskStatus::Active);
+        store.status.set_status("test", TaskStatus::Active);
+        assert_eq!(store.status.get_status("test"), TaskStatus::Active);
     }
 
     #[test]
@@ -361,9 +324,9 @@ mod tests {
             session_id: None,
             multiplexer: MultiplexerType::Tmux,
         };
-        store.set_instance("test", Some(instance));
-        assert!(store.get_instance("test").is_some());
-        assert_eq!(store.get_instance("test").unwrap().branch, Some("wt/test".to_string()));
+        store.status.set_instance("test", Some(instance));
+        assert!(store.status.get_instance("test").is_some());
+        assert_eq!(store.status.get_instance("test").unwrap().branch, Some("wt/test".to_string()));
     }
 
     #[test]
@@ -387,7 +350,7 @@ mod tests {
         let mut store = TaskStore::default();
         assert!(!store.name_exists_in_status("test"));
 
-        store.set_status("test", TaskStatus::Active);
+        store.status.set_status("test", TaskStatus::Active);
         assert!(store.name_exists_in_status("test"));
     }
 

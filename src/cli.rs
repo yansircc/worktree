@@ -77,7 +77,7 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
 
-        /// Show verbose output (status + phase + idle_reason + active_since)
+        /// Show verbose output (status + phase + step_result + active_since)
         #[arg(long, short)]
         verbose: bool,
 

@@ -10,6 +10,13 @@ use crate::services::action_resolver::{resolve_enter_action, TaskActionContext};
 use crate::services::multiplexer::{create_multiplexer, MultiplexerType};
 use crate::services::{git, transcript};
 
+/// A workflow step for display
+#[derive(Debug, Clone)]
+pub struct StepDisplay {
+    pub name: String,
+    pub is_agent: bool,
+}
+
 /// Task with computed metrics for display
 #[derive(Debug, Clone)]
 pub struct TaskDisplay {
@@ -32,8 +39,9 @@ pub struct TaskDisplay {
     pub has_conflict: bool,
     pub current_tool: Option<String>,
     pub latest_message: Option<String>,
-    pub idle_reason: Option<String>,
+    pub step_result: Option<String>,
     pub dependencies: Vec<(String, TaskStatus)>,
+    pub workflow_steps: Vec<StepDisplay>,
 }
 
 /// Application state
@@ -42,17 +50,20 @@ pub struct App {
     pub selected: usize,
     pub show_all: bool,
     pub phase_sequence: Vec<String>,
+    config: WtConfig,
 }
 
 impl App {
     /// Create new app and load initial data
     pub fn new(show_all: bool) -> Result<Self> {
         let config = WtConfig::load()?;
+        let phase_sequence = config.phase_sequence().unwrap_or_default();
         let mut app = Self {
             tasks: Vec::new(),
             selected: 0,
             show_all,
-            phase_sequence: config.phase_sequence().unwrap_or_default(),
+            phase_sequence,
+            config,
         };
         app.refresh()?;
         Ok(app)
@@ -79,7 +90,7 @@ impl App {
         // Build status map for dependency display
         let status_map: HashMap<String, TaskStatus> = task_names
             .iter()
-            .map(|name| (name.clone(), store.get_status(name)))
+            .map(|name| (name.clone(), store.status.get_status(name)))
             .collect();
 
         for task_name in &task_names {
@@ -88,7 +99,7 @@ impl App {
                 status_changed = true;
             }
 
-            let status = store.get_status(task_name);
+            let status = store.status.get_status(task_name);
 
             // TUI v2: Show all non-completed tasks (filter completed unless --all)
             if !self.show_all && status == TaskStatus::Completed {
@@ -99,12 +110,12 @@ impl App {
                 Some(t) => t,
                 None => continue, // Skip if task disappeared during iteration
             };
-            let instance = store.get_instance(task.name());
+            let instance = store.status.get_instance(task.name());
             let worktree_path = instance.and_then(|i| i.worktree_path.clone());
 
-            // Get phase and idle_reason from status store
-            let phase = store.get_phase(task_name).map(|p| p.to_string());
-            let idle_reason = store.get_idle_reason(task_name).map(|r| r.display_name().to_string());
+            // Get phase and step_result from status store
+            let phase = store.status.get_phase(task_name).map(|p| p.to_string());
+            let step_result = store.status.get_step_result(task_name).map(|r| r.display_name().to_string());
 
             // Get dependencies with their statuses
             let dependencies: Vec<(String, TaskStatus)> = task
@@ -197,6 +208,36 @@ impl App {
                 })
                 .unwrap_or((None, None, None, None));
 
+            // Get workflow steps from phase definition
+            let workflow_steps = phase
+                .as_ref()
+                .and_then(|p| self.config.get_phase(p))
+                .and_then(|phase_def| phase_def.on_enter.as_ref())
+                .map(|workflow| {
+                    workflow
+                        .steps
+                        .iter()
+                        .map(|step| {
+                            let name = step
+                                .id
+                                .clone()
+                                .or_else(|| step.name.clone())
+                                .unwrap_or_else(|| {
+                                    if step.agent.is_some() {
+                                        "agent".to_string()
+                                    } else {
+                                        "script".to_string()
+                                    }
+                                });
+                            StepDisplay {
+                                name,
+                                is_agent: step.agent.is_some(),
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
             tasks.push(TaskDisplay {
                 index: *index_map.get(task_name.as_str()).unwrap_or(&0),
                 name: task.name().to_string(),
@@ -217,14 +258,15 @@ impl App {
                 has_conflict,
                 current_tool,
                 latest_message,
-                idle_reason,
+                step_result,
                 dependencies,
+                workflow_steps,
             });
         }
 
         // Save status if any task was auto-marked as Done
         if status_changed {
-            store.save_status()?;
+            store.status.save()?;
         }
 
         self.tasks = tasks;

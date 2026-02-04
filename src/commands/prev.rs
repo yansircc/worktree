@@ -17,28 +17,25 @@ use std::path::PathBuf;
 use crate::error::{Result, WtError};
 use crate::models::phase::{ExitReason, Phase};
 use crate::models::state::TaskRuntimeState;
-use crate::models::{StatusStore, TaskStatus, TaskStore, WtConfig};
+use crate::models::{Instance, TaskStatus, WtConfig};
 use crate::services::executor::{prev_phase, ExecutionContext, PhaseTransition};
 use crate::services::git;
-use crate::services::multiplexer::create_multiplexer;
+use crate::services::resource_manager;
+use crate::services::TaskContext;
 
 /// Execute the prev command
 ///
 /// # Arguments
 /// * `task_ref` - Task name or index
 pub fn execute(task_ref: String) -> Result<()> {
-    let store = TaskStore::load()?;
-    let config = WtConfig::load()?;
+    let mut ctx = TaskContext::load(&task_ref)?;
+    let task_name = ctx.name().to_string();
 
-    // Resolve task reference
-    let task_name = store.resolve_task_ref(&task_ref)?;
-
-    // Get current state
-    let mut status_store = StatusStore::load()?;
-    let state = status_store.get(&task_name);
+    // Get current state (clone for immutable access)
+    let state = ctx.store.status.get(&task_name).clone();
 
     // Get phase sequence from config
-    let phase_sequence = config.phase_sequence()?;
+    let phase_sequence = ctx.config.phase_sequence()?;
 
     // Get current phase_id from state
     let current_phase_id = state.phase.as_deref();
@@ -57,40 +54,40 @@ pub fn execute(task_ref: String) -> Result<()> {
         Some(prev_id) => {
             // Stop current process if running
             if state.status == TaskStatus::Active {
-                if let Some(instance) = &state.instance {
-                    if let Some(ref window) = instance.window_name {
-                        let mux = create_multiplexer(config.multiplexer_type());
-                        let _ = mux.send_keys(
-                            &instance.session_name,
-                            window,
-                            "C-c",
-                        );
-                        println!("Stopped process in window '{}'", window);
-                    }
-                }
+                resource_manager::stop_process(&ctx.config, &state)?;
             }
 
             // Get current phase definition and execute on_exit if configured
             if let Some(current_id) = current_phase_id {
-                if let Some(current_phase) = config.get_phase(current_id) {
+                if let Some(current_phase) = ctx.config.get_phase(current_id) {
                     if current_phase.on_exit.is_some() {
-                        execute_on_exit(&config, &task_name, current_phase, state.instance.as_ref())?;
+                        execute_on_exit(
+                            &ctx.config,
+                            &task_name,
+                            current_phase,
+                            state.instance.as_ref(),
+                        )?;
                     }
                 }
             }
 
             // Get previous phase definition to check resource requirements
-            let prev_phase_def = config.get_phase(prev_id)
-                .ok_or_else(|| WtError::InvalidInput(format!(
-                    "Phase '{}' not defined in config. Run 'wt validate' to check.",
-                    prev_id
-                )))?;
+            let prev_phase_def = ctx
+                .config
+                .get_phase(prev_id)
+                .ok_or_else(|| {
+                    WtError::InvalidInput(format!(
+                        "Phase '{}' not defined in config. Run 'wt validate' to check.",
+                        prev_id
+                    ))
+                })?
+                .clone();
             let prev_needs_resources = !prev_phase_def.resources.is_empty();
 
             // Clean up resources if returning to a phase that doesn't need them
             let instance = if !prev_needs_resources && state.instance.is_some() {
                 if let Some(ref inst) = state.instance {
-                    cleanup_resources(&config, inst)?;
+                    resource_manager::cleanup_instance(&ctx.config, inst)?;
                     println!("Cleaned up resources (worktree, window)");
                 }
                 None
@@ -99,7 +96,7 @@ pub fn execute(task_ref: String) -> Result<()> {
             };
 
             // Update state
-            let task_state = status_store.get_mut(&task_name);
+            let task_state = ctx.state_mut();
             // If returning to a phase with no resources, go back to pending state
             if prev_phase_def.resources.is_empty() && !prev_phase_def.terminal {
                 task_state.phase = None;
@@ -108,12 +105,12 @@ pub fn execute(task_ref: String) -> Result<()> {
                 task_state.phase = Some(prev_id.to_string());
                 task_state.status = TaskStatus::Idle;
             }
-            task_state.idle_reason = None;
+            task_state.step_result = None;
             task_state.active_since = None;
             task_state.instance = instance;
 
             // Save status
-            status_store.save()?;
+            ctx.save_status()?;
 
             println!("Task '{}' moved back to phase '{}'", task_name, prev_id);
             println!("Note: on_enter workflow was NOT executed (rollback mode)");
@@ -128,16 +125,24 @@ fn execute_on_exit(
     config: &WtConfig,
     task_name: &str,
     phase: &Phase,
-    instance: Option<&crate::models::Instance>,
+    instance: Option<&Instance>,
 ) -> Result<()> {
     let repo_root = git::get_repo_root()?;
 
     // Build execution context
     let default_branch = format!("wt/{}", task_name);
-    let branch = instance.and_then(|i| i.branch.as_deref()).unwrap_or(&default_branch);
-    let worktree = instance.and_then(|i| i.worktree_path.as_deref()).unwrap_or(&repo_root);
-    let session = instance.map(|i| i.session_name.as_str()).unwrap_or(&config.session_name);
-    let window = instance.and_then(|i| i.window_name.as_deref()).unwrap_or(task_name);
+    let branch = instance
+        .and_then(|i| i.branch.as_deref())
+        .unwrap_or(&default_branch);
+    let worktree = instance
+        .and_then(|i| i.worktree_path.as_deref())
+        .unwrap_or(&repo_root);
+    let session = instance
+        .map(|i| i.session_name.as_str())
+        .unwrap_or(&config.session_name);
+    let window = instance
+        .and_then(|i| i.window_name.as_deref())
+        .unwrap_or(task_name);
 
     let context = ExecutionContext::new(task_name, branch, worktree, &repo_root)
         .with_session(session)
@@ -158,22 +163,6 @@ fn execute_on_exit(
     Ok(())
 }
 
-/// Clean up resources (window → worktree)
-fn cleanup_resources(config: &WtConfig, instance: &crate::models::Instance) -> Result<()> {
-    // Close window
-    if let Some(ref window) = instance.window_name {
-        let mux = create_multiplexer(config.multiplexer_type());
-        let _ = mux.kill_window(&instance.session_name, window);
-    }
-
-    // Remove worktree
-    if let Some(ref path) = instance.worktree_path {
-        let _ = git::remove_worktree(path);
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,7 +174,10 @@ mod tests {
 
         let mut definitions = HashMap::new();
         definitions.insert("pending".to_string(), Phase::new("pending"));
-        definitions.insert("developing".to_string(), Phase::with_resources("developing"));
+        definitions.insert(
+            "developing".to_string(),
+            Phase::with_resources("developing"),
+        );
 
         let mut config = WtConfig::default();
         config.phases = Some(PhasesConfig {
@@ -198,6 +190,9 @@ mod tests {
         assert!(!pending.terminal);
 
         let developing = config.get_phase("developing").unwrap();
-        assert_eq!(developing.resources, crate::models::phase::PhaseResources::full());
+        assert_eq!(
+            developing.resources,
+            crate::models::phase::PhaseResources::full()
+        );
     }
 }

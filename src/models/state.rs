@@ -53,18 +53,21 @@ impl TaskRuntimeState {
         self.checkpoint_step = None;
     }
 
-    /// Update checkpoint after a successful step
+    /// Update checkpoint after a successful step (test only)
+    #[cfg(test)]
     pub fn update_checkpoint(&mut self, step_index: usize) {
         self.checkpoint_step = Some(step_index);
         self.current_step = step_index + 1;
     }
 
-    /// Get the step index to resume from (0 if no checkpoint)
+    /// Get the step index to resume from (test only)
+    #[cfg(test)]
     pub fn resume_from(&self) -> usize {
         self.checkpoint_step.map(|i| i + 1).unwrap_or(0)
     }
 
-    /// Check if we can resume from a checkpoint
+    /// Check if we can resume from a checkpoint (test only)
+    #[cfg(test)]
     pub fn can_resume(&self) -> bool {
         self.checkpoint_step.is_some() && !self.step_results.is_empty()
     }

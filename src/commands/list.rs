@@ -46,7 +46,7 @@ fn print_json(tasks: &[&Task], store: &TaskStore) {
                 index: i + 1,
                 name: t.name().to_string(),
                 description: extract_description(&t.content),
-                status: store.get_status(t.name()),
+                status: store.status.get_status(t.name()),
                 depends: t.depends().to_vec(),
             })
             .collect(),
@@ -91,7 +91,7 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
 
     for task in tasks {
         let idx = index_map[task.name()];
-        let status = store.get_status(task.name());
+        let status = store.status.get_status(task.name());
         match status {
             TaskStatus::Completed => completed.push((idx, task)),
             TaskStatus::Active => active.push((idx, task)),
@@ -102,7 +102,7 @@ fn print_grouped(tasks: &[&Task], store: &TaskStore) {
                     .depends()
                     .iter()
                     .filter(|dep| {
-                        let dep_status = store.get_status(dep);
+                        let dep_status = store.status.get_status(dep);
                         dep_status != TaskStatus::Completed
                     })
                     .map(|s| s.as_str())
@@ -193,7 +193,7 @@ fn print_task_with_deps_indexed(
     store: &TaskStore,
     index_map: &HashMap<&str, usize>,
 ) {
-    let status = store.get_status(task.name());
+    let status = store.status.get_status(task.name());
     print!(
         "  {} {} {}",
         colored_index(idx),
@@ -206,7 +206,7 @@ fn print_task_with_deps_indexed(
             if i > 0 {
                 print!(",");
             }
-            let dep_icon = store.get_status(dep).colored_icon();
+            let dep_icon = store.status.get_status(dep).colored_icon();
             // Show dependency index if available
             let dep_idx_str = index_map
                 .get(dep.as_str())
@@ -293,7 +293,7 @@ fn print_tree_node<'a>(
         format!(" (+{})", other_deps.join(", "))
     };
 
-    let status = store.get_status(task.name());
+    let status = store.status.get_status(task.name());
     println!(
         "{}{}{} [{}]{}",
         prefix,

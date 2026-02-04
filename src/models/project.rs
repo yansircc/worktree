@@ -60,7 +60,8 @@ pub struct PhasesConfig {
 }
 
 impl PhasesConfig {
-    /// Get phase sequence (empty if not configured)
+    /// Get phase sequence (empty if not configured) - test only
+    #[cfg(test)]
     pub fn sequence(&self) -> &[String] {
         &self.sequence
     }

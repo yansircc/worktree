@@ -30,8 +30,8 @@ pub fn execute_action(action: &str, task_ref: Option<String>) {
     };
 
     // Build action context directly from store (no TUI dependency)
-    let status = store.get_status(&task_name);
-    let instance = store.get_instance(&task_name);
+    let status = store.status.get_status(&task_name);
+    let instance = store.status.get_instance(&task_name);
     let ctx = TaskActionContext::from_store(&task_name, status, instance);
 
     // Only allow actions on active/idle tasks (same as TUI filter)
@@ -128,7 +128,7 @@ fn handle_stop_action(task_name: &str) -> ActionResponse {
         }
     };
 
-    let status_before = store.get_status(task_name);
+    let status_before = store.status.get_status(task_name);
 
     if status_before != TaskStatus::Active {
         return ActionResponse::error(
@@ -171,7 +171,7 @@ fn handle_next_action(task_name: &str) -> ActionResponse {
         }
     };
 
-    let status_before = store.get_status(task_name);
+    let status_before = store.status.get_status(task_name);
 
     if status_before == TaskStatus::Completed {
         return ActionResponse::error(
@@ -197,7 +197,7 @@ fn handle_next_action(task_name: &str) -> ActionResponse {
     // Reload to get new status
     let new_store = TaskStore::load().ok();
     let status_after = new_store
-        .map(|s| s.get_status(task_name))
+        .map(|s| s.status.get_status(task_name))
         .unwrap_or(TaskStatus::Active);
 
     ActionResponse::success("next", task_name, status_before, status_after)
