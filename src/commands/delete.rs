@@ -69,8 +69,10 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
 
     // Close multiplexer window if exists
     if let Some(ref inst) = instance {
-        let mux = create_multiplexer(inst.multiplexer_type());
-        let _ = mux.kill_window(&inst.session_name, &inst.window_name);
+        if let Some(ref window) = inst.window_name {
+            let mux = create_multiplexer(inst.multiplexer_type());
+            let _ = mux.kill_window(&inst.session_name, window);
+        }
     }
 
     // Delete worktree and branch
@@ -79,20 +81,24 @@ pub fn execute(task_ref: String, force: bool) -> Result<()> {
             println!("Deleting scratch environment...");
         }
 
-        let worktree_path = Path::new(&inst.worktree_path);
-        if worktree_path.exists() {
-            if let Err(e) = git::remove_worktree(&inst.worktree_path) {
-                eprintln!("  Warning: Failed to remove worktree: {}", e);
-            } else {
-                println!("  Removed worktree: {}", inst.worktree_path);
+        if let Some(ref wt_path) = inst.worktree_path {
+            let worktree_path = Path::new(wt_path);
+            if worktree_path.exists() {
+                if let Err(e) = git::remove_worktree(wt_path) {
+                    eprintln!("  Warning: Failed to remove worktree: {}", e);
+                } else {
+                    println!("  Removed worktree: {}", wt_path);
+                }
             }
         }
 
         // Delete branch (from repo root since worktree is gone)
-        if let Err(e) = git::delete_branch(&repo_root, &inst.branch) {
-            eprintln!("  Warning: Failed to delete branch: {}", e);
-        } else {
-            println!("  Deleted branch: {}", inst.branch);
+        if let Some(ref branch) = inst.branch {
+            if let Err(e) = git::delete_branch(&repo_root, branch) {
+                eprintln!("  Warning: Failed to delete branch: {}", e);
+            } else {
+                println!("  Deleted branch: {}", branch);
+            }
         }
     }
 

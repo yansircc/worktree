@@ -22,9 +22,10 @@ impl TaskActionContext {
         instance: Option<&Instance>,
     ) -> Self {
         let mux_alive = instance
-            .map(|inst| {
+            .and_then(|inst| {
+                let window = inst.window_name.as_deref()?;
                 let mux = create_multiplexer(inst.multiplexer_type());
-                mux.window_exists(&inst.session_name, &inst.window_name)
+                Some(mux.window_exists(&inst.session_name, window))
             })
             .unwrap_or(false);
 
@@ -56,7 +57,7 @@ pub fn resolve_enter_action(ctx: &TaskActionContext) -> Option<UserAction> {
     let instance = ctx.instance.as_ref()?;
     let mux_type = instance.multiplexer_type();
     let session = &instance.session_name;
-    let window = &instance.window_name;
+    let window = instance.window_name.as_deref()?;
 
     let claude_command = WtConfig::load()
         .map(|c| c.claude_command)
@@ -68,14 +69,14 @@ pub fn resolve_enter_action(ctx: &TaskActionContext) -> Option<UserAction> {
             Some(UserAction::SwitchWindow {
                 multiplexer: mux_type,
                 session: session.clone(),
-                window: window.clone(),
+                window: window.to_string(),
             })
         } else {
             // Outside multiplexer: attach to session
             Some(UserAction::AttachSession {
                 multiplexer: mux_type,
                 session: session.clone(),
-                window: window.clone(),
+                window: window.to_string(),
             })
         }
     } else {
@@ -83,18 +84,20 @@ pub fn resolve_enter_action(ctx: &TaskActionContext) -> Option<UserAction> {
         match ctx.status {
             TaskStatus::Idle => {
                 // Idle task: open worktree shell
+                let worktree_path = instance.worktree_path.clone().unwrap_or_default();
                 Some(UserAction::OpenWorktreeShell {
                     multiplexer: mux_type,
                     session: session.clone(),
-                    worktree_path: instance.worktree_path.clone(),
+                    worktree_path,
                     task_name: ctx.name.clone(),
                 })
             }
             TaskStatus::Active => {
                 // Active task with closed window: show resume command
                 let session_id = instance.session_id.as_ref()?;
+                let worktree = instance.worktree_path.clone().unwrap_or_default();
                 Some(UserAction::ShowResume {
-                    worktree: instance.worktree_path.clone(),
+                    worktree,
                     session_id: session_id.clone(),
                     claude_command,
                 })

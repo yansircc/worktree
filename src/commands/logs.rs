@@ -29,12 +29,19 @@ pub fn execute() -> Result<()> {
         };
 
         // Find transcript file - try session_id first, fall back to latest
+        let worktree_path = match instance.worktree_path.as_deref() {
+            Some(p) => p,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
         let transcript_path = instance
             .session_id
             .as_ref()
-            .and_then(|sid| transcript::transcript_path(&instance.worktree_path, sid))
+            .and_then(|sid| transcript::transcript_path(worktree_path, sid))
             .filter(|p| p.exists())
-            .or_else(|| transcript::find_latest_transcript(&instance.worktree_path));
+            .or_else(|| transcript::find_latest_transcript(worktree_path));
 
         let transcript_path = match transcript_path {
             Some(p) => p,

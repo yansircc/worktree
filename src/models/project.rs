@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::phase::Phase;
@@ -16,7 +17,7 @@ use super::phase::Phase;
 // ============================================================================
 
 /// Project concurrency configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ConcurrencyConfig {
     /// Maximum concurrent active tasks
     #[serde(default = "default_max_active_tasks")]
@@ -48,7 +49,7 @@ impl Default for ConcurrencyConfig {
 // ============================================================================
 
 /// Project phases configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct PhasesConfig {
     /// Phase sequence (e.g., ["pending", "developing", "reviewing", "completed"])
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -59,16 +60,9 @@ pub struct PhasesConfig {
 }
 
 impl PhasesConfig {
-    /// Get phase sequence or default
-    pub fn sequence_or_default(&self) -> Vec<String> {
-        if self.sequence.is_empty() {
-            super::phase::DEFAULT_PHASE_SEQUENCE
-                .iter()
-                .map(|s| s.to_string())
-                .collect()
-        } else {
-            self.sequence.clone()
-        }
+    /// Get phase sequence (empty if not configured)
+    pub fn sequence(&self) -> &[String] {
+        &self.sequence
     }
 }
 
@@ -77,7 +71,7 @@ impl PhasesConfig {
 // ============================================================================
 
 /// Project observation configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectObserve {
     /// Enable dashboard
     #[serde(default)]
@@ -96,10 +90,9 @@ mod tests {
     }
 
     #[test]
-    fn test_phases_config_default_sequence() {
+    fn test_phases_config_empty_sequence() {
         let config = PhasesConfig::default();
-        let seq = config.sequence_or_default();
-        assert_eq!(seq, vec!["pending", "developing", "reviewing", "completed"]);
+        assert!(config.sequence().is_empty());
     }
 
     #[test]
@@ -108,6 +101,6 @@ mod tests {
             sequence: vec!["a".to_string(), "b".to_string()],
             definitions: HashMap::new(),
         };
-        assert_eq!(config.sequence_or_default(), vec!["a", "b"]);
+        assert_eq!(config.sequence(), &["a", "b"]);
     }
 }

@@ -27,6 +27,8 @@ uuid = { version = "1.0", features = ["v4"] }
 dirs = "5.0"
 atty = "0.2"
 rayon = "1.10"
+schemars = "1"
+jsonschema = "0.28"
 
 [dev-dependencies]
 tempfile = "3"

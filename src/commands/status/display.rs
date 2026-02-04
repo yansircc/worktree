@@ -45,7 +45,7 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
 
         // Get task state for verbose info
         let state = store.status.get(task_name);
-        let phase = state.phase.clone();
+        let phase = state.phase.clone();  // Already Option<String>
         let idle_reason = state.idle_reason.clone();
         let active_since = state.active_since.map(|dt| dt.to_rfc3339());
 
@@ -53,9 +53,10 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
 
         // Check if multiplexer window is alive
         let mux_alive = instance
-            .map(|i| {
+            .and_then(|i| {
+                let window = i.window_name.as_deref()?;
                 let mux = create_multiplexer(i.multiplexer_type());
-                mux.window_exists(&i.session_name, &i.window_name)
+                Some(mux.window_exists(&i.session_name, window))
             })
             .unwrap_or(false);
 
@@ -68,7 +69,7 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
         }
 
         let instance = store.get_instance(task_name);
-        let worktree_path = instance.map(|i| i.worktree_path.as_str());
+        let worktree_path = instance.and_then(|i| i.worktree_path.as_deref());
 
         // Get session_id and transcript path info
         let session_id = instance.and_then(|i| i.session_id.clone());
@@ -130,7 +131,7 @@ pub fn display_status(json: bool, verbose: bool) -> Result<()> {
             index: index_map[task_name],
             name: task_name.to_string(),
             status: final_status,
-            phase: Some(phase),
+            phase,  // Already Option<String>
             idle_reason,
             active_since,
             duration_secs,
@@ -212,7 +213,7 @@ fn print_human_readable(output: &StatusOutput, verbose: bool) {
         // Verbose mode: show phase, idle_reason, active_since
         if verbose {
             if let Some(ref phase) = task.phase {
-                println!("    Phase:    {}", phase.display_name());
+                println!("    Phase:    {}", phase);
             }
             if let Some(ref reason) = task.idle_reason {
                 println!("    Reason:   {}", reason.display_name());

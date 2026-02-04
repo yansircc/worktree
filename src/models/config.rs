@@ -14,6 +14,7 @@
 //! }
 //! ```
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -35,7 +36,7 @@ const DEFAULT_WORKTREE_DIR: &str = ".wt/worktrees";
 // ============================================================================
 
 /// Logs configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct LogsConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude_types: Vec<String>,
@@ -44,30 +45,41 @@ pub struct LogsConfig {
 }
 
 /// Main configuration structure for wt
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WtConfig {
+    /// JSON Schema reference (for editor support)
+    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub schema: Option<String>,
+
     /// Terminal multiplexer: tmux or zellij
     #[serde(default = "default_multiplexer")]
+    #[schemars(description = "Terminal multiplexer to use: 'tmux' or 'zellij'")]
     pub multiplexer: String,
 
     /// Session name for the multiplexer
     #[serde(default = "default_session_name")]
+    #[schemars(description = "Session name for the terminal multiplexer")]
     pub session_name: String,
 
     /// Claude CLI command (default: claude)
     #[serde(default = "default_claude_command")]
+    #[schemars(description = "Claude CLI command to use")]
     pub claude_command: String,
 
     /// Directory for worktrees
     #[serde(default = "default_worktree_dir")]
+    #[schemars(description = "Directory path for git worktrees")]
     pub worktree_dir: String,
 
     /// Start arguments for Claude
     #[serde(default = "default_start_args")]
+    #[schemars(description = "Arguments to pass when starting Claude")]
     pub start_args: String,
 
     /// Files to copy to worktree
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(description = "List of files to copy to each worktree")]
     pub copy_files: Vec<String>,
 
     /// Logs configuration
@@ -81,14 +93,17 @@ pub struct WtConfig {
     /// Phases configuration
     /// Task lifecycle is controlled by phases
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Phase sequence and definitions for task lifecycle")]
     pub phases: Option<PhasesConfig>,
 
     /// Concurrency configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Concurrency limits for tasks and agents")]
     pub concurrency: Option<ConcurrencyConfig>,
 
     /// Observation/notification configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Observation and dashboard settings")]
     pub observe: Option<ProjectObserve>,
 }
 
@@ -115,6 +130,7 @@ fn default_start_args() -> String {
 impl Default for WtConfig {
     fn default() -> Self {
         Self {
+            schema: None,
             multiplexer: default_multiplexer(),
             session_name: default_session_name(),
             claude_command: default_claude_command(),
@@ -183,17 +199,15 @@ impl WtConfig {
         create_multiplexer(self.multiplexer_type())
     }
 
-    /// Get phase sequence or default
-    pub fn phase_sequence(&self) -> Vec<String> {
-        self.phases
-            .as_ref()
-            .map(|p| p.sequence_or_default())
-            .unwrap_or_else(|| {
-                crate::models::phase::DEFAULT_PHASE_SEQUENCE
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
-            })
+    /// Get phase sequence from config.
+    /// Returns error if phases not configured.
+    pub fn phase_sequence(&self) -> Result<Vec<String>> {
+        match &self.phases {
+            Some(p) if !p.sequence.is_empty() => Ok(p.sequence.clone()),
+            _ => Err(WtError::ConfigRead(
+                "No phases configured. Run 'wt init' to create config.".to_string()
+            )),
+        }
     }
 
     /// Get phase definition by ID

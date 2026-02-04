@@ -2,19 +2,22 @@
 //!
 //! Separates agent configuration from the Step enum for better ergonomics.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Agent step configuration - all fields have sensible defaults
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct AgentStep {
     // === Basic ===
     /// Prompt text or @file reference
+    #[schemars(description = "Prompt text or @file reference (e.g., '@.wt/tasks/auth.md')")]
     pub prompt: String,
     /// Print mode - non-interactive (-p / --print)
     #[serde(default)]
     pub print: bool,
     /// Model: haiku, sonnet, opus, or full model name (--model)
     #[serde(default = "default_model")]
+    #[schemars(description = "Model to use: 'haiku', 'sonnet', 'opus', or full model name")]
     pub model: String,
 
     // === System Prompt ===

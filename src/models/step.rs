@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::models::AgentStep;
@@ -20,7 +21,7 @@ use crate::models::AgentStep;
 // ============================================================================
 
 /// Step execution state
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum StepState {
     /// Waiting to execute
@@ -60,7 +61,7 @@ impl StepState {
 // ============================================================================
 
 /// Result of step execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StepResult {
     /// Step identifier (if named)
     pub step_id: Option<String>,
@@ -112,7 +113,7 @@ impl StepResult {
 // ============================================================================
 
 /// Input configuration for a step
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct StepInput {
     /// Environment variables
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -133,7 +134,7 @@ pub struct StepInput {
 // ============================================================================
 
 /// Output configuration for a step
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct StepOutput {
     /// Artifact patterns to collect (e.g., "dist/**", "coverage/")
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -148,7 +149,7 @@ pub struct StepOutput {
 // ============================================================================
 
 /// Observation mode
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ObserveMode {
     /// Interactive mode (foreground, with terminal)
@@ -159,7 +160,7 @@ pub enum ObserveMode {
 }
 
 /// Output target
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputTarget {
     /// Terminal only
@@ -172,7 +173,7 @@ pub enum OutputTarget {
 }
 
 /// Multiplexer observation settings
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct MultiplexerObserve {
     /// Window name (default: task name)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -183,7 +184,7 @@ pub struct MultiplexerObserve {
 }
 
 /// Log observation settings
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct LogObserve {
     /// Log file path (supports variable expansion)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -194,7 +195,7 @@ pub struct LogObserve {
 }
 
 /// Observation configuration for a step
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct StepObserve {
     /// Observation mode
     #[serde(default)]
@@ -215,7 +216,7 @@ pub struct StepObserve {
 // ============================================================================
 
 /// Action on verification result
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum VerifyAction {
     /// Mark step as success
@@ -236,7 +237,7 @@ impl VerifyAction {
 }
 
 /// Verification configuration for a step
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum StepVerify {
     /// Agent self-marks
@@ -284,7 +285,7 @@ impl Default for StepVerify {
 // ============================================================================
 
 /// Step failure handling action
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OnError {
     /// Use workflow-level setting (default)
@@ -305,7 +306,7 @@ pub enum OnError {
 // ============================================================================
 
 /// Retry configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StepRetry {
     /// Maximum retry attempts
     #[serde(default = "default_max_attempts")]
@@ -363,7 +364,7 @@ pub fn parse_duration(s: &str) -> Option<Duration> {
 // ============================================================================
 
 /// A single execution step
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Step {
     /// Step identifier (optional, for referencing)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -376,10 +377,12 @@ pub struct Step {
     // ========== Execute ==========
     /// Shell command to run (mutually exclusive with `agent`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Shell command to execute (mutually exclusive with 'agent')")]
     pub run: Option<String>,
 
     /// Agent configuration (mutually exclusive with `run`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Agent configuration (mutually exclusive with 'run')")]
     pub agent: Option<AgentStep>,
 
     // ========== Input ==========
@@ -400,11 +403,13 @@ pub struct Step {
     // ========== Verify ==========
     /// Verification configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Verification method: 'self', 'script', 'agent', 'human', or 'schema'")]
     pub verify: Option<StepVerify>,
 
     // ========== Control ==========
     /// Condition for execution (variable expression)
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Condition expression for conditional execution")]
     pub condition: Option<String>,
 
     /// Timeout duration (e.g., "30m", "1h")

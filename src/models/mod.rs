@@ -1,6 +1,7 @@
 mod action;
 mod agent_step;
 mod config;
+pub mod schema;
 mod status;
 mod store;
 mod task;
@@ -19,6 +20,7 @@ pub mod workflow;
 pub use action::UserAction;
 pub use agent_step::AgentStep;
 pub use config::{WtConfig, CONFIG_FILE};
-pub use status::{IdleReason, StatusStore, TaskPhase, TaskState, TaskStatus};
+pub use schema::generate_config_schema;
+pub use status::{IdleReason, StatusStore, TaskState, TaskStatus};
 pub use store::TaskStore;
 pub use task::{Instance, Task, TaskFrontmatter, TaskInput};

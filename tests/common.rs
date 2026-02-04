@@ -60,7 +60,19 @@ pub fn setup_test_repo() -> TempDir {
     fs::create_dir_all(dir.path().join(".wt")).unwrap();
     fs::write(
         dir.path().join(".wt/config.jsonc"),
-        r#"{"multiplexer": "tmux", "session_name": "test-wt"}"#,
+        r#"{
+  "multiplexer": "tmux",
+  "session_name": "test-wt",
+  "phases": {
+    "sequence": ["pending", "developing", "reviewing", "completed"],
+    "definitions": {
+      "pending": { "id": "pending", "resources": {} },
+      "developing": { "id": "developing", "resources": { "branch": true, "worktree": true, "window": true } },
+      "reviewing": { "id": "reviewing", "resources": { "branch": true, "worktree": true, "window": true } },
+      "completed": { "id": "completed", "resources": {}, "terminal": true }
+    }
+  }
+}"#,
     )
     .unwrap();
 

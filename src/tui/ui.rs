@@ -72,7 +72,7 @@ fn draw_left_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     for (i, task) in app.tasks.iter().enumerate() {
         let is_selected = i == app.selected;
-        let line = format_task_line(task, is_selected);
+        let line = format_task_line(task, is_selected, &app.phase_sequence);
         lines.push(line);
     }
 
@@ -81,7 +81,7 @@ fn draw_left_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Format a single task line for left panel
-fn format_task_line(task: &TaskDisplay, selected: bool) -> Line<'static> {
+fn format_task_line(task: &TaskDisplay, selected: bool, phase_sequence: &[String]) -> Line<'static> {
     let mut spans = Vec::new();
 
     // Selection indicator
@@ -113,12 +113,12 @@ fn format_task_line(task: &TaskDisplay, selected: bool) -> Line<'static> {
     spans.push(Span::styled(format!("{:<10}", name), name_style));
     spans.push(Span::raw(" "));
 
-    // Phase abbreviation (3 chars)
+    // Phase abbreviation (position-based: p1, p2, p3, etc.)
     let phase_abbr = task
         .phase
         .as_ref()
-        .map(|p| abbreviate_phase(p))
-        .unwrap_or("pnd".to_string());
+        .map(|p| abbreviate_phase(p, phase_sequence))
+        .unwrap_or_else(|| "---".to_string());
     spans.push(Span::styled(
         format!("{:<3}", phase_abbr),
         Style::default().fg(Color::DarkGray),
@@ -167,15 +167,14 @@ fn get_status_icon(task: &TaskDisplay) -> (&'static str, Color) {
     }
 }
 
-/// Abbreviate phase name to 3 characters
-fn abbreviate_phase(phase: &str) -> String {
-    match phase {
-        "developing" => "dev".to_string(),
-        "reviewing" => "rev".to_string(),
-        "pending" | "none" => "pnd".to_string(),
-        "completed" => "don".to_string(),
-        "merging" => "mrg".to_string(),
-        other => other.chars().take(3).collect(),
+/// Abbreviate phase name using position index (p1, p2, p3, etc.)
+/// Falls back to first 3 chars if phase not in sequence.
+fn abbreviate_phase(phase: &str, sequence: &[String]) -> String {
+    if let Some(pos) = sequence.iter().position(|s| s == phase) {
+        format!("p{}", pos + 1)
+    } else {
+        // Fallback for unknown phases
+        phase.chars().take(3).collect()
     }
 }
 
@@ -211,7 +210,7 @@ fn draw_task_details(frame: &mut Frame, area: Rect, task: &TaskDisplay) {
         _ => String::new(),
     };
 
-    let phase_display = task.phase.as_deref().unwrap_or("pending");
+    let phase_display = task.phase.as_deref().unwrap_or("none");
     lines.push(Line::from(vec![
         Span::styled(
             format!("{}: {}", task.name, phase_display),

@@ -85,10 +85,10 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     store.set_instance(
         &name,
         Some(Instance {
-            branch: branch.clone(),
-            worktree_path: worktree_path.clone(),
+            branch: Some(branch.clone()),
+            worktree_path: Some(worktree_path.clone()),
             session_name: config.session_name.clone(),
-            window_name: name.clone(),
+            window_name: Some(name.clone()),
             session_id: None, // No Claude session
             multiplexer: config.multiplexer_type(),
         }),

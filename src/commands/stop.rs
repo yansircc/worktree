@@ -54,24 +54,26 @@ pub fn execute(task_ref: String, kill_window: bool) -> Result<()> {
     let mux = create_multiplexer(config.multiplexer_type());
 
     // Send Ctrl+C to stop the process
-    let _ = mux.send_keys(&instance.session_name, &instance.window_name, "C-c");
-    println!(
-        "Sent stop signal to window '{}:{}'",
-        instance.session_name, instance.window_name
-    );
+    if let Some(ref window) = instance.window_name {
+        let _ = mux.send_keys(&instance.session_name, window, "C-c");
+        println!(
+            "Sent stop signal to window '{}:{}'",
+            instance.session_name, window
+        );
 
-    // Optionally close the window
-    if kill_window {
-        if mux.kill_window_if_exists(&instance.session_name, &instance.window_name)? {
-            println!(
-                "Closed window '{}:{}'",
-                instance.session_name, instance.window_name
-            );
+        // Optionally close the window
+        if kill_window {
+            if mux.kill_window_if_exists(&instance.session_name, window)? {
+                println!(
+                    "Closed window '{}:{}'",
+                    instance.session_name, window
+                );
+            }
         }
     }
 
     // Log stop event
-    log_stop_event(&task_name, &state.phase, kill_window);
+    log_stop_event(&task_name, state.phase.as_deref(), kill_window);
 
     // Update state
     let task_state = status_store.get_mut(&task_name);
@@ -87,14 +89,14 @@ pub fn execute(task_ref: String, kill_window: bool) -> Result<()> {
     println!(
         "Hint: Run 'wt next {}' to resume from phase '{}'",
         task_name,
-        state.phase.display_name()
+        state.phase.as_deref().unwrap_or("none")
     );
 
     Ok(())
 }
 
 /// Log stop event to task log file
-fn log_stop_event(task_name: &str, phase: &crate::models::TaskPhase, kill_window: bool) {
+fn log_stop_event(task_name: &str, phase: Option<&str>, kill_window: bool) {
     let log_dir = format!(".wt/logs/{}", task_name);
     if std::fs::create_dir_all(&log_dir).is_err() {
         return;
@@ -107,7 +109,7 @@ fn log_stop_event(task_name: &str, phase: &crate::models::TaskPhase, kill_window
             file,
             "[{}] Stopped in phase '{}' (kill_window: {})",
             timestamp,
-            phase.display_name(),
+            phase.unwrap_or("none"),
             kill_window
         );
     }

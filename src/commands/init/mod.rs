@@ -9,12 +9,15 @@ use std::path::Path;
 
 use crate::constants::TASKS_DIR;
 use crate::error::{Result, WtError};
-use crate::models::CONFIG_FILE;
+use crate::models::{generate_config_schema, CONFIG_FILE};
 
 use config::generate_config;
 use templates::{
     GITIGNORE_ENTRIES, GITIGNORE_MARKER, VERIFY_MD, VERIFY_SETTINGS_JSON, VERIFY_STOP_CJS,
 };
+
+/// Schema file path
+const SCHEMA_FILE: &str = ".wt/config.schema.json";
 
 fn get_project_name() -> String {
     env::current_dir()
@@ -138,6 +141,16 @@ pub fn execute() -> Result<()> {
             message: e.to_string(),
         })?;
     }
+
+    // Create .wt/config.schema.json
+    let schema_path = Path::new(SCHEMA_FILE);
+    let schema_content = generate_config_schema();
+    fs::write(schema_path, &schema_content).map_err(|e| WtError::Io {
+        operation: "create".to_string(),
+        path: SCHEMA_FILE.to_string(),
+        message: e.to_string(),
+    })?;
+    println!("Created {}", SCHEMA_FILE);
 
     // Create .wt/config.jsonc
     let config_content = generate_config(&project_name);

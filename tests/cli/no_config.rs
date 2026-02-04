@@ -52,12 +52,15 @@ fn test_next_without_config() {
 
     create_task_file(dir.path(), "task1", &[]);
 
-    // New next command requires task argument
-    let (ok, stdout, _) = run_wt(dir.path(), &["next", "task1"]);
+    // Without config, phases are not configured, so next should fail
+    let (ok, _, stderr) = run_wt(dir.path(), &["next", "task1"]);
 
-    assert!(ok);
-    // Should advance to developing phase
-    assert!(stdout.contains("developing") || stdout.contains("advanced"));
+    assert!(!ok);
+    assert!(
+        stderr.contains("No phases configured") || stderr.contains("wt init"),
+        "Expected error about missing phases config, got: {}",
+        stderr
+    );
 }
 
 #[test]

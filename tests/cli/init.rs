@@ -35,6 +35,40 @@ fn test_init_creates_config_file() {
 }
 
 #[test]
+fn test_init_creates_schema_file() {
+    let dir = setup_bare_git_repo();
+    let (ok, stdout, _) = run_wt(dir.path(), &["init"]);
+
+    assert!(ok);
+    assert!(stdout.contains("Created .wt/config.schema.json"));
+    assert!(dir.path().join(".wt/config.schema.json").exists());
+
+    // Verify schema is valid JSON
+    let schema = fs::read_to_string(dir.path().join(".wt/config.schema.json")).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap();
+    assert!(parsed.is_object());
+    assert!(parsed.get("$schema").is_some());
+}
+
+#[test]
+fn test_init_config_has_schema_reference() {
+    let dir = setup_bare_git_repo();
+    run_wt(dir.path(), &["init"]);
+
+    let config = fs::read_to_string(dir.path().join(".wt/config.jsonc")).unwrap();
+    assert!(config.contains("\"$schema\": \"./config.schema.json\""));
+}
+
+#[test]
+fn test_init_gitignore_allows_schema_file() {
+    let dir = setup_bare_git_repo();
+    run_wt(dir.path(), &["init"]);
+
+    let gitignore = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    assert!(gitignore.contains("!.wt/config.schema.json"));
+}
+
+#[test]
 fn test_init_creates_tasks_directory() {
     let dir = setup_bare_git_repo();
     let (ok, stdout, _) = run_wt(dir.path(), &["init"]);
@@ -134,7 +168,10 @@ fn test_init_config_has_phases() {
 
     assert!(config.contains("\"sequence\":"));
     assert!(config.contains("\"definitions\":"));
+    assert!(config.contains("\"pending\":"));
     assert!(config.contains("\"developing\":"));
+    assert!(config.contains("\"completed\":"));
+    assert!(config.contains("\"terminal\": true"));
 }
 
 #[test]

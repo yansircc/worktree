@@ -1,7 +1,7 @@
 //! Status model for wt task management.
 //!
 //! - Status: Pending / Active / Idle / Completed
-//! - Phase: None / Developing / Reviewing / Merging
+//! - Phase: Option<String> - arbitrary phase name from config sequence
 //! - IdleReason: Done / HumanReview / Error / Conflict / Timeout / Manual
 
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::{Result, WtError};
 use crate::models::Instance;
@@ -72,38 +72,6 @@ impl TaskStatus {
 }
 
 // ============================================================================
-// Task Phase (reflects business progress)
-// ============================================================================
-
-/// Task phase reflecting business progress
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum TaskPhase {
-    /// Not started
-    #[default]
-    #[serde(rename = "none")]
-    None,
-    /// Development in progress
-    Developing,
-    /// Code review in progress
-    Reviewing,
-    /// Merge in progress
-    Merging,
-}
-
-impl TaskPhase {
-    /// Get display name
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            TaskPhase::None => "none",
-            TaskPhase::Developing => "developing",
-            TaskPhase::Reviewing => "reviewing",
-            TaskPhase::Merging => "merging",
-        }
-    }
-}
-
-// ============================================================================
 // Idle Reason
 // ============================================================================
 
@@ -143,15 +111,27 @@ impl IdleReason {
 // Task State
 // ============================================================================
 
+/// Deserialize phase with backward compatibility.
+/// Converts "none" to None for compatibility with old status.json files.
+fn deserialize_phase<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    Ok(opt.filter(|s| s != "none"))
+}
+
 /// Runtime state for a single task (v2)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskState {
     /// Current status (process state)
     pub status: TaskStatus,
 
-    /// Current phase (business progress)
-    #[serde(default, skip_serializing_if = "is_phase_none")]
-    pub phase: TaskPhase,
+    /// Current phase (business progress) - arbitrary string from config sequence
+    /// None means task is in pending state (before first phase)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_phase")]
+    pub phase: Option<String>,
 
     /// Reason for being idle (only when status is Idle)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -170,15 +150,11 @@ pub struct TaskState {
     pub scratch: Option<bool>,
 }
 
-fn is_phase_none(phase: &TaskPhase) -> bool {
-    matches!(phase, TaskPhase::None)
-}
-
 impl Default for TaskState {
     fn default() -> Self {
         Self {
             status: TaskStatus::Pending,
-            phase: TaskPhase::None,
+            phase: None,
             idle_reason: None,
             active_since: None,
             instance: None,
@@ -190,7 +166,7 @@ impl Default for TaskState {
 impl TaskState {
     /// Transition to Active state (test only - production code sets fields directly)
     #[cfg(test)]
-    pub fn to_active(&mut self, phase: TaskPhase) {
+    pub fn to_active(&mut self, phase: Option<String>) {
         self.status = TaskStatus::Active;
         self.phase = phase;
         self.idle_reason = None;
@@ -202,18 +178,6 @@ impl TaskState {
         self.status = TaskStatus::Idle;
         self.idle_reason = Some(reason);
         self.active_since = None;
-    }
-
-    /// Convert TaskPhase to phase ID string
-    ///
-    /// Returns None for TaskPhase::None (pending state).
-    pub fn phase_id(&self) -> Option<&'static str> {
-        match self.phase {
-            TaskPhase::None => None,
-            TaskPhase::Developing => Some("developing"),
-            TaskPhase::Reviewing => Some("reviewing"),
-            TaskPhase::Merging => Some("merging"),
-        }
     }
 }
 
@@ -314,8 +278,8 @@ impl StatusStore {
     }
 
     /// Get phase for a task
-    pub fn get_phase(&self, name: &str) -> Option<&TaskPhase> {
-        self.tasks.get(name).map(|s| &s.phase)
+    pub fn get_phase(&self, name: &str) -> Option<&str> {
+        self.tasks.get(name).and_then(|s| s.phase.as_deref())
     }
 
     /// Get idle reason for a task
@@ -381,34 +345,6 @@ mod tests {
         );
     }
 
-    // ==================== TaskPhase Tests ====================
-
-    #[test]
-    fn test_phase_default() {
-        let phase: TaskPhase = Default::default();
-        assert_eq!(phase, TaskPhase::None);
-    }
-
-    #[test]
-    fn test_phase_serialize() {
-        assert_eq!(
-            serde_json::to_string(&TaskPhase::None).unwrap(),
-            "\"none\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TaskPhase::Developing).unwrap(),
-            "\"developing\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TaskPhase::Reviewing).unwrap(),
-            "\"reviewing\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TaskPhase::Merging).unwrap(),
-            "\"merging\""
-        );
-    }
-
     // ==================== IdleReason Tests ====================
 
     #[test]
@@ -445,7 +381,7 @@ mod tests {
     fn test_state_default() {
         let state = TaskState::default();
         assert_eq!(state.status, TaskStatus::Pending);
-        assert_eq!(state.phase, TaskPhase::None);
+        assert!(state.phase.is_none());
         assert!(state.idle_reason.is_none());
         assert!(state.active_since.is_none());
         assert!(state.instance.is_none());
@@ -456,9 +392,9 @@ mod tests {
         let mut state = TaskState::default();
 
         // Pending → Active
-        state.to_active(TaskPhase::Developing);
+        state.to_active(Some("developing".to_string()));
         assert_eq!(state.status, TaskStatus::Active);
-        assert_eq!(state.phase, TaskPhase::Developing);
+        assert_eq!(state.phase, Some("developing".to_string()));
         assert!(state.active_since.is_some());
 
         // Active → Idle
@@ -468,9 +404,9 @@ mod tests {
         assert!(state.active_since.is_none());
 
         // Idle → Active
-        state.to_active(TaskPhase::Reviewing);
+        state.to_active(Some("reviewing".to_string()));
         assert_eq!(state.status, TaskStatus::Active);
-        assert_eq!(state.phase, TaskPhase::Reviewing);
+        assert_eq!(state.phase, Some("reviewing".to_string()));
     }
 
     #[test]
@@ -478,7 +414,7 @@ mod tests {
         let state = TaskState::default();
         let json = serde_json::to_string(&state).unwrap();
 
-        // Should only have status, phase=none should be skipped
+        // Should only have status, phase=None should be skipped
         assert!(json.contains("\"status\":\"pending\""));
         assert!(!json.contains("phase"));
         assert!(!json.contains("idle_reason"));
@@ -488,12 +424,12 @@ mod tests {
     #[test]
     fn test_state_serialize_full() {
         let mut state = TaskState::default();
-        state.to_active(TaskPhase::Developing);
+        state.to_active(Some("developing".to_string()));
         state.instance = Some(Instance {
-            branch: "wt/test".to_string(),
-            worktree_path: "/path".to_string(),
+            branch: Some("wt/test".to_string()),
+            worktree_path: Some("/path".to_string()),
             session_name: "wt".to_string(),
-            window_name: "test".to_string(),
+            window_name: Some("test".to_string()),
             session_id: None,
             multiplexer: crate::services::multiplexer::MultiplexerType::Tmux,
         });
@@ -511,7 +447,23 @@ mod tests {
         let json = r#"{"status":"pending"}"#;
         let state: TaskState = serde_json::from_str(json).unwrap();
         assert_eq!(state.status, TaskStatus::Pending);
-        assert_eq!(state.phase, TaskPhase::None);
+        assert!(state.phase.is_none());
+    }
+
+    #[test]
+    fn test_state_deserialize_legacy_none_phase() {
+        // Old format with "none" phase should be converted to None
+        let json = r#"{"status":"pending","phase":"none"}"#;
+        let state: TaskState = serde_json::from_str(json).unwrap();
+        assert!(state.phase.is_none());
+    }
+
+    #[test]
+    fn test_state_deserialize_arbitrary_phase() {
+        // New format with arbitrary phase name
+        let json = r#"{"status":"active","phase":"custom-phase"}"#;
+        let state: TaskState = serde_json::from_str(json).unwrap();
+        assert_eq!(state.phase, Some("custom-phase".to_string()));
     }
 
     // ==================== StatusStore Tests ====================
@@ -534,7 +486,7 @@ mod tests {
         let mut store = StatusStore::default();
         {
             let state = store.get_mut("test");
-            state.to_active(TaskPhase::Developing);
+            state.to_active(Some("developing".to_string()));
         }
 
         let got = store.get("test");
@@ -544,7 +496,7 @@ mod tests {
     #[test]
     fn test_store_serialize() {
         let mut store = StatusStore::default();
-        store.get_mut("task1").to_active(TaskPhase::Developing);
+        store.get_mut("task1").to_active(Some("developing".to_string()));
         store.get_mut("task2").to_idle(IdleReason::Done);
 
         let json = serde_json::to_string(&store).unwrap();
@@ -569,24 +521,16 @@ mod tests {
 
         let state = store.get("test");
         assert_eq!(state.status, TaskStatus::Active);
-        assert_eq!(state.phase, TaskPhase::Developing);
+        assert_eq!(state.phase, Some("developing".to_string()));
         assert!(state.active_since.is_some());
     }
 
-    // ==================== Phases v2 Bridge Tests ====================
-
     #[test]
-    fn test_task_state_phase_id() {
-        let mut state = TaskState::default();
-        assert_eq!(state.phase_id(), None);
+    fn test_store_get_phase() {
+        let mut store = StatusStore::default();
+        store.get_mut("test").phase = Some("developing".to_string());
 
-        state.phase = TaskPhase::Developing;
-        assert_eq!(state.phase_id(), Some("developing"));
-
-        state.phase = TaskPhase::Reviewing;
-        assert_eq!(state.phase_id(), Some("reviewing"));
-
-        state.phase = TaskPhase::Merging;
-        assert_eq!(state.phase_id(), Some("merging"));
+        assert_eq!(store.get_phase("test"), Some("developing"));
+        assert_eq!(store.get_phase("nonexistent"), None);
     }
 }

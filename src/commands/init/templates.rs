@@ -9,6 +9,7 @@ pub const GITIGNORE_ENTRIES: &str = r#"# wt - Worktree Task Manager
 .wt/*
 !.wt/tasks/
 !.wt/config.jsonc
+!.wt/config.schema.json
 !.wt/hooks/
 !.wt/templates/
 !.wt/verify.md

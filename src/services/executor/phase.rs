@@ -77,12 +77,21 @@ impl<'a> PhaseTransition<'a> {
         if let Some(ref prereqs) = phase.prerequisites {
             // Check allowed source phases
             if !prereqs.phase.is_empty() {
-                let current_phase = runtime_state.phase_id.as_deref().unwrap_or("pending");
-                if !prereqs.phase.iter().any(|p| p == current_phase) {
-                    return Err(WtError::InvalidInput(format!(
-                        "Cannot transition to {} from {}",
-                        phase.id, current_phase
-                    )));
+                // If no current phase (None), we're in pending state
+                match runtime_state.phase_id.as_deref() {
+                    Some(current) if prereqs.phase.iter().any(|p| p == current) => {
+                        // Current phase is in the allowed list
+                    }
+                    None if prereqs.phase.iter().any(|p| p == "none") => {
+                        // No current phase and "none" is in the allowed list
+                    }
+                    _ => {
+                        let current_name = runtime_state.phase_id.as_deref().unwrap_or("(none)");
+                        return Err(WtError::InvalidInput(format!(
+                            "Cannot transition to {} from {}",
+                            phase.id, current_name
+                        )));
+                    }
                 }
             }
 

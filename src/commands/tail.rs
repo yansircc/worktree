@@ -26,8 +26,10 @@ pub fn execute(task_ref: String, count: usize) -> Result<()> {
         .ok_or_else(|| WtError::TaskNotFound(ctx.name().to_string()))?;
 
     // Check worktree exists
-    if !std::path::Path::new(&instance.worktree_path).exists() {
-        return Err(WtError::WorktreeNotFound(ctx.name().to_string()));
+    if let Some(ref wt_path) = instance.worktree_path {
+        if !std::path::Path::new(wt_path).exists() {
+            return Err(WtError::WorktreeNotFound(ctx.name().to_string()));
+        }
     }
 
     // Find transcript file

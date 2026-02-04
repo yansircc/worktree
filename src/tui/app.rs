@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use crate::constants::IDLE_THRESHOLD_SECS;
 use crate::display::format_duration;
 use crate::error::Result;
-use crate::models::{TaskStatus, TaskStore, UserAction};
+use crate::models::{TaskStatus, TaskStore, UserAction, WtConfig};
 use crate::services::action_resolver::{resolve_enter_action, TaskActionContext};
 use crate::services::multiplexer::{create_multiplexer, MultiplexerType};
 use crate::services::{git, transcript};
@@ -41,15 +41,18 @@ pub struct App {
     pub tasks: Vec<TaskDisplay>,
     pub selected: usize,
     pub show_all: bool,
+    pub phase_sequence: Vec<String>,
 }
 
 impl App {
     /// Create new app and load initial data
     pub fn new(show_all: bool) -> Result<Self> {
+        let config = WtConfig::load()?;
         let mut app = Self {
             tasks: Vec::new(),
             selected: 0,
             show_all,
+            phase_sequence: config.phase_sequence().unwrap_or_default(),
         };
         app.refresh()?;
         Ok(app)
@@ -97,10 +100,10 @@ impl App {
                 None => continue, // Skip if task disappeared during iteration
             };
             let instance = store.get_instance(task.name());
-            let worktree_path = instance.map(|i| i.worktree_path.clone());
+            let worktree_path = instance.and_then(|i| i.worktree_path.clone());
 
             // Get phase and idle_reason from status store
-            let phase = store.get_phase(task_name).map(|p| p.display_name().to_string());
+            let phase = store.get_phase(task_name).map(|p| p.to_string());
             let idle_reason = store.get_idle_reason(task_name).map(|r| r.display_name().to_string());
 
             // Get dependencies with their statuses
@@ -115,8 +118,10 @@ impl App {
 
             // Multiplexer status
             let mux_alive = if let Some(inst) = instance {
-                let mux = create_multiplexer(inst.multiplexer_type());
-                mux.window_exists(&inst.session_name, &inst.window_name)
+                inst.window_name.as_deref().map_or(false, |window| {
+                    let mux = create_multiplexer(inst.multiplexer_type());
+                    mux.window_exists(&inst.session_name, window)
+                })
             } else {
                 false
             };
@@ -186,7 +191,7 @@ impl App {
                     (
                         Some(i.multiplexer_type()),
                         Some(i.session_name.clone()),
-                        Some(i.window_name.clone()),
+                        i.window_name.clone(),
                         i.session_id.clone(),
                     )
                 })
@@ -267,10 +272,10 @@ impl App {
             (task.multiplexer, &task.session_name, &task.window_name)
         {
             Some(Instance {
-                branch: format!("wt/{}", task.name),
-                worktree_path: task.worktree_path.clone().unwrap_or_default(),
+                branch: Some(format!("wt/{}", task.name)),
+                worktree_path: task.worktree_path.clone(),
                 session_name: session.clone(),
-                window_name: window.clone(),
+                window_name: Some(window.clone()),
                 session_id: task.session_id.clone(),
                 multiplexer: mux,
             })

@@ -15,9 +15,9 @@
 use std::path::PathBuf;
 
 use crate::error::{Result, WtError};
-use crate::models::phase::{ExitReason, Phase, PhaseResources};
+use crate::models::phase::{ExitReason, Phase};
 use crate::models::state::TaskRuntimeState;
-use crate::models::{StatusStore, TaskPhase, TaskStatus, TaskStore, WtConfig};
+use crate::models::{StatusStore, TaskStatus, TaskStore, WtConfig};
 use crate::services::executor::{prev_phase, ExecutionContext, PhaseTransition};
 use crate::services::git;
 use crate::services::multiplexer::create_multiplexer;
@@ -38,10 +38,10 @@ pub fn execute(task_ref: String) -> Result<()> {
     let state = status_store.get(&task_name);
 
     // Get phase sequence from config
-    let phase_sequence = config.phase_sequence();
+    let phase_sequence = config.phase_sequence()?;
 
-    // Convert current TaskPhase to phase_id string
-    let current_phase_id = state.phase_id();
+    // Get current phase_id from state
+    let current_phase_id = state.phase.as_deref();
 
     // Determine previous phase
     let prev_phase_id = prev_phase(current_phase_id, &phase_sequence);
@@ -58,31 +58,34 @@ pub fn execute(task_ref: String) -> Result<()> {
             // Stop current process if running
             if state.status == TaskStatus::Active {
                 if let Some(instance) = &state.instance {
-                    let mux = create_multiplexer(config.multiplexer_type());
-                    // Send Ctrl+C to stop the process
-                    let _ = mux.send_keys(
-                        &instance.session_name,
-                        &instance.window_name,
-                        "C-c",
-                    );
-                    println!(
-                        "Stopped process in window '{}'",
-                        instance.window_name
-                    );
+                    if let Some(ref window) = instance.window_name {
+                        let mux = create_multiplexer(config.multiplexer_type());
+                        let _ = mux.send_keys(
+                            &instance.session_name,
+                            window,
+                            "C-c",
+                        );
+                        println!("Stopped process in window '{}'", window);
+                    }
                 }
             }
 
             // Get current phase definition and execute on_exit if configured
             if let Some(current_id) = current_phase_id {
-                let current_phase = get_phase_definition(&config, current_id);
-                if current_phase.on_exit.is_some() {
-                    execute_on_exit(&config, &task_name, &current_phase, state.instance.as_ref())?;
+                if let Some(current_phase) = config.get_phase(current_id) {
+                    if current_phase.on_exit.is_some() {
+                        execute_on_exit(&config, &task_name, current_phase, state.instance.as_ref())?;
+                    }
                 }
             }
 
             // Get previous phase definition to check resource requirements
-            let prev_phase_def = get_phase_definition(&config, prev_id);
-            let prev_needs_resources = prev_phase_def.resources == PhaseResources::Full;
+            let prev_phase_def = config.get_phase(prev_id)
+                .ok_or_else(|| WtError::InvalidInput(format!(
+                    "Phase '{}' not defined in config. Run 'wt validate' to check.",
+                    prev_id
+                )))?;
+            let prev_needs_resources = !prev_phase_def.resources.is_empty();
 
             // Clean up resources if returning to a phase that doesn't need them
             let instance = if !prev_needs_resources && state.instance.is_some() {
@@ -97,12 +100,14 @@ pub fn execute(task_ref: String) -> Result<()> {
 
             // Update state
             let task_state = status_store.get_mut(&task_name);
-            task_state.phase = phase_id_to_task_phase(prev_id);
-            task_state.status = if prev_id == "pending" {
-                TaskStatus::Pending
+            // If returning to a phase with no resources, go back to pending state
+            if prev_phase_def.resources.is_empty() && !prev_phase_def.terminal {
+                task_state.phase = None;
+                task_state.status = TaskStatus::Pending;
             } else {
-                TaskStatus::Idle
-            };
+                task_state.phase = Some(prev_id.to_string());
+                task_state.status = TaskStatus::Idle;
+            }
             task_state.idle_reason = None;
             task_state.active_since = None;
             task_state.instance = instance;
@@ -118,19 +123,6 @@ pub fn execute(task_ref: String) -> Result<()> {
     }
 }
 
-/// Get phase definition from config or create default
-fn get_phase_definition(config: &WtConfig, phase_id: &str) -> Phase {
-    if let Some(phase) = config.get_phase(phase_id) {
-        return phase.clone();
-    }
-
-    // Create default based on phase name
-    match phase_id {
-        "pending" | "completed" => Phase::new(phase_id),
-        _ => Phase::with_resources(phase_id),
-    }
-}
-
 /// Execute on_exit workflow for the current phase
 fn execute_on_exit(
     config: &WtConfig,
@@ -141,25 +133,15 @@ fn execute_on_exit(
     let repo_root = git::get_repo_root()?;
 
     // Build execution context
-    let (branch, worktree, session, window) = if let Some(inst) = instance {
-        (
-            inst.branch.clone(),
-            inst.worktree_path.clone(),
-            inst.session_name.clone(),
-            inst.window_name.clone(),
-        )
-    } else {
-        (
-            format!("wt/{}", task_name),
-            repo_root.clone(),
-            config.session_name.clone(),
-            task_name.to_string(),
-        )
-    };
+    let default_branch = format!("wt/{}", task_name);
+    let branch = instance.and_then(|i| i.branch.as_deref()).unwrap_or(&default_branch);
+    let worktree = instance.and_then(|i| i.worktree_path.as_deref()).unwrap_or(&repo_root);
+    let session = instance.map(|i| i.session_name.as_str()).unwrap_or(&config.session_name);
+    let window = instance.and_then(|i| i.window_name.as_deref()).unwrap_or(task_name);
 
-    let context = ExecutionContext::new(task_name, &branch, &worktree, &repo_root)
-        .with_session(&session)
-        .with_window(&window)
+    let context = ExecutionContext::new(task_name, branch, worktree, &repo_root)
+        .with_session(session)
+        .with_window(window)
         .with_phase(&phase.id);
 
     // Create runtime state
@@ -176,26 +158,20 @@ fn execute_on_exit(
     Ok(())
 }
 
-/// Clean up resources (worktree, window)
+/// Clean up resources (window → worktree)
 fn cleanup_resources(config: &WtConfig, instance: &crate::models::Instance) -> Result<()> {
-    // Remove worktree
-    let _ = git::remove_worktree(&instance.worktree_path);
-
     // Close window
-    let mux = create_multiplexer(config.multiplexer_type());
-    let _ = mux.kill_window(&instance.session_name, &instance.window_name);
+    if let Some(ref window) = instance.window_name {
+        let mux = create_multiplexer(config.multiplexer_type());
+        let _ = mux.kill_window(&instance.session_name, window);
+    }
+
+    // Remove worktree
+    if let Some(ref path) = instance.worktree_path {
+        let _ = git::remove_worktree(path);
+    }
 
     Ok(())
-}
-
-/// Convert phase_id string to legacy TaskPhase enum
-fn phase_id_to_task_phase(phase_id: &str) -> TaskPhase {
-    match phase_id {
-        "developing" => TaskPhase::Developing,
-        "reviewing" => TaskPhase::Reviewing,
-        "merging" => TaskPhase::Merging,
-        _ => TaskPhase::None,
-    }
 }
 
 #[cfg(test)]
@@ -203,11 +179,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_phase_id_to_task_phase() {
-        assert_eq!(phase_id_to_task_phase("developing"), TaskPhase::Developing);
-        assert_eq!(phase_id_to_task_phase("reviewing"), TaskPhase::Reviewing);
-        assert_eq!(phase_id_to_task_phase("merging"), TaskPhase::Merging);
-        assert_eq!(phase_id_to_task_phase("pending"), TaskPhase::None);
-        assert_eq!(phase_id_to_task_phase("unknown"), TaskPhase::None);
+    fn test_phase_resources_determines_pending() {
+        use crate::models::project::PhasesConfig;
+        use std::collections::HashMap;
+
+        let mut definitions = HashMap::new();
+        definitions.insert("pending".to_string(), Phase::new("pending"));
+        definitions.insert("developing".to_string(), Phase::with_resources("developing"));
+
+        let mut config = WtConfig::default();
+        config.phases = Some(PhasesConfig {
+            sequence: vec!["pending".to_string(), "developing".to_string()],
+            definitions,
+        });
+
+        let pending = config.get_phase("pending").unwrap();
+        assert!(pending.resources.is_empty());
+        assert!(!pending.terminal);
+
+        let developing = config.get_phase("developing").unwrap();
+        assert_eq!(developing.resources, crate::models::phase::PhaseResources::full());
     }
 }

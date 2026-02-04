@@ -131,7 +131,7 @@ impl TaskStore {
     }
 
     /// Get phase for a task
-    pub fn get_phase(&self, name: &str) -> Option<&crate::models::TaskPhase> {
+    pub fn get_phase(&self, name: &str) -> Option<&str> {
         self.status.get_phase(name)
     }
 
@@ -165,8 +165,12 @@ impl TaskStore {
         };
 
         // Check if multiplexer window still exists
+        let window = match &instance.window_name {
+            Some(w) => w,
+            None => return Ok(false),
+        };
         let mux = create_multiplexer(instance.multiplexer_type());
-        if mux.window_exists(&instance.session_name, &instance.window_name) {
+        if mux.window_exists(&instance.session_name, window) {
             return Ok(false);
         }
 
@@ -350,16 +354,16 @@ mod tests {
 
         let mut store = TaskStore::default();
         let instance = Instance {
-            branch: "wt/test".to_string(),
-            worktree_path: "/path".to_string(),
+            branch: Some("wt/test".to_string()),
+            worktree_path: Some("/path".to_string()),
             session_name: "wt".to_string(),
-            window_name: "test".to_string(),
+            window_name: Some("test".to_string()),
             session_id: None,
             multiplexer: MultiplexerType::Tmux,
         };
         store.set_instance("test", Some(instance));
         assert!(store.get_instance("test").is_some());
-        assert_eq!(store.get_instance("test").unwrap().branch, "wt/test");
+        assert_eq!(store.get_instance("test").unwrap().branch, Some("wt/test".to_string()));
     }
 
     #[test]

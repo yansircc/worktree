@@ -16,11 +16,11 @@ use std::path::PathBuf;
 use chrono::Utc;
 
 use crate::error::{Result, WtError};
-use crate::models::phase::{Phase, PhaseResources};
+use crate::models::phase::Phase;
 use crate::models::state::TaskRuntimeState;
 use crate::models::step::ObserveMode;
 use crate::models::workflow::WorkflowState;
-use crate::models::{IdleReason, Instance, StatusStore, TaskPhase, TaskStatus, TaskStore, WtConfig};
+use crate::models::{IdleReason, Instance, StatusStore, TaskStatus, TaskStore, WtConfig};
 use crate::services::claude::ClaudeCommandBuilder;
 use crate::services::executor::{next_phase, ExecutionContext, PhaseTransition};
 use crate::services::git;
@@ -50,10 +50,10 @@ pub fn execute(task_ref: String) -> Result<()> {
     }
 
     // Get phase sequence from config
-    let phase_sequence = config.phase_sequence();
+    let phase_sequence = config.phase_sequence()?;
 
-    // Convert current TaskPhase to phase_id string
-    let current_phase_id = state.phase_id();
+    // Get current phase_id from state
+    let current_phase_id = state.phase.as_deref();
 
     // Determine next phase
     let next_phase_id = next_phase(current_phase_id, &phase_sequence);
@@ -73,33 +73,25 @@ pub fn execute(task_ref: String) -> Result<()> {
                 stop_current_process(&config, &state)?;
             }
 
-            // Get phase definition (from config or create default)
-            let phase_def = get_phase_definition(&config, next_id);
+            // Get phase definition (must be defined in config)
+            let phase_def = config.get_phase(next_id)
+                .ok_or_else(|| WtError::InvalidInput(format!(
+                    "Phase '{}' not defined in config. Run 'wt validate' to check.",
+                    next_id
+                )))?
+                .clone();
 
-            // Check if we need to allocate resources
-            let needs_resources = phase_def.resources == PhaseResources::Full;
-            let has_resources = state.instance.is_some();
-
-            // Allocate resources if needed
-            let instance = if needs_resources && !has_resources {
-                Some(allocate_resources(&config, &task_name)?)
-            } else {
-                state.instance.clone()
-            };
-
-            // Update status
-            let task_state = status_store.get_mut(&task_name);
-
-            // Check if this is the "completed" phase
-            if next_id == "completed" {
+            // Check if this is a terminal phase (task becomes Completed)
+            if phase_def.terminal {
+                let task_state = status_store.get_mut(&task_name);
                 task_state.status = TaskStatus::Completed;
-                task_state.phase = TaskPhase::None;
+                task_state.phase = Some(next_id.to_string());
                 task_state.idle_reason = None;
                 task_state.active_since = None;
                 task_state.instance = None;
 
                 // Clean up resources if any
-                if let Some(ref inst) = instance {
+                if let Some(ref inst) = state.instance {
                     let _ = cleanup_resources(&config, inst);
                 }
 
@@ -108,8 +100,22 @@ pub fn execute(task_ref: String) -> Result<()> {
                 return Ok(());
             }
 
+            // Allocate resources based on phase requirements
+            let needs_resources = !phase_def.resources.is_empty();
+            let has_resources = state.instance.as_ref().map_or(false, |i| !i.is_empty());
+
+            // Allocate resources if needed
+            let instance = if needs_resources && !has_resources {
+                Some(allocate_resources(&config, &task_name, &phase_def.resources)?)
+            } else {
+                state.instance.clone()
+            };
+
+            // Update status
+            let task_state = status_store.get_mut(&task_name);
+
             // Update to new phase
-            task_state.phase = phase_id_to_task_phase(next_id);
+            task_state.phase = Some(next_id.to_string());
             task_state.instance = instance.clone();
 
             // Check if we should execute on_enter workflow
@@ -225,93 +231,90 @@ pub fn execute(task_ref: String) -> Result<()> {
 /// Stop the current process in multiplexer window
 fn stop_current_process(config: &WtConfig, state: &crate::models::TaskState) -> Result<()> {
     if let Some(instance) = &state.instance {
-        let mux = create_multiplexer(config.multiplexer_type());
-        // Send Ctrl+C to stop the process
-        let _ = mux.send_keys(&instance.session_name, &instance.window_name, "C-c");
-        println!("Stopped process in window '{}'", instance.window_name);
+        if let Some(ref window) = instance.window_name {
+            let mux = create_multiplexer(config.multiplexer_type());
+            // Send Ctrl+C to stop the process
+            let _ = mux.send_keys(&instance.session_name, window, "C-c");
+            println!("Stopped process in window '{}'", window);
+        }
     }
     Ok(())
 }
 
-/// Get phase definition from config or create default
-fn get_phase_definition(config: &WtConfig, phase_id: &str) -> Phase {
-    // Try to get from config
-    if let Some(phase) = config.get_phase(phase_id) {
-        return phase.clone();
-    }
-
-    // Create default based on phase name
-    match phase_id {
-        "pending" | "completed" => Phase::new(phase_id),
-        _ => Phase::with_resources(phase_id), // developing, reviewing, etc. need resources
-    }
-}
-
-/// Convert phase_id string to legacy TaskPhase enum
-fn phase_id_to_task_phase(phase_id: &str) -> TaskPhase {
-    match phase_id {
-        "developing" => TaskPhase::Developing,
-        "reviewing" => TaskPhase::Reviewing,
-        "merging" => TaskPhase::Merging,
-        _ => TaskPhase::Developing, // Default for unknown phases
-    }
-}
-
-/// Allocate resources for a task (worktree, branch, window)
-fn allocate_resources(config: &WtConfig, task_name: &str) -> Result<Instance> {
+/// Allocate resources for a task based on phase resource requirements
+fn allocate_resources(
+    config: &WtConfig,
+    task_name: &str,
+    resources: &crate::models::phase::PhaseResources,
+) -> Result<Instance> {
     let repo_root = git::get_repo_root()?;
 
-    // Generate branch name with timestamp-based suffix
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() % 0xFFFFFF)
-        .unwrap_or(0);
-    let branch_name = format!("wt/{}-{:06x}", task_name, timestamp);
-
-    // Worktree path
-    let worktree_path = format!("{}/{}", config.worktree_dir, task_name);
-    let full_worktree_path = if worktree_path.starts_with('/') {
-        worktree_path.clone()
-    } else {
-        format!("{}/{}", repo_root, worktree_path)
-    };
-
-    // Create worktree (this also creates the branch)
-    git::create_worktree(&branch_name, &full_worktree_path)?;
-    println!("Created worktree at {}", full_worktree_path);
-
-    // Create multiplexer window
-    let mux = create_multiplexer(config.multiplexer_type());
-    let session_name = &config.session_name;
-    let window_name = task_name;
-
-    // Ensure session exists
-    if !mux.session_exists(session_name) {
-        mux.create_session(session_name)?;
-    }
-
-    // Create window
-    mux.create_window(session_name, window_name, &full_worktree_path, "")?;
-    println!("Created window '{}' in session '{}'", window_name, session_name);
-
-    Ok(Instance {
-        branch: branch_name,
-        worktree_path: full_worktree_path,
-        session_name: session_name.clone(),
-        window_name: window_name.to_string(),
+    let mut instance = Instance {
+        branch: None,
+        worktree_path: None,
+        session_name: config.session_name.clone(),
+        window_name: None,
         session_id: None,
         multiplexer: config.multiplexer_type(),
-    })
+    };
+
+    // Create branch if needed
+    if resources.branch {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() % 0xFFFFFF)
+            .unwrap_or(0);
+        let branch_name = format!("wt/{}-{:06x}", task_name, timestamp);
+        instance.branch = Some(branch_name);
+    }
+
+    // Create worktree if needed (requires branch)
+    if resources.worktree {
+        let branch_name = instance.branch.as_ref()
+            .ok_or_else(|| WtError::InvalidInput("worktree requires branch".into()))?;
+
+        let worktree_path = format!("{}/{}", config.worktree_dir, task_name);
+        let full_worktree_path = if worktree_path.starts_with('/') {
+            worktree_path.clone()
+        } else {
+            format!("{}/{}", repo_root, worktree_path)
+        };
+
+        git::create_worktree(branch_name, &full_worktree_path)?;
+        println!("Created worktree at {}", full_worktree_path);
+        instance.worktree_path = Some(full_worktree_path);
+    }
+
+    // Create multiplexer window if needed
+    if resources.window {
+        let cwd = instance.worktree_path.as_deref().unwrap_or(".");
+        let mux = create_multiplexer(config.multiplexer_type());
+        let session_name = &config.session_name;
+
+        if !mux.session_exists(session_name) {
+            mux.create_session(session_name)?;
+        }
+
+        mux.create_window(session_name, task_name, cwd, "")?;
+        println!("Created window '{}' in session '{}'", task_name, session_name);
+        instance.window_name = Some(task_name.to_string());
+    }
+
+    Ok(instance)
 }
 
-/// Clean up resources (worktree, window)
+/// Clean up resources (window → worktree → branch)
 fn cleanup_resources(config: &WtConfig, instance: &Instance) -> Result<()> {
-    // Remove worktree
-    let _ = git::remove_worktree(&instance.worktree_path);
-
     // Close window
-    let mux = create_multiplexer(config.multiplexer_type());
-    let _ = mux.kill_window(&instance.session_name, &instance.window_name);
+    if let Some(ref window) = instance.window_name {
+        let mux = create_multiplexer(config.multiplexer_type());
+        let _ = mux.kill_window(&instance.session_name, window);
+    }
+
+    // Remove worktree
+    if let Some(ref path) = instance.worktree_path {
+        let _ = git::remove_worktree(path);
+    }
 
     Ok(())
 }
@@ -325,16 +328,20 @@ fn start_agent_in_window(
     phase_id: &str,
 ) -> Result<()> {
     let repo_root = git::get_repo_root()?;
+    let default_branch = format!("wt/{}", task_name);
+    let branch = instance.branch.as_deref().unwrap_or(&default_branch);
+    let worktree = instance.worktree_path.as_deref().unwrap_or(&repo_root);
+    let window = instance.window_name.as_deref().unwrap_or(task_name);
 
     // Build execution context
     let context = ExecutionContext::new(
         task_name,
-        &instance.branch,
-        &instance.worktree_path,
+        branch,
+        worktree,
         &repo_root,
     )
     .with_session(&instance.session_name)
-    .with_window(&instance.window_name)
+    .with_window(window)
     .with_phase(phase_id);
 
     // Build claude command
@@ -346,11 +353,11 @@ fn start_agent_in_window(
     let mux = create_multiplexer(config.multiplexer_type());
 
     // Focus the window first
-    let _ = mux.focus_window(&instance.session_name, &instance.window_name);
+    let _ = mux.focus_window(&instance.session_name, window);
 
     // Send the command
-    mux.send_keys(&instance.session_name, &instance.window_name, &command)?;
-    mux.send_keys(&instance.session_name, &instance.window_name, "Enter")?;
+    mux.send_keys(&instance.session_name, window, &command)?;
+    mux.send_keys(&instance.session_name, window, "Enter")?;
 
     Ok(())
 }
@@ -365,25 +372,15 @@ fn execute_on_enter(
     let repo_root = git::get_repo_root()?;
 
     // Build execution context
-    let (branch, worktree, session, window) = if let Some(inst) = instance {
-        (
-            inst.branch.clone(),
-            inst.worktree_path.clone(),
-            inst.session_name.clone(),
-            inst.window_name.clone(),
-        )
-    } else {
-        (
-            format!("wt/{}", task_name),
-            repo_root.clone(),
-            config.session_name.clone(),
-            task_name.to_string(),
-        )
-    };
+    let default_branch = format!("wt/{}", task_name);
+    let branch = instance.and_then(|i| i.branch.as_deref()).unwrap_or(&default_branch);
+    let worktree = instance.and_then(|i| i.worktree_path.as_deref()).unwrap_or(&repo_root);
+    let session = instance.map(|i| i.session_name.as_str()).unwrap_or(&config.session_name);
+    let window = instance.and_then(|i| i.window_name.as_deref()).unwrap_or(task_name);
 
-    let context = ExecutionContext::new(task_name, &branch, &worktree, &repo_root)
-        .with_session(&session)
-        .with_window(&window)
+    let context = ExecutionContext::new(task_name, branch, worktree, &repo_root)
+        .with_session(session)
+        .with_window(window)
         .with_phase(&phase.id);
 
     // Create runtime state
@@ -411,24 +408,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_phase_id_to_task_phase() {
-        assert_eq!(phase_id_to_task_phase("developing"), TaskPhase::Developing);
-        assert_eq!(phase_id_to_task_phase("reviewing"), TaskPhase::Reviewing);
-        assert_eq!(phase_id_to_task_phase("merging"), TaskPhase::Merging);
-        assert_eq!(phase_id_to_task_phase("unknown"), TaskPhase::Developing);
-    }
+    fn test_phase_terminal_from_config() {
+        use crate::models::phase::Phase;
+        use crate::models::project::PhasesConfig;
+        use std::collections::HashMap;
 
-    #[test]
-    fn test_get_phase_definition_defaults() {
-        let config = WtConfig::default();
+        let mut definitions = HashMap::new();
+        definitions.insert("pending".to_string(), Phase::new("pending"));
+        definitions.insert("developing".to_string(), Phase::with_resources("developing"));
+        let mut completed = Phase::new("completed");
+        completed.terminal = true;
+        definitions.insert("completed".to_string(), completed);
 
-        let pending = get_phase_definition(&config, "pending");
-        assert_eq!(pending.resources, PhaseResources::None);
+        let mut config = WtConfig::default();
+        config.phases = Some(PhasesConfig {
+            sequence: vec!["pending".to_string(), "developing".to_string(), "completed".to_string()],
+            definitions,
+        });
 
-        let developing = get_phase_definition(&config, "developing");
-        assert_eq!(developing.resources, PhaseResources::Full);
+        let pending = config.get_phase("pending").unwrap();
+        assert!(pending.resources.is_empty());
+        assert!(!pending.terminal);
 
-        let completed = get_phase_definition(&config, "completed");
-        assert_eq!(completed.resources, PhaseResources::None);
+        let developing = config.get_phase("developing").unwrap();
+        assert_eq!(developing.resources, crate::models::phase::PhaseResources::full());
+        assert!(!developing.terminal);
+
+        let completed = config.get_phase("completed").unwrap();
+        assert!(completed.resources.is_empty());
+        assert!(completed.terminal);
     }
 }

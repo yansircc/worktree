@@ -5,6 +5,7 @@
 //! - Parallel: steps run concurrently
 //! - DAG: steps run based on dependency graph
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::step::{Step, StepResult, StepState};
@@ -14,7 +15,7 @@ use super::step::{Step, StepResult, StepState};
 // ============================================================================
 
 /// Workflow execution state (derived from step states)
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum WorkflowState {
     /// Not started
@@ -72,7 +73,7 @@ impl WorkflowState {
 // ============================================================================
 
 /// Workflow execution mode
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionMode {
     /// Steps run one after another
@@ -89,7 +90,7 @@ pub enum ExecutionMode {
 // ============================================================================
 
 /// Action to take when a step fails
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OnStepFailure {
     /// Abort the entire workflow
@@ -102,7 +103,7 @@ pub enum OnStepFailure {
 }
 
 /// Action to take when a step is blocked
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum OnStepBlocked {
     /// Pause the workflow (wait for intervention)
@@ -119,7 +120,7 @@ pub enum OnStepBlocked {
 // ============================================================================
 
 /// Workflow-level retry configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowRetry {
     /// Maximum retry attempts for failed steps
     #[serde(default = "default_max_attempts")]
@@ -147,7 +148,7 @@ impl Default for WorkflowRetry {
 // ============================================================================
 
 /// Workflow execution configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ExecutionConfig {
     /// Execution mode
     #[serde(default)]
@@ -171,7 +172,7 @@ pub struct ExecutionConfig {
 // ============================================================================
 
 /// How context is passed between steps
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ContextPassing {
     /// Accumulate all step outputs
@@ -184,7 +185,7 @@ pub enum ContextPassing {
 }
 
 /// Workflow context configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ContextConfig {
     /// Shared variables available to all steps
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
@@ -199,7 +200,7 @@ pub struct ContextConfig {
 // ============================================================================
 
 /// Workflow observation configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowObserve {
     /// Show progress indicator
     #[serde(default)]
@@ -214,7 +215,7 @@ pub struct WorkflowObserve {
 // ============================================================================
 
 /// A workflow containing multiple steps
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Workflow {
     /// Workflow identifier (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]

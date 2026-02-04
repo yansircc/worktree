@@ -6,6 +6,7 @@
 //! - resources: whether worktree/branch are needed
 //! - prerequisites: conditions to enter this phase
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::workflow::{Workflow, WorkflowState};
@@ -15,7 +16,7 @@ use super::workflow::{Workflow, WorkflowState};
 // ============================================================================
 
 /// Phase execution state (derived from workflow state)
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PhaseState {
     /// Not started
@@ -49,14 +50,38 @@ impl PhaseState {
 // ============================================================================
 
 /// Resource requirements for a phase
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum PhaseResources {
-    /// No resources needed (e.g., pending, completed)
-    #[default]
-    None,
-    /// Full resources: worktree, branch, multiplexer window
-    Full,
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct PhaseResources {
+    /// Whether to create a git branch
+    #[serde(default)]
+    pub branch: bool,
+    /// Whether to create a git worktree
+    #[serde(default)]
+    pub worktree: bool,
+    /// Whether to create a multiplexer window
+    #[serde(default)]
+    pub window: bool,
+}
+
+impl PhaseResources {
+    /// No resources needed
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// Full resources: branch, worktree, window
+    pub fn full() -> Self {
+        Self {
+            branch: true,
+            worktree: true,
+            window: true,
+        }
+    }
+
+    /// Check if no resources are needed
+    pub fn is_empty(&self) -> bool {
+        !self.branch && !self.worktree && !self.window
+    }
 }
 
 
@@ -65,7 +90,7 @@ pub enum PhaseResources {
 // ============================================================================
 
 /// Dependency completion requirement
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyRequirement {
     /// All dependencies must be completed
@@ -76,7 +101,7 @@ pub enum DependencyRequirement {
 }
 
 /// Prerequisites to enter a phase
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct PhasePrerequisites {
     /// Dependency completion requirement
     #[serde(default)]
@@ -94,7 +119,7 @@ pub struct PhasePrerequisites {
 // ============================================================================
 
 /// Reason for exiting a phase
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ExitReason {
     /// Workflow completed successfully
@@ -111,7 +136,7 @@ pub enum ExitReason {
 // ============================================================================
 
 /// Timeout action
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TimeoutAction {
     /// Mark phase as blocked
@@ -124,7 +149,7 @@ pub enum TimeoutAction {
 }
 
 /// Phase timeout configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PhaseTimeout {
     /// Timeout duration (e.g., "4h", "1d")
     pub duration: String,
@@ -138,7 +163,7 @@ pub struct PhaseTimeout {
 // ============================================================================
 
 /// Notification backend
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum NotificationBackend {
     /// No notification
@@ -158,7 +183,7 @@ impl Default for NotificationBackend {
 }
 
 /// Phase notification configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct PhaseNotifications {
     /// Notification on blocked
     #[serde(default)]
@@ -176,7 +201,7 @@ pub struct PhaseNotifications {
 // ============================================================================
 
 /// Phase observation configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct PhaseObserve {
     /// Show progress indicator
     #[serde(default)]
@@ -191,9 +216,10 @@ pub struct PhaseObserve {
 // ============================================================================
 
 /// A phase in the task lifecycle
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Phase {
     /// Phase identifier (e.g., "developing", "reviewing")
+    #[schemars(description = "Unique identifier for this phase")]
     pub id: String,
 
     /// Human-readable name
@@ -206,6 +232,7 @@ pub struct Phase {
 
     /// Resource requirements
     #[serde(default)]
+    #[schemars(description = "Resource requirements: { branch, worktree, window }")]
     pub resources: PhaseResources,
 
     /// Prerequisites to enter this phase
@@ -214,10 +241,12 @@ pub struct Phase {
 
     /// Workflow to run on entering this phase
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Workflow executed when entering this phase")]
     pub on_enter: Option<Workflow>,
 
     /// Workflow to run on exiting this phase
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Workflow executed when exiting this phase")]
     pub on_exit: Option<Workflow>,
 
     /// Observation configuration
@@ -227,21 +256,27 @@ pub struct Phase {
     /// Timeout configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<PhaseTimeout>,
+
+    /// Whether this is a terminal phase (task becomes Completed)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[schemars(description = "If true, entering this phase marks the task as Completed")]
+    pub terminal: bool,
 }
 
 impl Phase {
-    /// Create a new phase with just an ID
+    /// Create a new phase with just an ID (no resources)
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             name: None,
             goal: None,
-            resources: PhaseResources::None,
+            resources: PhaseResources::none(),
             prerequisites: None,
             on_enter: None,
             on_exit: None,
             observe: None,
             timeout: None,
+            terminal: false,
         }
     }
 
@@ -251,12 +286,13 @@ impl Phase {
             id: id.into(),
             name: None,
             goal: None,
-            resources: PhaseResources::Full,
+            resources: PhaseResources::full(),
             prerequisites: None,
             on_enter: None,
             on_exit: None,
             observe: None,
             timeout: None,
+            terminal: false,
         }
     }
 
@@ -280,12 +316,6 @@ impl Phase {
     }
 }
 
-// ============================================================================
-// Default Phases
-// ============================================================================
-
-/// Standard phase sequence for most projects
-pub const DEFAULT_PHASE_SEQUENCE: &[&str] = &["pending", "developing", "reviewing", "completed"];
 
 #[cfg(test)]
 mod tests {
@@ -304,11 +334,28 @@ mod tests {
     fn test_phase_creation() {
         let phase = Phase::new("developing");
         assert_eq!(phase.id, "developing");
-        assert_eq!(phase.resources, PhaseResources::None);
+        assert!(phase.resources.is_empty());
+        assert!(!phase.terminal);
 
         let phase = Phase::with_resources("developing");
         assert_eq!(phase.id, "developing");
-        assert_eq!(phase.resources, PhaseResources::Full);
+        assert_eq!(phase.resources, PhaseResources::full());
+        assert!(!phase.terminal);
+    }
+
+    #[test]
+    fn test_phase_terminal_field() {
+        let json = r#"{"id": "completed", "terminal": true}"#;
+        let phase: Phase = serde_json::from_str(json).unwrap();
+        assert_eq!(phase.id, "completed");
+        assert!(phase.terminal);
+        assert!(phase.resources.is_empty());
+
+        // Default is false
+        let json = r#"{"id": "developing", "resources": {"branch": true, "worktree": true, "window": true}}"#;
+        let phase: Phase = serde_json::from_str(json).unwrap();
+        assert!(!phase.terminal);
+        assert_eq!(phase.resources, PhaseResources::full());
     }
 
     #[test]
@@ -316,10 +363,20 @@ mod tests {
         let phase = Phase::with_resources("developing");
         let json = serde_json::to_string(&phase).unwrap();
         assert!(json.contains("developing"));
-        assert!(json.contains("full"));
+        assert!(json.contains("\"branch\":true"));
 
         let parsed: Phase = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, "developing");
-        assert_eq!(parsed.resources, PhaseResources::Full);
+        assert_eq!(parsed.resources, PhaseResources::full());
+    }
+
+    #[test]
+    fn test_phase_resources_partial() {
+        let json = r#"{"id": "reviewing", "resources": {"branch": true}}"#;
+        let phase: Phase = serde_json::from_str(json).unwrap();
+        assert!(phase.resources.branch);
+        assert!(!phase.resources.worktree);
+        assert!(!phase.resources.window);
+        assert!(!phase.resources.is_empty());
     }
 }

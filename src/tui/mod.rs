@@ -278,7 +278,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<User
                                     if task.worktree_path.is_some() {
                                         // Find log file
                                         let log_dir = format!(".wt/logs/{}", task.name);
-                                        let phase = task.phase.as_deref().unwrap_or("developing");
+                                        let phase = task.phase.as_deref().unwrap_or("unknown");
                                         let log_path = format!("{}/{}/workflow.log", log_dir, phase);
 
                                         // Open in new tmux window

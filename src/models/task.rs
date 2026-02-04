@@ -7,10 +7,13 @@ use crate::services::multiplexer::MultiplexerType;
 /// Runtime instance information for a running task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Instance {
-    pub branch: String,
-    pub worktree_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
     pub session_name: String,
-    pub window_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     #[serde(default = "default_multiplexer")]
@@ -25,6 +28,11 @@ impl Instance {
     /// Get the multiplexer type for this instance
     pub fn multiplexer_type(&self) -> MultiplexerType {
         self.multiplexer
+    }
+
+    /// Check if this instance has no resources allocated
+    pub fn is_empty(&self) -> bool {
+        self.branch.is_none() && self.worktree_path.is_none() && self.window_name.is_none()
     }
 }
 

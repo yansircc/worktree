@@ -51,8 +51,7 @@ pub enum Commands {
 
     /// Advance a task to the next phase
     ///
-    /// Forces the task to move to the next phase in the sequence:
-    /// pending -> developing -> reviewing -> merging -> completed
+    /// Forces the task to move to the next phase in the configured sequence.
     Next {
         /// Task name or index
         task: String,
@@ -60,14 +59,14 @@ pub enum Commands {
 
     /// Reset a task to a specific phase
     ///
-    /// By default, resets to pending (cleans up all resources).
+    /// By default, resets to initial state (cleans up all resources).
     /// Use --to to reset to a different phase (keeps resources).
     Reset {
         /// Task name to reset
         name: String,
 
-        /// Target phase (pending, developing, reviewing, merging)
-        /// Default: pending (full cleanup)
+        /// Target phase from config sequence, or "none" for initial state.
+        /// Default: none (full cleanup)
         #[arg(long)]
         to: Option<String>,
     },

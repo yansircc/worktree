@@ -4,6 +4,8 @@
 pub fn generate_config(project_name: &str) -> String {
     format!(
         r#"{{
+  "$schema": "./config.schema.json",
+
   // ============================================
   // 基础配置
   // ============================================
@@ -32,12 +34,18 @@ pub fn generate_config(project_name: &str) -> String {
     // 阶段序列（默认）
     "sequence": ["pending", "developing", "reviewing", "completed"],
 
-    // 阶段定义
+    // 阶段定义（所有 sequence 中的阶段都必须有定义）
     "definitions": {{
+      // pending 阶段 - 不需要资源
+      "pending": {{
+        "id": "pending",
+        "resources": {{}}
+      }},
+
       // developing 阶段 - 需要资源（worktree, branch, window）
       "developing": {{
         "id": "developing",
-        "resources": "full",
+        "resources": {{ "branch": true, "worktree": true, "window": true }},
         "on_enter": {{
           "steps": [
             {{
@@ -48,7 +56,7 @@ pub fn generate_config(project_name: &str) -> String {
                 // agent 退出前会自动检查并调用 wt step done/block/fail
                 "settings": ".wt/templates/verify-settings.json"
               }},
-              "verify": {{ "type": "self" }}
+              "verify": {{ "run": "true" }}
             }}
           ]
         }}
@@ -57,7 +65,7 @@ pub fn generate_config(project_name: &str) -> String {
       // reviewing 阶段 - 需要资源
       "reviewing": {{
         "id": "reviewing",
-        "resources": "full",
+        "resources": {{ "branch": true, "worktree": true, "window": true }},
         "on_enter": {{
           "steps": [
             {{
@@ -70,10 +78,11 @@ pub fn generate_config(project_name: &str) -> String {
         }}
       }},
 
-      // completed 阶段 - 不需要资源
+      // completed 阶段 - 终态，不需要资源
       "completed": {{
         "id": "completed",
-        "resources": "none"
+        "resources": {{}},
+        "terminal": true
       }}
     }}
   }}

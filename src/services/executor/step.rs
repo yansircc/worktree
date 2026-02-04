@@ -228,54 +228,25 @@ impl<'a> StepExecutor<'a> {
         verify: &StepVerify,
         _output_file: &PathBuf,
     ) -> (StepState, Option<String>) {
-        match verify {
-            StepVerify::SelfMark => {
-                // Agent self-marks via wt step command - assume success for now
-                (StepState::Success, None)
-            }
-            StepVerify::Script { run, on_pass, on_fail } => {
-                let expanded = self.context.expand(run);
-                let mut cmd = Command::new("sh");
-                cmd.arg("-c").arg(&expanded);
-                cmd.current_dir(self.context.working_dir());
+        let expanded = self.context.expand(&verify.run);
 
-                for (key, value) in self.context.to_env_vars() {
-                    cmd.env(key, value);
-                }
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(&expanded);
+        cmd.current_dir(self.context.working_dir());
 
-                match cmd.status() {
-                    Ok(status) if status.success() => {
-                        let state = match on_pass {
-                            crate::models::step::VerifyAction::Success => StepState::Success,
-                            crate::models::step::VerifyAction::Failed => StepState::Failed,
-                            crate::models::step::VerifyAction::Blocked => StepState::Blocked,
-                            crate::models::step::VerifyAction::Retry => StepState::Pending,
-                        };
-                        (state, None)
-                    }
-                    Ok(_) => {
-                        let state = match on_fail {
-                            crate::models::step::VerifyAction::Success => StepState::Success,
-                            crate::models::step::VerifyAction::Failed => StepState::Failed,
-                            crate::models::step::VerifyAction::Blocked => StepState::Blocked,
-                            crate::models::step::VerifyAction::Retry => StepState::Pending,
-                        };
-                        (state, Some("Verification failed".to_string()))
-                    }
-                    Err(e) => (StepState::Failed, Some(format!("Verification error: {}", e))),
-                }
+        for (key, value) in self.context.to_env_vars() {
+            cmd.env(key, value);
+        }
+
+        match cmd.status() {
+            Ok(status) if status.success() => {
+                (verify.on_pass.to_step_state(), None)
             }
-            StepVerify::Agent { .. } => {
-                // TODO: Run agent for verification
-                (StepState::Success, None)
+            Ok(_) => {
+                (verify.on_fail.to_step_state(), Some("Verification failed".to_string()))
             }
-            StepVerify::Human { prompt, .. } => {
-                // Human verification - mark as blocked
-                (StepState::Blocked, Some(format!("Awaiting human review: {}", prompt)))
-            }
-            StepVerify::Schema { .. } => {
-                // TODO: Validate output against schema
-                (StepState::Success, None)
+            Err(e) => {
+                (StepState::Failed, Some(format!("Verification error: {}", e)))
             }
         }
     }

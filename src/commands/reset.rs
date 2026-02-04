@@ -19,35 +19,53 @@ use chrono::Utc;
 
 use crate::constants::{branch_pattern, BACKUPS_DIR};
 use crate::error::{Result, WtError};
-use crate::models::{TaskPhase, TaskStatus, WtConfig};
+use crate::models::{TaskStatus, WtConfig};
 use crate::services::{dependency, git, multiplexer::create_multiplexer, TaskContext};
 
-/// Parse target phase from string
-fn parse_target_phase(s: &str) -> Option<TaskPhase> {
-    match s.to_lowercase().as_str() {
-        "pending" | "none" => Some(TaskPhase::None),
-        "developing" | "dev" => Some(TaskPhase::Developing),
-        "reviewing" | "review" => Some(TaskPhase::Reviewing),
-        "merging" | "merge" => Some(TaskPhase::Merging),
-        _ => None,
+/// Validate and normalize target phase from string.
+/// Returns None for "none" keyword or phases with no resources and not terminal,
+/// Some(phase_id) for other phases.
+fn validate_target_phase(phase_str: &str, config: &WtConfig) -> Result<Option<String>> {
+    let normalized = phase_str.to_lowercase();
+
+    // "none" is a special keyword meaning "reset to no phase"
+    if normalized == "none" {
+        return Ok(None);
     }
+
+    // Check if phase exists in sequence
+    let seq = config.phase_sequence()?;
+    if !seq.iter().any(|s| s == &normalized) {
+        return Err(crate::error::WtError::InvalidInput(format!(
+            "Invalid phase '{}'. Valid phases: {}",
+            phase_str,
+            seq.join(", ")
+        )));
+    }
+
+    // Check phase definition: no resources + not terminal = back to initial state
+    if let Some(phase) = config.get_phase(&normalized) {
+        if phase.resources.is_empty() && !phase.terminal {
+            return Ok(None);
+        }
+    }
+
+    Ok(Some(normalized))
 }
 
 pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
-    // Parse target phase
-    let target_phase = if let Some(phase_str) = &to_phase {
-        parse_target_phase(phase_str).ok_or_else(|| {
-            WtError::InvalidInput(format!(
-                "Invalid phase '{}'. Valid phases: pending, developing, reviewing, merging",
-                phase_str
-            ))
-        })?
+    let config = WtConfig::load()?;
+
+    // Parse and validate target phase
+    // None means reset to pending (first phase), Some(id) means reset to that phase
+    let target_phase: Option<String> = if let Some(phase_str) = &to_phase {
+        validate_target_phase(phase_str, &config)?
     } else {
-        TaskPhase::None // Default: reset to pending
+        None // Default: reset to pending
     };
 
-    // If target is not pending, we do a "soft reset" (just change phase, keep resources)
-    let full_reset = target_phase == TaskPhase::None;
+    // If target is None (pending), we do a "full reset" (clean up resources)
+    let full_reset = target_phase.is_none();
     let mut ctx = TaskContext::load(&task_ref)?;
 
     let is_scratch = ctx.is_scratch();
@@ -87,41 +105,47 @@ pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
 
     // Backup and cleanup resources if instance exists (full reset only)
     if let Some(instance) = ctx.instance().cloned() {
-        let worktree_path = Path::new(&instance.worktree_path);
-
         // Backup worktree before cleanup (skip for scratch environments)
-        if worktree_path.exists() && !is_scratch {
-            backup_worktree(&name, &instance.worktree_path)?;
+        if let Some(ref wt_path) = instance.worktree_path {
+            if Path::new(wt_path).exists() && !is_scratch {
+                backup_worktree(&name, wt_path)?;
+            }
         }
 
         println!("Cleaning up resources...");
 
         // Kill multiplexer window
-        let mux = create_multiplexer(instance.multiplexer_type());
-        if let Err(e) = mux.kill_window(&instance.session_name, &instance.window_name) {
-            eprintln!(
-                "  Warning: Failed to kill {} window: {}",
-                instance.multiplexer, e
-            );
-        } else {
-            println!(
-                "  Killed {} window: {}:{}",
-                instance.multiplexer, instance.session_name, instance.window_name
-            );
+        if let Some(ref window) = instance.window_name {
+            let mux = create_multiplexer(instance.multiplexer_type());
+            if let Err(e) = mux.kill_window(&instance.session_name, window) {
+                eprintln!(
+                    "  Warning: Failed to kill {} window: {}",
+                    instance.multiplexer, e
+                );
+            } else {
+                println!(
+                    "  Killed {} window: {}:{}",
+                    instance.multiplexer, instance.session_name, window
+                );
+            }
         }
 
         // Remove worktree
-        if let Err(e) = git::remove_worktree(&instance.worktree_path) {
-            eprintln!("  Warning: Failed to remove worktree: {}", e);
-        } else {
-            println!("  Removed worktree: {}", instance.worktree_path);
+        if let Some(ref wt_path) = instance.worktree_path {
+            if let Err(e) = git::remove_worktree(wt_path) {
+                eprintln!("  Warning: Failed to remove worktree: {}", e);
+            } else {
+                println!("  Removed worktree: {}", wt_path);
+            }
         }
 
         // Delete branch (run from repo root since worktree is gone)
-        if let Err(e) = git::delete_branch_in(&instance.branch, &repo_root) {
-            eprintln!("  Warning: Failed to delete branch: {}", e);
-        } else {
-            println!("  Deleted branch: {}", instance.branch);
+        if let Some(ref branch) = instance.branch {
+            if let Err(e) = git::delete_branch_in(branch, &repo_root) {
+                eprintln!("  Warning: Failed to delete branch: {}", e);
+            } else {
+                println!("  Deleted branch: {}", branch);
+            }
         }
     } else {
         // No instance saved, but there might be orphaned resources from a failed start
@@ -145,12 +169,13 @@ pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
         // Full reset: reset to Pending and clear instance
         ctx.set_status(TaskStatus::Pending);
         ctx.store.set_instance(&name, None);
-        ctx.state_mut().phase = TaskPhase::None;
+        ctx.state_mut().phase = None;
         ctx.save_status()?;
         println!("Task '{}' reset to pending.", name);
     } else {
         // Soft reset: just change phase, keep resources
-        ctx.state_mut().phase = target_phase.clone();
+        let phase_display = target_phase.clone().unwrap_or_else(|| "(initial)".to_string());
+        ctx.state_mut().phase = target_phase;
         ctx.state_mut().status = TaskStatus::Idle;
         ctx.state_mut().idle_reason = None;
         ctx.state_mut().active_since = None;
@@ -158,7 +183,7 @@ pub fn execute(task_ref: String, to_phase: Option<String>) -> Result<()> {
         println!(
             "Task '{}' reset to phase '{}'.",
             name,
-            target_phase.display_name()
+            phase_display
         );
     }
     Ok(())
@@ -169,7 +194,7 @@ fn update_status_only(
     ctx: &mut TaskContext,
     name: &str,
     is_scratch: bool,
-    target_phase: TaskPhase,
+    target_phase: Option<String>,
 ) -> Result<()> {
     if is_scratch {
         return Err(WtError::InvalidInput(
@@ -178,7 +203,8 @@ fn update_status_only(
         ));
     }
 
-    ctx.state_mut().phase = target_phase.clone();
+    let phase_display = target_phase.clone().unwrap_or_else(|| "(initial)".to_string());
+    ctx.state_mut().phase = target_phase;
     ctx.state_mut().status = TaskStatus::Idle;
     ctx.state_mut().idle_reason = None;
     ctx.state_mut().active_since = None;
@@ -187,7 +213,7 @@ fn update_status_only(
     println!(
         "Task '{}' reset to phase '{}'.",
         name,
-        target_phase.display_name()
+        phase_display
     );
     println!(
         "Hint: Resources (worktree, branch) were kept. Run 'wt next {}' to continue.",
