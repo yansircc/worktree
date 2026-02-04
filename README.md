@@ -1,12 +1,24 @@
 # wt - Worktree Task Manager
 
-通过 git worktree 隔离工作区，terminal multiplexer 管理 agent 进程，依赖关系控制任务执行顺序。
+多 agent 并行开发任务管理工具。通过 git worktree 隔离工作区、tmux/zellij 管理进程、依赖关系控制执行顺序，让多个 AI agent 同时开发不同功能分支。
+
+## 工作原理
+
+```
+                    ┌─ worktree/auth ─── Agent A (developing)
+                    │
+main repo ──────────┼─ worktree/api  ─── Agent B (reviewing)
+                    │
+                    └─ worktree/ui   ─── Agent C (developing)
+```
+
+每个任务拥有独立的 git worktree 和 multiplexer 窗口，agent 在隔离环境中工作，互不干扰。
 
 ## 依赖
 
 - Git (支持 worktree)
 - tmux 或 zellij
-- Rust (编译安装)
+- Rust toolchain (编译安装)
 
 ## 安装
 
@@ -17,27 +29,38 @@ cargo install --path .
 ## 快速开始
 
 ```bash
-wt init                    # 初始化
-wt create --json '{"name": "auth", "depends": [], "description": "实现认证"}'
-wt next auth               # 推进任务 (Pending → Active)
-wt status                  # 查看状态 (TUI)
-wt tail auth               # 查看最后输出
-wt stop auth               # 停止任务进程
-wt reset auth              # 重置（会备份代码）
-wt delete auth             # 删除任务资源
+# 1. 初始化项目
+wt init
+
+# 2. 创建任务
+wt create --json '{"name": "auth", "depends": [], "description": "实现认证模块"}'
+wt create --json '{"name": "api", "depends": ["auth"], "description": "实现 API 层"}'
+
+# 3. 启动任务 (创建 worktree + 启动 agent)
+wt next auth
+
+# 4. 查看状态
+wt status                  # TUI 交互界面
+wt status --json           # JSON 输出
+
+# 5. 监控和控制
+wt tail auth               # 查看 agent 最近输出
+wt stop auth               # 暂停 agent 进程
+wt next auth               # 推进到下一阶段
+wt reset auth              # 重置任务 (会备份代码)
 ```
 
-## 命令
+## 命令速查
 
 ### 任务管理
 
 | 命令 | 说明 |
 |------|------|
-| `wt init` | 初始化配置（自动安装 shell 补全） |
+| `wt init` | 初始化 `.wt/` 目录和配置 |
 | `wt create --json '{...}'` | 创建任务 |
-| `wt validate [name]` | 验证任务 |
-| `wt list [--tree] [--json]` | 列出任务（显示索引） |
-| `wt delete <name> [--force]` | 删除任务资源 |
+| `wt validate [name]` | 验证任务配置和循环依赖 |
+| `wt list [--tree] [--json]` | 列出所有任务 |
+| `wt delete <task> [--force]` | 删除任务及其资源 |
 
 ### 阶段控制
 
@@ -45,61 +68,60 @@ wt delete auth             # 删除任务资源
 |------|------|
 | `wt next <task>` | 推进到下一阶段 |
 | `wt prev <task>` | 回退到上一阶段 |
-| `wt stop <task>` | 停止任务进程 |
-| `wt reset <task> [--to <phase>]` | 重置任务（可指定目标阶段） |
-| `wt step done\|block\|fail` | Agent 标记 step 状态 |
+| `wt stop <task> [--kill-window]` | 停止进程，保留 worktree |
+| `wt reset <task> [--to <phase>]` | 重置任务 (备份后清理) |
 
-### 状态和日志
+### Agent 标记 (agent 在 worktree 内调用)
 
 | 命令 | 说明 |
 |------|------|
-| `wt status [--json]` | 查看状态 (默认 TUI) |
-| `wt tail <name> [-n N]` | 查看最后 N 条输出 |
-| `wt logs` | 生成所有任务的调试日志 |
+| `wt step done` | 标记当前 step 成功 |
+| `wt step block [reason]` | 标记阻塞，等待人工介入 |
+| `wt step fail [reason]` | 标记失败 |
+
+### 状态与日志
+
+| 命令 | 说明 |
+|------|------|
+| `wt status` | TUI 交互界面 |
+| `wt status --json [--all]` | JSON 输出 |
+| `wt tail <task> [-n N]` | 最近 N 条 agent 输出 |
+| `wt logs` | 生成调试日志 |
 
 ### 其他
 
 | 命令 | 说明 |
 |------|------|
-| `wt new [name]` | 创建 scratch 环境 |
-| `wt completions generate <shell>` | 生成 shell 补全脚本 |
+| `wt new [name] [--print-path]` | 创建临时 worktree (无任务文件) |
 | `wt completions install` | 安装 shell 补全 |
+| `wt internal <op> <args>` | 供脚本使用的原子操作 |
 
-> **提示**：所有接受任务名的命令都支持使用索引，如 `wt next 1`
+> 所有接受任务名的命令都支持 1-based 索引：`wt next 1` = 第一个任务
 
-## 任务状态
+## 状态模型
 
-### 状态模型
+wt 用两个维度描述任务状态：
 
-wt 使用两个维度描述任务状态：
-
-- **Status** - 资源状态（是否有进程在运行）
-- **Phase** - 业务阶段（开发进度）
+- **Status** — 资源状态 (是否有进程在运行)
+- **Phase** — 业务阶段 (任务进展到哪一步)
 
 ```
-Status:
-○ Pending  →  ● Active  ⇄  ◐ Idle  →  ✓ Completed
-  (未创建)    (有进程)    (无进程)    (已完成)
-
-Phase:
-(none) → developing → reviewing → merging → (done)
+Status:  ○ Pending  →  ● Active  ⇄  ◐ Idle  →  ✓ Completed
+Phase:   (none)     →  developing → reviewing →  (done)
 ```
 
-### Status × Phase 组合
+### Status x Phase 组合
 
 | Status | Phase | 场景 |
 |--------|-------|------|
 | Pending | (none) | 任务已定义，未创建资源 |
-| Active | developing | agent 正在开发 |
+| Active | developing | agent 正在编码 |
 | Idle | developing | agent 暂停，等待用户 |
 | Active | reviewing | review 进行中 |
 | Idle | reviewing | review 完成，等待下一步 |
-| Active | merging | 合并/清理进行中 |
 | Completed | (none) | 任务完成 |
 
 ### Idle 原因
-
-当任务处于 Idle 状态时，`idle_reason` 说明原因：
 
 | 原因 | 说明 |
 |------|------|
@@ -110,77 +132,92 @@ Phase:
 | `timeout` | 执行超时 |
 | `manual` | 用户手动暂停 |
 
-## Status TUI 快捷键
+## TUI 快捷键
 
-| 按键 | 功能 |
-|------|------|
-| `↑↓` / `jk` | 导航 |
-| `Enter` | 进入 multiplexer 窗口 |
-| `n` | next (推进阶段) |
-| `p` | prev (回退阶段) |
-| `s` | stop (停止进程) |
-| `t` | tail (查看输出) |
-| `l` | logs (打开日志) |
+| 键 | 功能 |
+|----|------|
+| `j/k` 或 `↑/↓` | 上下导航 |
+| `Enter` | 进入任务的 multiplexer 窗口 |
+| `n` | 推进阶段 (next) |
+| `p` | 回退阶段 (prev) |
+| `s` | 停止进程 (stop) |
+| `t` | 查看 transcript (tail) |
+| `l` | 打开日志 (logs) |
 | `?` | 帮助 |
 | `q` | 退出 |
 
 ## 配置
 
-配置文件位于 `.wt/config.jsonc`（JSONC 格式，支持注释）：
+配置文件 `.wt/config.jsonc` (JSONC 格式，支持注释)：
 
 ```jsonc
 {
-  // Terminal multiplexer: tmux (默认) 或 zellij
-  "multiplexer": "tmux",
-
-  // Session 名称
+  "multiplexer": "tmux",              // tmux 或 zellij
   "session_name": "my-project",
-
-  // Claude CLI 命令（默认: claude）
   "claude_command": "claude",
+  "worktree_dir": ".wt/worktrees",
 
-  // Worktree 目录
-  "worktree_dir": ".wt/worktrees"
+  // 阶段定义
+  "phases": {
+    "sequence": ["pending", "developing", "reviewing", "completed"],
+    "definitions": {
+      "developing": {
+        "id": "developing",
+        "resources": { "branch": true, "worktree": true, "window": true },
+        "on_enter": {
+          "steps": [{
+            "agent": { "prompt": "@.wt/tasks/${task}.md" },
+            "verify": { "run": "true" }
+          }]
+        }
+      },
+      "reviewing": {
+        "id": "reviewing",
+        "resources": { "branch": true }
+      },
+      "completed": {
+        "id": "completed",
+        "terminal": true
+      }
+    }
+  }
 }
 ```
 
-## 内部操作 (wt internal)
+### 任务文件 (.wt/tasks/*.md)
 
-供脚本使用的原子操作。
+```yaml
+---
+name: auth
+depends:
+  - database
+---
 
-### Git 操作
-
-```bash
-wt internal git:fetch <repo_root> <remote>
-wt internal git:rebase <worktree_path> <target>
-wt internal git:squash-merge <repo_root> <branch>
-wt internal git:commit <path> <message>
-wt internal git:push <repo_root> <branch> [remote]
-wt internal git:has-changes <path>          # exit 0=有变更, 1=无变更
-wt internal git:has-conflicts <path>        # exit 0=有冲突, 1=无冲突
-wt internal git:stash <path>
-wt internal git:stash-pop <path>
-wt internal git:create-branch <repo_root> <branch>
-wt internal git:delete-branch <repo_root> <branch>
-wt internal git:checkout <path> <branch>
-wt internal git:current-branch <path>
+实现 JWT 认证模块...
 ```
 
-### Multiplexer 操作
+## 内部操作
+
+`wt internal` 提供供脚本和 workflow 调用的原子操作：
 
 ```bash
+# Git 操作
+wt internal git:fetch <repo> <remote>
+wt internal git:rebase <worktree> <target>
+wt internal git:squash-merge <repo> <branch>
+wt internal git:has-changes <path>          # exit 0=有变更
+wt internal git:has-conflicts <path>        # exit 0=有冲突
+wt internal git:create-branch <repo> <branch>
+
+# Multiplexer 操作
 wt internal mux:create-window <session> <window> <cwd> <command>
 wt internal mux:close-window <session> <window>
 wt internal mux:focus-window <session> <window>
-wt internal mux:window-exists <session> <window>  # exit 0=存在, 1=不存在
+wt internal mux:window-exists <session> <window>
 wt internal mux:send-keys <session> <window> <keys>
-wt internal mux:list-windows <session>
-```
 
-### 文件操作
-
-```bash
-wt internal files:backup <task> [backup_dir]   # 输出备份路径
+# 文件操作
+wt internal files:backup <task> [backup_dir]
 wt internal files:clean <worktree> <patterns...>
 ```
 
