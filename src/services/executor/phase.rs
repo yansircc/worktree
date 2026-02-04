@@ -36,6 +36,8 @@ pub struct PhaseTransition<'a> {
     context: ExecutionContext,
     log_dir: Option<PathBuf>,
     show_progress: bool,
+    /// Total steps in original workflow (for partial execution display)
+    total_steps: Option<usize>,
 }
 
 impl<'a> PhaseTransition<'a> {
@@ -46,6 +48,7 @@ impl<'a> PhaseTransition<'a> {
             context,
             log_dir: None,
             show_progress: false,
+            total_steps: None,
         }
     }
 
@@ -58,6 +61,12 @@ impl<'a> PhaseTransition<'a> {
     /// Enable terminal progress output.
     pub fn with_progress(mut self, show: bool) -> Self {
         self.show_progress = show;
+        self
+    }
+
+    /// Set total steps for partial execution display.
+    pub fn with_total_steps(mut self, total: usize) -> Self {
+        self.total_steps = Some(total);
         self
     }
 
@@ -118,9 +127,13 @@ impl<'a> PhaseTransition<'a> {
 
         // Execute on_enter workflow
         let on_enter_result = if let Some(ref workflow) = phase.on_enter {
-            let executor = WorkflowExecutor::new(self.config, phase_context.clone())
+            let mut executor = WorkflowExecutor::new(self.config, phase_context.clone())
                 .with_log_dir(self.get_phase_log_dir(&phase.id))
                 .with_progress(self.show_progress);
+
+            if let Some(total) = self.total_steps {
+                executor = executor.with_total_steps(total);
+            }
 
             let result = executor.execute(workflow)?;
 

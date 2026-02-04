@@ -40,8 +40,22 @@ impl TerminalObserver {
 
     /// Called when a workflow starts.
     pub fn on_workflow_start(&self, workflow_name: &str, step_count: usize) {
+        self.on_workflow_start_with_total(workflow_name, step_count, None);
+    }
+
+    /// Called when a workflow starts, with optional total step count for partial execution.
+    pub fn on_workflow_start_with_total(&self, workflow_name: &str, step_count: usize, total_steps: Option<usize>) {
         if self.settings.show_progress {
-            eprintln!("▶ Starting workflow: {} ({} steps)", workflow_name, step_count);
+            let steps_display = if let Some(total) = total_steps {
+                if total > step_count {
+                    format!("{}/{} steps, agent will start in window", step_count, total)
+                } else {
+                    format!("{} steps", step_count)
+                }
+            } else {
+                format!("{} steps", step_count)
+            };
+            eprintln!("▶ Starting workflow: {} ({})", workflow_name, steps_display);
         }
     }
 

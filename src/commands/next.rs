@@ -371,24 +371,29 @@ fn execute_on_enter_until(
     let mut runtime_state = TaskRuntimeState::pending();
 
     // If we need to execute only a subset of steps, create a modified phase
-    let phase_to_execute = if until_step < usize::MAX {
+    let (phase_to_execute, total_steps) = if until_step < usize::MAX {
         if let Some(ref workflow) = phase.on_enter {
+            let total = workflow.steps.len();
             let mut modified_phase = phase.clone();
             let mut modified_workflow = workflow.clone();
             modified_workflow.steps = workflow.steps.iter().take(until_step).cloned().collect();
             modified_phase.on_enter = Some(modified_workflow);
-            modified_phase
+            (modified_phase, Some(total))
         } else {
-            phase.clone()
+            (phase.clone(), None)
         }
     } else {
-        phase.clone()
+        (phase.clone(), None)
     };
 
     // Execute phase transition with progress output
-    let transition = PhaseTransition::new(config, context)
+    let mut transition = PhaseTransition::new(config, context)
         .with_log_dir(PathBuf::from(".wt/logs"))
         .with_progress(true);
+
+    if let Some(total) = total_steps {
+        transition = transition.with_total_steps(total);
+    }
 
     let _result = transition.enter(&phase_to_execute, &mut runtime_state)?;
 

@@ -40,6 +40,8 @@ pub struct WorkflowExecutor<'a> {
     log_dir: Option<PathBuf>,
     /// Show terminal progress output
     show_progress: bool,
+    /// Total steps in original workflow (for partial execution display)
+    total_steps: Option<usize>,
 }
 
 impl<'a> WorkflowExecutor<'a> {
@@ -50,6 +52,7 @@ impl<'a> WorkflowExecutor<'a> {
             context,
             log_dir: None,
             show_progress: false,
+            total_steps: None,
         }
     }
 
@@ -62,6 +65,13 @@ impl<'a> WorkflowExecutor<'a> {
     /// Enable terminal progress output.
     pub fn with_progress(mut self, show: bool) -> Self {
         self.show_progress = show;
+        self
+    }
+
+    /// Set total steps for partial execution display.
+    /// When executing only a subset of steps, this shows "N/M steps" instead of "N steps".
+    pub fn with_total_steps(mut self, total: usize) -> Self {
+        self.total_steps = Some(total);
         self
     }
 
@@ -100,7 +110,7 @@ impl<'a> WorkflowExecutor<'a> {
 
         // Notify workflow start
         if let Some(ref obs) = terminal_observer {
-            obs.on_workflow_start(&workflow_name, workflow.steps.len());
+            obs.on_workflow_start_with_total(&workflow_name, workflow.steps.len(), self.total_steps);
         }
 
         let execution_config = workflow.execution.as_ref();
