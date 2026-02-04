@@ -39,12 +39,7 @@ impl TerminalObserver {
     }
 
     /// Called when a workflow starts.
-    pub fn on_workflow_start(&self, workflow_name: &str, step_count: usize) {
-        self.on_workflow_start_with_total(workflow_name, step_count, None);
-    }
-
-    /// Called when a workflow starts, with optional total step count for partial execution.
-    pub fn on_workflow_start_with_total(&self, workflow_name: &str, step_count: usize, total_steps: Option<usize>) {
+    pub fn on_workflow_start(&self, workflow_name: &str, step_count: usize, total_steps: Option<usize>) {
         if self.settings.show_progress {
             let steps_display = if let Some(total) = total_steps {
                 if total > step_count {

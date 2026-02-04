@@ -110,7 +110,7 @@ impl<'a> WorkflowExecutor<'a> {
 
         // Notify workflow start
         if let Some(ref obs) = terminal_observer {
-            obs.on_workflow_start_with_total(&workflow_name, workflow.steps.len(), self.total_steps);
+            obs.on_workflow_start(&workflow_name, workflow.steps.len(), self.total_steps);
         }
 
         let execution_config = workflow.execution.as_ref();
