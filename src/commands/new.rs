@@ -7,8 +7,13 @@ use crate::models::{Instance, TaskStatus, TaskStore, WtConfig};
 use crate::services::{git, tmux, workspace::WorkspaceInitializer};
 
 pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
-    let config = WtConfig::load()?;
+    let config = WtConfig::load_or_default();
     let mut store = TaskStore::load()?;
+
+    // Auto-update .gitignore when .wt/ doesn't exist yet (first scratch environment)
+    if !Path::new(".wt").exists() {
+        let _ = super::init::update_gitignore();
+    }
 
     // Generate or validate name
     let name = match name {

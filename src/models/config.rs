@@ -61,10 +61,30 @@ impl WtConfig {
         Self::from_str(&content)
     }
 
+    /// Load config from file, or return defaults if not found
+    pub fn load_or_default() -> Self {
+        Self::load().unwrap_or_default()
+    }
+
     /// Parse config from string
     pub fn from_str(content: &str) -> Result<Self> {
         let config: WtConfig = serde_yaml::from_str(content)?;
         Ok(config)
+    }
+}
+
+impl Default for WtConfig {
+    fn default() -> Self {
+        Self {
+            claude_command: default_claude_command(),
+            start_args: default_start_args(),
+            tmux_session: default_tmux_session(),
+            worktree_dir: default_worktree_dir(),
+            copy_files: vec![],
+            init_script: None,
+            logs: LogsConfig::default(),
+            archive_script: None,
+        }
     }
 }
 

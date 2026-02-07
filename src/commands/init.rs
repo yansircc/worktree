@@ -5,9 +5,9 @@ use std::path::Path;
 use crate::constants::{CONFIG_FILE, TASKS_DIR};
 use crate::error::{Result, WtError};
 
-const GITIGNORE_MARKER: &str = "# wt - Worktree Task Manager";
+pub(crate) const GITIGNORE_MARKER: &str = "# wt - Worktree Task Manager";
 
-const GITIGNORE_ENTRIES: &str = r#"# wt - Worktree Task Manager
+pub(crate) const GITIGNORE_ENTRIES: &str = r#"# wt - Worktree Task Manager
 # https://github.com/anthropics/wt
 .wt/*
 !.wt/tasks/
@@ -111,7 +111,7 @@ tmux_session: {}
     )
 }
 
-fn update_gitignore() -> Result<bool> {
+pub(crate) fn update_gitignore() -> Result<bool> {
     let gitignore_path = Path::new(".gitignore");
 
     if gitignore_path.exists() {
