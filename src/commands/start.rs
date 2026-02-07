@@ -122,10 +122,6 @@ fn execute_single(name: String) -> Result<()> {
         println!("  Copied: {}", file);
     }
 
-    if !tmux::session_exists(&config.tmux_session) {
-        tmux::create_session(&config.tmux_session)?;
-    }
-
     // Build agent command: claude_command + start_args
     let expanded_args = config
         .start_args
@@ -145,7 +141,9 @@ fn execute_single(name: String) -> Result<()> {
         None => agent_cmd,
     };
 
-    tmux::create_window(&config.tmux_session, &name, &worktree_path, &full_cmd)?;
+    // Each task gets its own tmux session: project-task
+    let task_session = format!("{}-{}", &config.tmux_session, &name);
+    tmux::create_session_with_command(&task_session, &worktree_path, &full_cmd)?;
 
     if config.init_script.is_some() {
         println!("  Init script will run in tmux window");
@@ -158,8 +156,8 @@ fn execute_single(name: String) -> Result<()> {
         Some(Instance {
             branch: branch.clone(),
             worktree_path: worktree_path.clone(),
-            tmux_session: config.tmux_session.clone(),
-            tmux_window: name.clone(),
+            tmux_session: task_session.clone(),
+            tmux_window: name.clone(), // Keep for backwards compat, not used for new sessions
             session_id: Some(session_id),
         }),
     );

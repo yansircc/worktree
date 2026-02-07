@@ -98,20 +98,16 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<TuiA
                         KeyCode::Enter => {
                             if let Some(action) = app.enter_action() {
                                 match &action {
-                                    TuiAction::SwitchTmuxWindow { session, window } => {
-                                        // Inside tmux: temporarily leave TUI to switch window
+                                    TuiAction::SwitchTmuxWindow { session, window: _ } => {
+                                        // Inside tmux: temporarily leave TUI to switch session
                                         disable_raw_mode().ok();
                                         let mut stdout = io::stdout();
                                         execute!(stdout, LeaveAlternateScreen, DisableMouseCapture)
                                             .ok();
 
-                                        // Switch to target tmux window
+                                        // Switch to target tmux session (each task has its own session)
                                         Command::new("tmux")
-                                            .args([
-                                                "select-window",
-                                                "-t",
-                                                &format!("{}:{}", session, window),
-                                            ])
+                                            .args(["switch-client", "-t", session])
                                             .status()
                                             .ok();
 

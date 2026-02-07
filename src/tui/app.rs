@@ -104,9 +104,9 @@ impl App {
             let instance = store.get_instance(task.name());
             let worktree_path = instance.map(|i| i.worktree_path.clone());
 
-            // Tmux status
+            // Tmux status - check if session exists (each task has its own session)
             let tmux_alive = if let Some(inst) = instance {
-                tmux::window_exists(&inst.tmux_session, &inst.tmux_window)
+                tmux::session_exists(&inst.tmux_session)
             } else {
                 false
             };
@@ -249,9 +249,9 @@ impl App {
             if task.status == TaskStatus::Running {
                 let name = task.name.clone();
 
-                // Close tmux window if still alive
-                if let (Some(session), Some(window)) = (&task.tmux_session, &task.tmux_window) {
-                    tmux::kill_window_if_exists(session, window).ok();
+                // Close tmux session if still alive (each task has its own session)
+                if let Some(session) = &task.tmux_session {
+                    tmux::kill_session_if_exists(session).ok();
                 }
 
                 let mut store = TaskStore::load()?;

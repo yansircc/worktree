@@ -217,12 +217,12 @@ impl TaskStore {
             None => return Ok(false),
         };
 
-        // Check if tmux window still exists
-        if tmux::window_exists(&instance.tmux_session, &instance.tmux_window) {
+        // Check if tmux session still exists (each task has its own session)
+        if tmux::session_exists(&instance.tmux_session) {
             return Ok(false);
         }
 
-        // Window closed, auto-mark as Done
+        // Session closed, auto-mark as Done
         self.set_status(task_name, TaskStatus::Done);
         Ok(true)
     }

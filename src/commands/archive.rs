@@ -59,8 +59,8 @@ pub fn execute(task_ref: String, silent: bool) -> Result<()> {
             println!("Archiving resources...");
         }
 
-        // Kill tmux window (may already be gone from merged)
-        let _ = tmux::kill_window(&inst.tmux_session, &inst.tmux_window);
+        // Kill tmux session (may already be gone from done/merged)
+        let _ = tmux::kill_session(&inst.tmux_session);
 
         // Remove worktree
         if let Err(e) = git::remove_worktree(&inst.worktree_path) {

@@ -45,9 +45,9 @@ pub fn display_status(json: bool) -> Result<()> {
 
         let instance = store.get_instance(task_name);
 
-        // Check if tmux window is alive
+        // Check if tmux session is alive (each task has its own session)
         let tmux_alive = instance
-            .map(|i| tmux::window_exists(&i.tmux_session, &i.tmux_window))
+            .map(|i| tmux::session_exists(&i.tmux_session))
             .unwrap_or(false);
 
         let final_status = status;

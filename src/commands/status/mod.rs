@@ -38,10 +38,10 @@ fn handle_tui_action(action: TuiAction) -> Result<()> {
             // This should be handled within TUI, not here
             Ok(())
         }
-        TuiAction::AttachTmux { session, window } => {
-            // Outside tmux: directly attach to session
+        TuiAction::AttachTmux { session, window: _ } => {
+            // Outside tmux: directly attach to session (each task has its own session)
             Command::new("tmux")
-                .args(["attach", "-t", &format!("{}:{}", session, window)])
+                .args(["attach", "-t", &session])
                 .status()
                 .ok();
             Ok(())

@@ -2,6 +2,7 @@ pub mod archive;
 pub mod completions;
 pub mod create;
 pub mod done;
+pub mod enter;
 pub mod init;
 pub mod list;
 pub mod logs;

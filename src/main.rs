@@ -20,6 +20,7 @@ fn main() {
         Commands::List { tree, json } => commands::list::execute(tree, json),
         Commands::Start { name, all } => commands::start::execute(name, all),
         Commands::Done { name } => commands::done::execute(name),
+        Commands::Enter { name } => commands::enter::execute(name),
         Commands::Merged { name } => commands::merged::execute(name, false),
         Commands::Archive { name } => commands::archive::execute(name, false),
         Commands::Next { json } => commands::next::execute(json),

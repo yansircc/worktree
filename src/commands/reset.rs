@@ -67,11 +67,11 @@ pub fn execute(task_ref: String) -> Result<()> {
 
         println!("Cleaning up resources...");
 
-        // Kill tmux window
-        if let Err(e) = tmux::kill_window(&instance.tmux_session, &instance.tmux_window) {
-            eprintln!("  Warning: Failed to kill tmux window: {}", e);
+        // Kill tmux session (each task has its own session)
+        if let Err(e) = tmux::kill_session(&instance.tmux_session) {
+            eprintln!("  Warning: Failed to kill tmux session: {}", e);
         } else {
-            println!("  Killed tmux window: {}:{}", instance.tmux_session, instance.tmux_window);
+            println!("  Killed tmux session: {}", instance.tmux_session);
         }
 
         // Remove worktree

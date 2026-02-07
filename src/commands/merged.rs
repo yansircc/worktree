@@ -28,14 +28,14 @@ pub fn execute(task_ref: String, silent: bool) -> Result<()> {
         );
     }
 
-    // Only close tmux window, keep worktree and branch for review
+    // Only close tmux session, keep worktree and branch for review
     if let Some(instance) = store.get_instance(&name) {
-        if let Err(e) = tmux::kill_window(&instance.tmux_session, &instance.tmux_window) {
+        if let Err(e) = tmux::kill_session(&instance.tmux_session) {
             if !silent {
-                eprintln!("  Warning: Failed to kill tmux window: {}", e);
+                eprintln!("  Warning: Failed to kill tmux session: {}", e);
             }
         } else if !silent {
-            println!("  Closed tmux window: {}:{}", instance.tmux_session, instance.tmux_window);
+            println!("  Closed tmux session: {}", instance.tmux_session);
         }
         // Keep instance data for archive command
     }

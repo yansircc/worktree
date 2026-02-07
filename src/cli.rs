@@ -55,6 +55,12 @@ pub enum Commands {
         name: String,
     },
 
+    /// Enter a task's tmux session
+    Enter {
+        /// Task name or index
+        name: String,
+    },
+
     /// Mark a task as merged (keeps worktree/branch for review)
     Merged {
         /// Task name to mark as merged

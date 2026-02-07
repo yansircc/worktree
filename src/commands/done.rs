@@ -20,10 +20,10 @@ pub fn execute(task_ref: String) -> Result<()> {
     store.ensure_exists(&name)?;
     store.validate_transition(&name, TaskStatus::Done)?;
 
-    // Close tmux window if still alive
+    // Close tmux session if still alive
     if let Some(instance) = store.get_instance(&name) {
-        if tmux::kill_window_if_exists(&instance.tmux_session, &instance.tmux_window)? {
-            println!("Closed tmux window {}:{}", instance.tmux_session, instance.tmux_window);
+        if tmux::kill_session_if_exists(&instance.tmux_session)? {
+            println!("Closed tmux session {}", instance.tmux_session);
         }
     }
 

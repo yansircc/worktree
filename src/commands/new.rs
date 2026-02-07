@@ -65,18 +65,15 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
     // Create symlink for status.json so wt commands work from worktree
     initializer.link_status_file()?;
 
-    // Create tmux session if needed
-    if !tmux::session_exists(&config.tmux_session) {
-        tmux::create_session(&config.tmux_session)?;
-    }
-
-    // Create tmux window with just init_script (or empty command for shell)
+    // Create tmux session with just init_script (or empty command for shell)
+    // Each scratch environment gets its own session: project-name
     let cmd = match &config.init_script {
         Some(script) => script.clone(),
         None => String::new(),
     };
 
-    tmux::create_window(&config.tmux_session, &name, &worktree_path, &cmd)?;
+    let task_session = format!("{}-{}", &config.tmux_session, &name);
+    tmux::create_session_with_command(&task_session, &worktree_path, &cmd)?;
 
     // Update status.json with scratch=true
     store.set_status(&name, TaskStatus::Running);
@@ -86,8 +83,8 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
         Some(Instance {
             branch: branch.clone(),
             worktree_path: worktree_path.clone(),
-            tmux_session: config.tmux_session.clone(),
-            tmux_window: name.clone(),
+            tmux_session: task_session.clone(),
+            tmux_window: name.clone(), // Keep for backwards compat
             session_id: None, // No Claude session
         }),
     );
@@ -100,12 +97,12 @@ pub fn execute(name: Option<String>, print_path: bool) -> Result<()> {
         println!("{}", relative_path);
     } else {
         if config.init_script.is_some() {
-            println!("  Init script will run in tmux window");
+            println!("  Init script will run in tmux session");
         }
         println!("Created scratch environment '{}'", name);
         println!("  Worktree: {}", relative_path);
         println!("  Branch:   {}", branch);
-        println!("  Tmux:     {}:{}", config.tmux_session, name);
+        println!("  Tmux:     {}", task_session);
     }
 
     Ok(())
